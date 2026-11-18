@@ -1,0 +1,1 @@
+[{"host": "web01", "site": "North", "ram": 16, "os": "linux"}, {"host": "db01", "site": "South", "ram": 64, "os": "linux"}, {"host": "old01", "site": "North", "ram": 8, "os": ""}]

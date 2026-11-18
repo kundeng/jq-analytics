@@ -64,6 +64,8 @@ Three rules hold for every shape:
 
 A calendar is both a dimension and a set of intervals: `calendar` gives one row per day with its year, quarter, month and weeks, to `lookup` by date as a dimension of a star, and each day's local `start` and `end`, so `join_within` places an event in its day.
 
+When the shape of a table is not known yet, `profile` shows it: one row per column with what is present, missing, empty and of which type. `diff_tables` compares two versions of one table by key.
+
 ## Sources that are not shapes
 
 A source is a form data arrives in. It has to become a shape before a function can use it.

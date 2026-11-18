@@ -1,6 +1,6 @@
 # analytics.jq: tables and statistics for jq
 
-`analytics.jq` is a jq module of 89 functions that let a jq program answer the questions people usually send to SQL, pandas or a graph library: hold several named tables at once, join them by key, condition and time, group and aggregate, percentiles, running and lagged values over ordered partitions, time series read as state machines, roll-ups over trees, reachability, shortest paths and dependency order in graphs, validity intervals built from events, a calendar table, funnels and retention, measures evaluated at several levels of a report, and local time in a named time zone. Each function states its rule in a comment beside it (how it treats nulls, ties, order and rounding), and each rule is pinned by a test whose expected answer DuckDB computes. Its time-zone tables, generated from the IANA time-zone database, are a block inside the same file.
+`analytics.jq` is a jq module of 96 functions that let a jq program answer the questions people usually send to SQL, pandas or a graph library: hold several named tables at once, join them by key, condition and time, group and aggregate, percentiles, running and lagged values over ordered partitions, time series read as state machines, roll-ups over trees, reachability, shortest paths and dependency order in graphs, validity intervals built from events, a calendar table, funnels and retention, column profiles and table diffs, measures evaluated at several levels of a report, and local time in a named time zone. Each function states its rule in a comment beside it (how it treats nulls, ties, order and rounding), and each rule is pinned by a test whose expected answer DuckDB computes. Its time-zone tables, generated from the IANA time-zone database, are a block inside the same file.
 
 It exists because plain jq leaves those rules to whoever writes the program. In one analysis of service requests, four shared jq helpers each decided a number without saying how: one dropped unresolved tickets, one used a different percentile rule, one hardcoded a single year's daylight-saving switch, one rounded before comparing with a threshold and miscounted by one. This library is one place where those rules are written down, tested against DuckDB, and the same for every analysis that loads it.
 
@@ -75,7 +75,7 @@ The library is one file, `analytics.jq`, in a directory `<dir>` below. Its time-
 | Python `jq` package | `jq.compile('include "analytics" {search: "<dir>"}; ' + program).input_value(rows).first()`; the package has no `-L` and an empty default search list, so the path goes in the program |
 | Python package `jq_analytics` | `jq_analytics.include()` returns the `include` line with this package's directory filled in |
 
-Tested on jq 1.7.1 (Apple's build), jq 1.8.2, gojq 0.12.20, jaq 3.1.2 and the `jq` Python package 1.13.0, which builds jq 1.8.2: all pass the same 115 test cases (`tests/run_tests.py`). The library uses no builtin that is missing from any of them, and it parenthesises `reduce … as` inside function arguments, which jq 1.7.1's grammar requires.
+Tested on jq 1.7.1 (Apple's build), jq 1.8.2, gojq 0.12.20, jaq 3.1.2 and the `jq` Python package 1.13.0, which builds jq 1.8.2: all pass the same 129 test cases (`tests/run_tests.py`). The library uses no builtin that is missing from any of them, and it parenthesises `reduce … as` inside function arguments, which jq 1.7.1's grammar requires.
 
 ## Rules that hold everywhere
 
@@ -246,6 +246,66 @@ The input is an array of numbers that may contain nulls.
 ```json
 [1, 2.68, 0.13, -0.5, 1.5, null]
 [1, 3, 0, -1, 2, null]
+```
+<!-- /example -->
+
+### Distributions, profiles and diffs
+
+The first questions asked of a table: which values are common, how a number is spread, whether two numbers move together, what each column holds, and what changed since the last export.
+
+**`mode`.** Over a list: the most frequent non-null value; among equally frequent values the smallest in jq's sort order; null when there is none. **`value_counts`.** One row per distinct non-null value, `{value, count, share}`, most frequent first, ties by value; `share` is of the non-null values.
+
+**`bin_edges($lo; $hi; $n)`** gives the `$n + 1` edges of `$n` equal bins. **`histogram($edges)`**, over a list of numbers, gives one row per bin, `{from, to, count}`: a bin holds `from <= v < to`, and the last bin also holds `v == to`, as numpy's histogram does. Nulls are skipped. A value outside the edges is an error, never a dropped value.
+
+**`corr(x; y)`.** Pearson's correlation over the rows where both are non-null; null with fewer than two such rows or when either side does not vary. Matches SQL `corr`.
+
+<!-- example: distributions -->
+```jq
+[{x: 16, y: 1, label: "a"}, {x: 32, y: 2, label: "b"}, {x: 64, y: 5, label: "b"}, {x: 64, y: 4, label: null}, {x: 8, y: 1, label: "c"}] | {mode: (map(.label) | mode), counts: (map(.label) | value_counts), histogram: (map(.x) | histogram(bin_edges(0; 64; 4))), corr: (corr(.x; .y) | round_to(4))}
+```
+
+```json
+{
+  "mode": "b",
+  "counts": [{"value": "b", "count": 2, "share": 0.5}, {"value": "a", "count": 1, "share": 0.25}, {"value": "c", "count": 1, "share": 0.25}],
+  "histogram": [{"from": 0, "to": 16, "count": 1}, {"from": 16, "to": 32, "count": 1}, {"from": 32, "to": 48, "count": 1}, {"from": 48, "to": 64, "count": 2}],
+  "corr": 0.9715
+}
+```
+<!-- /example -->
+
+The two values of 64 fall in the last bin because it includes its upper edge.
+
+**`profile`.** One row per column of a table, columns in name order: `rows`, `present` (rows that have the field), `nulls` (null or absent), `empty` (the value `""`), `distinct` (non-null values), `types` (jq type name to count), and `min` and `max` when the non-null values are all numbers or all strings. It shows what the null rule would otherwise hide: an empty string is not a null, and a column that mixes numbers and strings has no minimum.
+
+<!-- example: profile -->
+```jq
+[{host: "web01", site: "North", ram: 32, os: "linux"}, {host: "db01", site: "South", ram: 64, os: "linux"}, {host: "new01", site: "", ram: 16, os: null}] | profile
+```
+
+```json
+[
+  {"column": "host", "rows": 3, "present": 3, "nulls": 0, "empty": 0, "distinct": 3, "types": {"string": 3}, "min": "db01", "max": "web01"},
+  {"column": "os", "rows": 3, "present": 3, "nulls": 1, "empty": 0, "distinct": 1, "types": {"null": 1, "string": 2}, "min": "linux", "max": "linux"},
+  {"column": "ram", "rows": 3, "present": 3, "nulls": 0, "empty": 0, "distinct": 3, "types": {"number": 3}, "min": 16, "max": 64},
+  {"column": "site", "rows": 3, "present": 3, "nulls": 0, "empty": 1, "distinct": 3, "types": {"string": 3}, "min": "", "max": "South"}
+]
+```
+<!-- /example -->
+
+**`diff_tables($old; key)`.** What changed between two versions of a table that share a key; the input is the new table. One row per key that was added, removed or changed, sorted by key: `{key, change, fields, old, new}`; `fields` names the fields whose values differ, and unchanged rows are left out. A key that appears twice in either table, or a null key, is an error. Matches a SQL `FULL JOIN` on the key with `IS DISTINCT FROM` per field.
+
+<!-- example: diff_tables -->
+```jq
+[{host: "web01", site: "North", ram: 16, os: "linux"}, {host: "db01", site: "South", ram: 64, os: "linux"}, {host: "old01", site: "North", ram: 8, os: ""}] as $yesterday | [{host: "web01", site: "North", ram: 32, os: "linux"}, {host: "db01", site: "South", ram: 64, os: "linux"}, {host: "new01", site: "", ram: 16, os: null}] | diff_tables($yesterday; .host) | map({key, change, fields, was: (.old.ram // null), now: (.new.ram // null)})
+```
+
+```json
+[
+  {"key": "new01", "change": "added", "fields": [], "was": null, "now": 16},
+  {"key": "old01", "change": "removed", "fields": [], "was": 8, "now": null},
+  {"key": "web01", "change": "changed", "fields": ["ram"], "was": 16, "now": 32}
+]
 ```
 <!-- /example -->
 
@@ -1027,7 +1087,9 @@ A caller that partitions the input and runs each part separately gets the same a
 
 | The function's answer | Safe split | Combine by |
 |---|---|---|
-| a sum or count over rows (`sum_nonnull`, `count_nonnull`, `group_agg` with sums and counts) | anywhere | adding the parts |
+| a sum or count over rows (`sum_nonnull`, `count_nonnull`, `group_agg` with sums and counts, `histogram`, `value_counts` counts) | anywhere | adding the parts |
+| compares two tables by key (`diff_tables`) | both tables by the key | concatenating |
+| needs every value (`mode`, `corr`, `profile`) | do not split, or carry counts and sums per part and combine them yourself | |
 | reads only its own group's rows (`median`, `quantile_cont`, `group_agg` with any aggregate, `over` windows, `pivot`) | by the group key | concatenating |
 | follows one entity through its events (`funnel_steps`, `cohorts`) | by the entity key | concatenating |
 | counts entities (`funnel`, `retention`) | by the entity key: run `funnel_steps` or `cohorts` on the parts, concatenate, then count once | counting after concatenating |
@@ -1050,9 +1112,10 @@ A mean is not a sum: split it with its group's rows, or carry the sum and the co
 - **Measures in a context.** At 379,600 rows a daily report with share of total, prior day or to date takes 3.1 to 5.0 s on jq 1.8.2 and 1.5 to 2.6 s on gojq, about 1.3 to 2 times plain `group_by`, in step with the rows. A filter outside the report's levels costs a scan per cell (75 s on jq 1.8.2 for 77 cells). Not measured with thousands of cells.
 - **Intervals.** At 200,000 lease events over about 4,000 addresses in the Python `jq` package, parsing included: `intervals_from_events` 8.4 s (180,000 intervals), `join_within` 4.0 s for 50,000 lookups, `merge_intervals` 5.1 s, `concurrency` 4.7 s.
 - **Funnels and retention.** At 200,000 events over about 25,000 entities in the Python `jq` package, parsing included: `funnel` 5.7 s, `retention` over 12 periods 3.0 s, `cohorts` 2.2 s.
+- **Distributions, profiles, diffs.** At 200,000 rows of five fields in the Python `jq` package, parsing included: `mode` 1.5 s, `value_counts` 1.6 s, `histogram` 2.8 s, `corr` 2.0 s, `profile` 7.8 s, `diff_tables` 4.4 s.
 - **Converters.** At 200,000 rows in the Python `jq` package, parsing included: `unnest` 2.1 s, `to_map` 0.9 s, `rows_from_map` 2.1 s, `to_csv` 0.8 s, `node_link` 2.6 s, `flatten_fields` 12.6 s (it walks every field of every row).
 - **Trees and graphs.** Time grows in step with the input. In the Python `jq` package, parsing included, 200,000 edges or nodes take: `reachable` 6.9 s, `hops` 7.1 s, `components` 11.6 s, `topo_order` 8.1 s, `tree_paths` 7.7 s in a shallow tree and 20.1 s in one thousands of levels deep (its output, every node's full ancestry, is what grows). `tree_rollup` and `nested_from_nodes` call `tree_paths`. The weighted `shortest_path` scans for the nearest node at each step and is meant for a few thousand nodes.
-- **Not included yet.** Relationships between tables in the DAX sense (join or `lookup` first), fuzzy matching, approximate quantiles, mode, histograms, correlation, fill-down, top-n per group, fiscal calendars and holidays.
+- **Not included yet.** Relationships between tables in the DAX sense (join or `lookup` first), fuzzy matching, approximate quantiles, rank correlation, fill-down, top-n per group, fiscal calendars and holidays.
 
 ## Files and tests
 
@@ -1067,7 +1130,7 @@ A mean is not a sum: split it with its group's rows, or carry the sum and the co
 | `tests/make_incidents.py` | writes `tests/fixtures/made_up_incidents.json` from a fixed seed |
 | `tests/run_tests.py` | runs every case on each jq engine and the Python `jq` package and compares with DuckDB |
 | `tools/reference_examples.py` | runs every example in this README and writes its output here |
-| `tools/bench_rows.py`, `tools/bench_converters.py`, `tools/bench_intervals.py`, `tools/bench_event_paths.py`, `tools/bench_graphs.py` | time the library's questions and its converters at a given number of rows |
+| `tools/bench_rows.py`, `tools/bench_converters.py`, `tools/bench_intervals.py`, `tools/bench_event_paths.py`, `tools/bench_graphs.py`, `tools/bench_profiles.py` | time the library's questions and its converters at a given number of rows |
 | `tests/check_names.py` | fails when a public function has the name of an engine builtin; runs before the cases |
 | `docs/design/`, `docs/specs/` | the shapes design, the feature matrix, and one spec per sprint |
 

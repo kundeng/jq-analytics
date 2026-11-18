@@ -974,3 +974,94 @@ def retention(entity; period; $periods):
      | range($c; $np) as $p | ($cnt[$p | tostring] // 0) as $n
      | {cohort: $periods[$c], period: $periods[$p], offset: ($p - $c), entities: $n,
         cohort_size: ($m | length), rate: ($n / ($m | length))}];
+
+# ---------------------------------------------------------------- distributions, profiles, diffs
+
+# mode: the most frequent non-null value of a list; among equally frequent values the smallest in
+# jq's sort order; null when there is none.
+def mode: nonnull | if length == 0 then null else group_by(.) | map([-length, .[0]]) | min | .[1] end;
+
+# value_counts: one row per distinct non-null value of a list: {value, count, share (of the non-null
+# values)}, most frequent first, ties by value.
+def value_counts:
+  nonnull | length as $n | group_by(.) | map({value: .[0], count: length, share: (length / $n)}) | sort_by([-.count, .value]);
+
+# bin_edges: $n + 1 equally spaced numbers from $lo to $hi, the edges of $n bins
+def bin_edges($lo; $hi; $n):
+  if ($hi > $lo and $n >= 1) | not then error("bin_edges: need hi > lo and n >= 1")
+  else [range(0; $n + 1) | $lo + ($hi - $lo) * . / $n] end;
+
+# histogram: counts of a list of numbers per bin, the bins given by their edges (bin_edges, or any
+# increasing list): one row per bin {from, to, count}. A bin holds from <= v < to, and the last bin
+# also holds v == to, as numpy's histogram does. Nulls are skipped. A value outside the edges is an
+# error, not a dropped value; so are edges that are not at least two increasing numbers.
+def histogram($edges):
+  ($edges | length) as $k
+  | if $k < 2 or ($edges | any(type != "number")) or ([range(1; $k) | select($edges[.] <= $edges[. - 1])] | length) > 0
+    then error("histogram: edges must be at least two increasing numbers")
+    else
+    (reduce (nonnull[]) as $v ({};
+       if ($v | type) != "number" or $v < $edges[0] or $v > $edges[$k - 1]
+       then error("histogram: value \($v | tojson) is outside the edges")
+       else ($edges | bsearch($v)) as $i
+         | (if $i < 0 then -2 - $i elif $i == $k - 1 then $i - 1 else $i end) as $b
+         | .[$b | tostring] += 1
+       end)) as $c
+    | [range(0; $k - 1) | {from: $edges[.], to: $edges[. + 1], count: ($c[tostring] // 0)}]
+    end;
+
+# corr: Pearson's correlation of x and y over the rows where both are non-null; null with fewer than
+# two such rows, or when either side does not vary. Matches SQL's corr.
+def corr(x; y):
+  [.[] | [(x), (y)] | select(.[0] != null and .[1] != null)] as $p
+  | ($p | length) as $n
+  | if $n < 2 then null
+    else (($p | map(.[0]) | add) / $n) as $mx | (($p | map(.[1]) | add) / $n) as $my
+    | (reduce $p[] as $q ([0, 0, 0];
+         ($q[0] - $mx) as $dx | ($q[1] - $my) as $dy | [.[0] + $dx * $dy, .[1] + $dx * $dx, .[2] + $dy * $dy])) as $s
+    | if $s[1] == 0 or $s[2] == 0 then null else $s[0] / (($s[1] * $s[2]) | sqrt) end
+    end;
+
+# profile: one row per column of a table, columns in name order:
+#   {column, rows (rows in the table), present (rows that have the field), nulls (rows where it is
+#    null or absent), empty (rows where it is ""), distinct (distinct non-null values),
+#    types (jq type name -> count, over the rows that have the field),
+#    min, max (the smallest and largest non-null value when all non-null values are numbers or all
+#    are strings; null otherwise)}
+def profile:
+  . as $rows | length as $n
+  | ([.[] | keys[]] | unique) as $cols
+  | [$cols[] as $c
+     | [$rows[] | select(has($c)) | .[$c]] as $pv
+     | ($pv | map(select(. != null))) as $nn
+     | ($nn | map(type) | unique) as $ts
+     | {column: $c, rows: $n, present: ($pv | length), nulls: ($n - ($nn | length)),
+        empty: ($nn | map(select(. == "")) | length), distinct: ($nn | unique | length),
+        types: ($pv | group_by(type) | map({key: (.[0] | type), value: length}) | from_entries),
+        min: (if $ts == ["number"] or $ts == ["string"] then ($nn | min) else null end),
+        max: (if $ts == ["number"] or $ts == ["string"] then ($nn | max) else null end)}];
+
+def _diff_index(key; $who):
+  reduce .[] as $r ({}; ($r | key) as $k
+    | if $k == null then error("diff_tables: a row of the \($who) table has a null key")
+      elif has($k | tojson) then error("diff_tables: key \($k | tojson) appears twice in the \($who) table")
+      else .[$k | tojson] = $r end);
+
+# diff_tables: what changed between two versions of a table that share a key. The input is the new
+# table, $old the old one. One row per key that was added, removed or changed, sorted by key:
+# {key, change ("added", "removed" or "changed"), fields (for a changed row, the fields whose values
+# differ, in name order; a field present on one side only counts), old, new (the rows; null on the
+# side that has none)}. Unchanged rows are left out. A key that appears twice in either table, or
+# a null key, is an error.
+def diff_tables($old; key):
+  _diff_index(key; "new") as $n | ($old | _diff_index(key; "old")) as $o
+  | ([.[] | key] + [$old[] | key] | unique) as $ks
+  | [$ks[] as $k | ($k | tojson) as $j | $n[$j] as $a | $o[$j] as $b
+     | if $b == null then {key: $k, change: "added", fields: [], old: null, new: $a}
+       elif $a == null then {key: $k, change: "removed", fields: [], old: $b, new: null}
+       elif $a == $b then empty
+       else {key: $k, change: "changed",
+             fields: ([($a | keys[]), ($b | keys[])] | unique
+                      | map(select(. as $f | ($a | has($f)) != ($b | has($f)) or $a[$f] != $b[$f]))),
+             old: $b, new: $a}
+       end];

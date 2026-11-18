@@ -1247,5 +1247,255 @@
       "n": 3000
     },
     "jq": "[range(0; 3000) | {id: ., parent: (if . == 0 then null else . - 1 end)}] | tree_paths(.id; .parent) | {deepest: (map(.depth) | max), last_ancestry_ends: (.[-1].ancestry[-2:]), n: length}"
+  },
+  {
+    "name": "diff_tables_walkthrough",
+    "input": "tests/fixtures/hosts_today.json",
+    "vars": {
+      "old": "tests/fixtures/hosts_yesterday.json"
+    },
+    "expect_value": [
+      {
+        "key": "new01",
+        "change": "added",
+        "fields": []
+      },
+      {
+        "key": "old01",
+        "change": "removed",
+        "fields": []
+      },
+      {
+        "key": "web01",
+        "change": "changed",
+        "fields": [
+          "ram"
+        ]
+      }
+    ],
+    "jq": "diff_tables($old; .host) | map({key, change, fields})"
+  },
+  {
+    "name": "diff_tables_rows",
+    "input": "tests/fixtures/hosts_today.json",
+    "vars": {
+      "old": "tests/fixtures/hosts_yesterday.json"
+    },
+    "expect_value": [
+      {
+        "old": null,
+        "new": "new01"
+      },
+      {
+        "old": "old01",
+        "new": null
+      },
+      {
+        "old": 16,
+        "new": 32
+      }
+    ],
+    "jq": "diff_tables($old; .host) | map({old: (if .change == \"changed\" then .old.ram else .old.host end), new: (if .change == \"changed\" then .new.ram else .new.host end)})"
+  },
+  {
+    "name": "profile_walkthrough",
+    "input": "tests/fixtures/hosts_today.json",
+    "expect_value": [
+      {
+        "column": "host",
+        "rows": 3,
+        "present": 3,
+        "nulls": 0,
+        "empty": 0,
+        "distinct": 3,
+        "types": {
+          "string": 3
+        },
+        "min": "db01",
+        "max": "web01"
+      },
+      {
+        "column": "os",
+        "rows": 3,
+        "present": 3,
+        "nulls": 1,
+        "empty": 0,
+        "distinct": 1,
+        "types": {
+          "null": 1,
+          "string": 2
+        },
+        "min": "linux",
+        "max": "linux"
+      },
+      {
+        "column": "ram",
+        "rows": 3,
+        "present": 3,
+        "nulls": 0,
+        "empty": 0,
+        "distinct": 3,
+        "types": {
+          "number": 3
+        },
+        "min": 16,
+        "max": 64
+      },
+      {
+        "column": "site",
+        "rows": 3,
+        "present": 3,
+        "nulls": 0,
+        "empty": 1,
+        "distinct": 3,
+        "types": {
+          "string": 3
+        },
+        "min": "",
+        "max": "South"
+      }
+    ],
+    "jq": "profile"
+  },
+  {
+    "name": "profile_ragged",
+    "input": "tests/fixtures/nums.json",
+    "expect_value": [
+      {
+        "column": "a",
+        "rows": 3,
+        "present": 2,
+        "nulls": 1,
+        "empty": 0,
+        "distinct": 2,
+        "types": {
+          "number": 1,
+          "string": 1
+        },
+        "min": null,
+        "max": null
+      },
+      {
+        "column": "b",
+        "rows": 3,
+        "present": 1,
+        "nulls": 3,
+        "empty": 0,
+        "distinct": 0,
+        "types": {
+          "null": 1
+        },
+        "min": null,
+        "max": null
+      }
+    ],
+    "jq": "[{a: 1}, {a: \"x\", b: null}, {}] | profile"
+  },
+  {
+    "name": "histogram_walkthrough",
+    "input": "tests/fixtures/nums.json",
+    "expect_value": {
+      "edges": [
+        0,
+        16,
+        32,
+        48,
+        64
+      ],
+      "counts": [
+        1,
+        1,
+        1,
+        2
+      ]
+    },
+    "jq": "{edges: bin_edges(0; 64; 4), counts: ([16, 32, null, 64, 64, 8] | histogram(bin_edges(0; 64; 4)) | map(.count))}"
+  },
+  {
+    "name": "mode_and_ties",
+    "input": "tests/fixtures/nums.json",
+    "expect_value": {
+      "plain": "b",
+      "tie": 2,
+      "none": null,
+      "counts": [
+        {
+          "value": "b",
+          "count": 2,
+          "share": 0.5
+        },
+        {
+          "value": "a",
+          "count": 1,
+          "share": 0.25
+        },
+        {
+          "value": "c",
+          "count": 1,
+          "share": 0.25
+        }
+      ]
+    },
+    "jq": "{plain: ([\"a\", \"b\", null, \"b\", \"c\"] | mode), tie: ([3, 2, 3, 2, null] | mode), none: ([null] | mode), counts: ([\"a\", \"b\", null, \"b\", \"c\"] | value_counts)}"
+  },
+  {
+    "name": "corr_edges",
+    "input": "tests/fixtures/nums.json",
+    "expect_value": {
+      "perfect": 1,
+      "inverse": -1,
+      "constant": null,
+      "one_pair": null,
+      "with_nulls": 1
+    },
+    "jq": "{perfect: ([{x: 1, y: 2}, {x: 2, y: 4}, {x: 3, y: 6}] | corr(.x; .y)), inverse: ([{x: 1, y: 3}, {x: 2, y: 2}, {x: 3, y: 1}] | corr(.x; .y)), constant: ([{x: 1, y: 5}, {x: 2, y: 5}] | corr(.x; .y)), one_pair: ([{x: 1, y: 5}] | corr(.x; .y)), with_nulls: ([{x: 1, y: 2}, {x: null, y: 9}, {x: 2, y: 4}, {x: 7, y: null}] | corr(.x; .y))}"
+  },
+  {
+    "name": "distributions",
+    "input": "tests/fixtures/stats_generated.json",
+    "sql": "distributions.sql",
+    "jq": "{mode: (map(.label) | mode), counts: (map(.label) | value_counts), corr: corr(.x; .y), hist: (map(.x) | histogram(bin_edges(0; 100; 5)))}"
+  },
+  {
+    "name": "profile",
+    "input": "tests/fixtures/stats_generated.json",
+    "sql": "profile.sql",
+    "jq": "profile | map({key: .column, value: {rows, nulls, empty, distinct, min, max}}) | from_entries | {x, label, id}"
+  },
+  {
+    "name": "diff_tables",
+    "input": "tests/fixtures/versions_new.json",
+    "vars": {
+      "old": "tests/fixtures/versions_old.json"
+    },
+    "sql": "diff_tables.sql",
+    "jq": "diff_tables($old; .id) | map({key, change, fields})"
+  },
+  {
+    "name": "histogram_outside_error",
+    "input": "tests/fixtures/nums.json",
+    "expect_error": "is outside the edges",
+    "jq": "[1, 5, 11] | histogram([0, 5, 10])"
+  },
+  {
+    "name": "histogram_edges_error",
+    "input": "tests/fixtures/nums.json",
+    "expect_error": "histogram: edges must be at least two increasing numbers",
+    "jq": "[1] | histogram([0, 5, 5])"
+  },
+  {
+    "name": "bin_edges_error",
+    "input": "tests/fixtures/nums.json",
+    "expect_error": "bin_edges: need hi > lo and n >= 1",
+    "jq": "bin_edges(5; 5; 3)"
+  },
+  {
+    "name": "diff_tables_duplicate_error",
+    "input": "tests/fixtures/dup_keys.json",
+    "vars": {
+      "old": "tests/fixtures/hosts_yesterday.json"
+    },
+    "expect_error": "appears twice in the new table",
+    "jq": "diff_tables($old; .id)"
   }
 ]

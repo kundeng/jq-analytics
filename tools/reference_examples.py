@@ -122,6 +122,15 @@ GRAPH_EXAMPLES: dict[str, tuple[str, bool, bool]] = {
 }
 EXAMPLES.update(GRAPH_EXAMPLES)
 
+HOSTS_OLD = '[{host: "web01", site: "North", ram: 16, os: "linux"}, {host: "db01", site: "South", ram: 64, os: "linux"}, {host: "old01", site: "North", ram: 8, os: ""}]'
+HOSTS_NEW = '[{host: "web01", site: "North", ram: 32, os: "linux"}, {host: "db01", site: "South", ram: 64, os: "linux"}, {host: "new01", site: "", ram: 16, os: null}]'
+PROFILE_EXAMPLES: dict[str, tuple[str, bool, bool]] = {
+    "distributions": ('[{x: 16, y: 1, label: "a"}, {x: 32, y: 2, label: "b"}, {x: 64, y: 5, label: "b"}, {x: 64, y: 4, label: null}, {x: 8, y: 1, label: "c"}] | {mode: (map(.label) | mode), counts: (map(.label) | value_counts), histogram: (map(.x) | histogram(bin_edges(0; 64; 4))), corr: (corr(.x; .y) | round_to(4))}', False, True),
+    "profile": (HOSTS_NEW + " | profile", False, True),
+    "diff_tables": (HOSTS_OLD + " as $yesterday | " + HOSTS_NEW + " | diff_tables($yesterday; .host) | map({key, change, fields, was: (.old.ram // null), now: (.new.ram // null)})", False, True),
+}
+EXAMPLES.update(PROFILE_EXAMPLES)
+
 CONTEXT_EXAMPLES: dict[str, tuple[str, bool, bool]] = {
     "context_rollup": (REVENUE + SALES + ' | rollup(["region", "product"]; {revenue: measure(revenue), share_of_region: share(revenue; without("product")), share_of_all: share(revenue; keep_only([]))})', False, True),
     "context_time": (REVENUE + SALES + ' | rollup(["month"]; {revenue: measure(revenue), prior: calc(revenue; shift("month"; -1)), to_date: calc(revenue; to_date("month")), east_only: calc(revenue; with_filter({region: "east"}))})', False, True),
