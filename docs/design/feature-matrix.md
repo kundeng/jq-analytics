@@ -1,6 +1,6 @@
 # Feature matrix
 
-What the library does, family by family, and how far each part is carried: the functions in `analytics.jq`, the test cases, the answer key, and the README. Counts are as of version 0.2.0 and come from `tests/cases.json` and the library file.
+What the library does, family by family, and how far each part is carried: the functions in `analytics.jq`, the test cases, the answer key, and the README. Counts are as of version 0.3.0 and come from `tests/cases.json` and the library file.
 
 ```mermaid
 flowchart LR
@@ -26,6 +26,9 @@ Legend: ✅ done · 🟡 partial · ⏳ planned · — not involved. A case coun
 | state-over-time | an event table, per entity | ✅ 4 | ✅ 5 | 4 | ✅ | five engines, 2026-11-18 | |
 | trees-and-graphs | tree, graph | ✅ 4 | ✅ 5 | 2 | ✅ | five engines, 2026-11-18 | |
 | measures-at-levels | star | ✅ 10 | ✅ 9 | 7 | ✅ | five engines, 2026-11-18 | |
+| intervals-from-events | an event table, per resource | ✅ 1 | ✅ 6 | 0 | ✅ | five engines; equal to a reference on real lease and session logs, 2026-11-18 | [15](../specs/15-intervals/spec.md) |
+| join-within | rows and intervals | ✅ 1 | ✅ 1 | 1 | ✅ | five engines, 2026-11-18 | [15](../specs/15-intervals/spec.md) |
+| interval-merge, interval-concurrency | intervals | ✅ 2 | ✅ 5 | 2 | ✅ | five engines, 2026-11-18 | [15](../specs/15-intervals/spec.md) |
 | converters-in | sources to table or tree | ✅ 6 | ✅ 12 | 3 | ✅ | five engines, 2026-11-18 | [10](../specs/10-shape-converters/spec.md) |
 | converters-out | shapes to map, nested tree, node-link, CSV | ✅ 4 | ✅ 7 | 0 | ✅ | five engines, 2026-11-18 | [10](../specs/10-shape-converters/spec.md) |
 | shapes-model | | — | — | — | ✅ | document and README | [05](../specs/05-shapes-model/spec.md) |
@@ -34,6 +37,7 @@ Legend: ✅ done · 🟡 partial · ⏳ planned · — not involved. A case coun
 
 > [!warning] Built, with a gap in the tests
 > - Cases without a DuckDB answer are error cases, edge cases checked against literals, and three worked examples checked against recorded answers. The tree functions (`tree_paths`, `tree_rollup`) and most converters are among those: their answers are recorded or hand-worked, not computed by DuckDB.
+> - `intervals_from_events` has no DuckDB answer: its cases are hand-worked, a generated log checks that intervals never overlap, and the comparison with real logs is recorded outside this repository.
 > - `tree_paths` slows sharply on deep trees (16 s for 4,000 nodes dozens of levels deep); `tree_rollup` and `nested_from_nodes` inherit it. Not fixed.
 > - The split table in the README is derived from what each function reads. No test yet runs a function on partitions and compares with the whole.
 
@@ -41,7 +45,6 @@ Legend: ✅ done · 🟡 partial · ⏳ planned · — not involved. A case coun
 
 | Feature | Shape | State | Spec |
 |---|---|---|---|
-| intervals built from events; point-in-interval join; merging and concurrency | event table to intervals | ⏳ | 15 |
 | calendar table with ISO and US weeks; period steps that follow the calendar | star | ⏳ | 20 |
 | funnels, cohorts, retention | event table | ⏳ | 25 |
 | shortest path, dependency order | graph | ⏳ | 30 |

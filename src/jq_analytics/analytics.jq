@@ -622,3 +622,127 @@ def node_link(from; to):
 # strings, so run jq with -r. A null is an empty cell. A nested value in a cell is an error from
 # @csv itself: flatten_fields first.
 def to_csv($cols): ($cols | @csv), (.[] | [.[$cols[]]] | @csv);
+
+# ---------------------------------------------------------------- intervals
+
+# Intervals are rows with a key, a start and an end, [start, end): closed at the start, open at
+# the end, as join_overlap reads them. A null end means still open.
+
+# intervals_from_events: validity intervals built from an event log. A resource (an address, a
+# seat, a session id) has at most one holder at a time. For each event, `kind` gives "open" or
+# "hold" (evidence that `holder` has `resource` at `time`: a grant, a renewal, a start, a
+# keep-alive), "release" (the holder gives it up), or null (ignored). `ttl` gives how many seconds
+# a hold stays valid without another one, or null when holds do not expire.
+#   - A hold opens an interval, or extends the open one when it is from the same holder: its end
+#     becomes the later of its end and time + ttl (null when this hold's ttl is null).
+#   - An interval ends in exactly one way, in `ended_by`: "released" (a release from its holder, at
+#     that time), "taken_over" (a hold from another holder while it is still valid, at that time),
+#     "lapsed" (its end passed before the next event on the resource), or "open" (still open at the
+#     end of the data; its end is the last hold + ttl, or null).
+#   - At the same time on one resource, events apply in the order open, hold, release. A release from someone
+#     who does not hold the resource, or when nothing is held, is ignored.
+#   - `start_seen` is true when the interval's first event was "open": a "hold" may be a renewal of
+#     something that began before the data does.
+# `last` is the time of the interval's last hold: the last evidence, which is what there is to go
+# on when an open interval has no end.
+# One row per interval: {resource, holder, start, end, last, events, start_seen, ended_by}; resources in
+# order of first appearance, intervals in time order. Intervals of one resource never overlap.
+# A kind other than the three, or a null time on an event with a kind, is an error naming the event.
+def _iv_check(time; kind):
+  to_entries[] | .key as $i | .value | (kind) as $k
+  | if $k == null then empty
+    elif $k != "open" and $k != "hold" and $k != "release"
+    then error("intervals_from_events: event \($i) has kind \($k | tojson); expected \"open\", \"hold\", \"release\" or null")
+    elif (time) == null then error("intervals_from_events: event \($i) has a kind but no time")
+    else empty end;
+def intervals_from_events(resource; holder; time; kind; ttl):
+  ([_iv_check(time; kind)] | length) as $_
+  | [map(select((kind) != null)) | _groups(resource)[]
+     | (.[0] | resource) as $res
+     | sort_by([(time), ((kind) as $k | if $k == "open" then 0 elif $k == "hold" then 1 else 2 end)])
+     # one pass; closed intervals leave through .out as they close, so nothing is appended to a
+     # growing array. The trailing null is the end-of-data marker.
+     | foreach (.[], null) as $e ({cur: null, out: []};
+         .out = []
+         | if $e == null then
+             (if .cur != null then .out = [.cur + {ended_by: "open"}] | .cur = null else . end)
+           else
+             ($e | time) as $t | ($e | kind) as $k | ($e | holder) as $h | ($e | ttl) as $ttl
+             | (if .cur != null and .cur.end != null and $t >= .cur.end
+                then .out += [.cur + {ended_by: "lapsed"}] | .cur = null else . end)
+             | if $k == "release" then
+                 (if .cur != null and .cur.holder == $h
+                  then .out += [.cur + {end: $t, ended_by: "released"}] | .cur = null else . end)
+               elif .cur != null and .cur.holder == $h then
+                 .cur.events += 1 | .cur.last = $t
+                 | .cur.end = (if $ttl == null then null elif .cur.end == null then $t + $ttl
+                               else ([.cur.end, $t + $ttl] | max) end)
+               else
+                 (if .cur != null then .out += [.cur + {end: $t, ended_by: "taken_over"}] else . end)
+                 | .cur = {resource: $res, holder: $h, start: $t,
+                           end: (if $ttl == null then null else $t + $ttl end),
+                           last: $t, events: 1, start_seen: ($k == "open")}
+               end
+           end;
+         .out[])];
+
+# join_within (left outer): each left row with the interval of the same key whose [rstart, rend)
+# contains the left row's ltime; a null rend means still open. No such interval, or a null key or
+# time on the left: the left row alone. When several intervals of a key contain the time, the one
+# that started last. Merged like every flat join: a field on both sides with different values is
+# an error. Use it for "who held this at T"; join_asof is for "the latest value at or before T".
+def join_within($intervals; lkey; rkey; ltime; rstart; rend):
+  1.7976931348623157e308 as $inf
+  | ([$intervals[] | select((rkey) != null and (rstart) != null)] | group_by(rkey)
+     | map(sort_by(rstart)
+           | {key: (.[0] | rkey | tojson),
+              value: {rows: ., s: map(rstart), e: map((rend) // $inf)}}
+           # m[i]: the latest end among rows 0..i, so a search going back can stop early
+           | .value.m = [foreach .value.e[] as $x (null; if . == null or $x > . then $x else . end)])
+     | from_entries) as $ix
+  | [.[] as $l | ($l | lkey) as $k | ($l | ltime) as $t
+     | if $k == null or $t == null or $ix[$k | tojson] == null then $l
+       else $ix[$k | tojson] as $g
+       | ($g.s | bsearch($t)) as $i
+       | (if $i >= 0 then $i else -2 - $i end) as $at
+       # the last start <= $t (bsearch may land on any of several equal starts)
+       | ($at | until(. + 1 >= ($g.s | length) or $g.s[. + 1] > $t; . + 1)) as $last
+       # go back until an interval contains $t, or no earlier one can
+       | ($last | until(. < 0 or $g.e[.] > $t or $g.m[.] <= $t; . - 1)) as $c
+       | if $c >= 0 and $g.e[$c] > $t then _merge($l; $g.rows[$c]) else $l end
+       end];
+
+def _iv_order_check(start; fin; $who):
+  if any(.[]; (fin) != null and (fin) < (start)) then error("\($who): an interval ends before it starts") else . end;
+
+# merge_intervals: per key, intervals that overlap or touch become one row
+# {key..., start, end, merged (how many went in)}; keys in order of first appearance, intervals in
+# time order. A null end is open-ended and absorbs everything of its key that starts after it.
+def merge_intervals(key; start; fin):
+  _iv_order_check(start; fin; "merge_intervals")
+  | [_groups(key)[]
+     | (.[0] | key | if type == "object" then . else {key: .} end) as $k
+     | sort_by(start)
+     | foreach (.[], null) as $r ({cur: null, out: []};
+         .out = []
+         | if $r == null then (if .cur != null then .out = [.cur] | .cur = null else . end)
+           else ($r | start) as $s | ($r | fin) as $e
+           | if .cur != null and (.cur.end == null or $s <= .cur.end)
+             then .cur.merged += 1
+                  | .cur.end = (if .cur.end == null or $e == null then null else ([.cur.end, $e] | max) end)
+             else (if .cur != null then .out = [.cur] else . end)
+                  | .cur = $k + {start: $s, end: $e, merged: 1}
+             end
+           end;
+         .out[])];
+
+# concurrency: how many intervals are open over time: one row {t, open} per moment the count
+# changes, in time order (`end` is a jq keyword, so the parameter is called fin). An interval counts from its start up to, not including, its end; one
+# with a null end never stops counting. The peak is `concurrency(...) | max_by(.open)`.
+def concurrency(start; fin):
+  _iv_order_check(start; fin; "concurrency")
+  | [.[] | {t: (start), d: 1}, ((fin) as $e | if $e == null then empty else {t: $e, d: -1} end)]
+  | group_by(.t)
+  | [foreach .[] as $g ({open: 0};
+       ($g | map(.d) | add) as $net | {open: (.open + $net), t: $g[0].t, net: $net};
+       select(.net != 0) | {t, open})];

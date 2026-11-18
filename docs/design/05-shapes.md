@@ -4,8 +4,6 @@ The library takes JSON or YAML as it arrives and does everyday analytic work on 
 
 Every function takes **rows**: an array of objects. What differs between functions is which fields a row must carry. That requirement is a function's **shape**. This document defines the shapes, the sources that are not shapes yet, and the conversions between them.
 
-Functions marked *(planned)* are designed here and not in the library yet.
-
 ## The picture
 
 ```mermaid
@@ -38,7 +36,7 @@ flowchart LR
   X -- "nodes_from_nested" --> TR
   E -- "cast, parse_ts" --> T
   E -- "split_by" --> S
-  T -- "state_blocks, sessions, interval builder (planned)" --> I
+  T -- "intervals_from_events, state_blocks, sessions" --> I
   T -- "lookup" --> ST
   T -- "to_csv" --> CSV
   T -- "to_map" --> MAP
@@ -53,7 +51,7 @@ flowchart LR
 |---|---|---|---|
 | table | one record | `{"id": "REQ1", "site": "North", "hours": "4.5"}` | math over a list, types and time, grouping and windows, joins |
 | several tables | not a row: one object whose fields are tables | `{"dhcp": [...], "firewall": [...]}` | `split_by` makes it; `keep`, `shape` |
-| intervals | one span of one key, from a start to an end | `{"ip": "10.0.0.5", "mac": "m1", "start": 1731900000, "end": 1731943200}` | `join_overlap`; made by `state_blocks`, `sessions` |
+| intervals | one span of one key, from a start to an end | `{"ip": "10.0.0.5", "mac": "m1", "start": 1731900000, "end": 1731943200}` | `join_within`, `join_overlap`, `merge_intervals`, `concurrency`; made by `intervals_from_events`, `state_blocks`, `sessions` |
 | tree | one node, pointing at its parent | `{"id": "ops", "parent": "ceo"}` | `tree_paths`, `tree_rollup`, `nested_from_nodes` |
 | graph | one edge | `{"from": "web01", "to": "db01"}` | `reachable`, `components`, `node_link` |
 | star | a fact table plus dimension tables; the library builds a measure context from it | fact `{"day": "2026-03-02", "site_id": "s1", "amount": 40}`, dimension `{"id": "s1", "region": "east"}` | `lookup`; `rollup`, `measure`, `calc`, `share` and the context changes |
@@ -81,7 +79,7 @@ A source is a form data arrives in. It has to become a shape before a function c
 | Question | The event log becomes | Through |
 |---|---|---|
 | how long was each ticket in each state? | intervals | `state_blocks` |
-| which device held this address at 14:05? | intervals | the interval builder *(planned)*, then a point-in-interval join |
+| which device held this address at 14:05? | intervals | `intervals_from_events`, then `join_within` |
 | who reports to whom after these HR changes? | a tree | the latest row per person, then `tree_paths` |
 | which hosts talked to which? | a graph | one edge row per pair, then `components` |
 | requests per site per month, with subtotals? | a star | `lookup` to attach dimensions, then `rollup` |
@@ -154,7 +152,7 @@ A caller that partitions the input and runs each part separately gets the same a
 |---|---|---|
 | a sum or count over rows (`sum_nonnull`, `count_nonnull`, `group_agg` with sums and counts) | anywhere | adding the parts |
 | reads only its own group's rows (`median`, `quantile_cont`, `group_agg` with any aggregate, `over` windows, `pivot`) | by the group key | concatenating |
-| orders one entity's rows in time (`state_blocks`, `transitions`, `sessions`, `runs`, `join_asof`) | by the entity key, each part in time order | concatenating |
+| orders one entity's rows in time (`state_blocks`, `transitions`, `sessions`, `runs`, `join_asof`, `intervals_from_events` by resource, `merge_intervals` by key) | by the entity key, each part in time order | concatenating |
 | reads two tables (`join_*`, `lookup`, `join_overlap`) | both tables by the join key | concatenating |
 | walks a tree or graph (`tree_paths`, `tree_rollup`, `reachable`, `components`) | by connected component; when components are not known in advance, do not split | concatenating |
 | totals at several levels (`rollup`, `calc`, `share`) | do not split: a subtotal reads rows of every part | |
@@ -172,9 +170,9 @@ A mean is not a sum: split it as its group's rows, or carry the sum and the coun
 The tests a new one must pass, worked on the next shape in line:
 
 1. **Is it rows?** A shape is rows with required fields, or one object holding tables. *Intervals:* rows with a key, a start and an end. Yes.
-2. **Does a family take it as it is?** If no function reads it, it is a source, not a shape. *Intervals:* `join_overlap` reads them. Yes.
-3. **What makes it?** Name the conversion from a shape or source that exists. *Intervals:* `state_blocks` and `sessions` from an event table.
-4. **What does it refuse?** State the error for input that is not the shape. *Intervals:* an end before its start; today `join_overlap` matches nothing for such a row, and the planned interval builder will refuse it with an error naming the row.
+2. **Does a family take it as it is?** If no function reads it, it is a source, not a shape. *Intervals:* `join_within`, `join_overlap`, `merge_intervals` and `concurrency` read them. Yes.
+3. **What makes it?** Name the conversion from a shape or source that exists. *Intervals:* `intervals_from_events`, `state_blocks` and `sessions` from an event table.
+4. **What does it refuse?** State the error for input that is not the shape. *Intervals:* an end before its start is an error in `merge_intervals` and `concurrency`; `join_overlap` and `join_within` match nothing for such a row.
 5. **How is it split?** Add its row to the split table. *Intervals:* by key.
 
 A candidate that fails test 2 is added as a source with its converter, as the nested tree was.

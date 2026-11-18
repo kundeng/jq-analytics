@@ -1,6 +1,6 @@
 # analytics.jq: tables and statistics for jq
 
-`analytics.jq` is a jq module of 76 functions that let a jq program answer the questions people usually send to SQL, pandas or a graph library: hold several named tables at once, join them by key, condition and time, group and aggregate, percentiles, running and lagged values over ordered partitions, time series read as state machines, roll-ups over trees, reachability in graphs, measures evaluated at several levels of a report, and local time in a named time zone. Each function states its rule in a comment beside it (how it treats nulls, ties, order and rounding), and each rule is pinned by a test whose expected answer DuckDB computes. Its time-zone tables, generated from the IANA time-zone database, are a block inside the same file.
+`analytics.jq` is a jq module of 80 functions that let a jq program answer the questions people usually send to SQL, pandas or a graph library: hold several named tables at once, join them by key, condition and time, group and aggregate, percentiles, running and lagged values over ordered partitions, time series read as state machines, roll-ups over trees, reachability in graphs, validity intervals built from events, measures evaluated at several levels of a report, and local time in a named time zone. Each function states its rule in a comment beside it (how it treats nulls, ties, order and rounding), and each rule is pinned by a test whose expected answer DuckDB computes. Its time-zone tables, generated from the IANA time-zone database, are a block inside the same file.
 
 It exists because plain jq leaves those rules to whoever writes the program. In one analysis of service requests, four shared jq helpers each decided a number without saying how: one dropped unresolved tickets, one used a different percentile rule, one hardcoded a single year's daylight-saving switch, one rounded before comparing with a threshold and miscounted by one. This library is one place where those rules are written down, tested against DuckDB, and the same for every analysis that loads it.
 
@@ -42,7 +42,7 @@ Every function takes rows, an array of objects. What differs is which fields a r
 |---|---|---|---|
 | table | one record | `{"id": "REQ1", "site": "North", "hours": "4.5"}` | math over a list, types and time, grouping and windows, joins |
 | several tables | not a row: one object whose fields are tables | `{"dhcp": [...], "firewall": [...]}` | `split_by` makes it; `keep`, `shape` |
-| intervals | one span of one key, from a start to an end | `{"ip": "10.0.0.5", "mac": "m1", "start": 1731900000, "end": 1731943200}` | `join_overlap`; made by `state_blocks`, `sessions` |
+| intervals | one span of one key, from a start to an end | `{"ip": "10.0.0.5", "mac": "m1", "start": 1731900000, "end": 1731943200}` | `join_within`, `join_overlap`, `merge_intervals`, `concurrency`; made by `intervals_from_events`, `state_blocks`, `sessions` |
 | tree | one node, pointing at its parent | `{"id": "ops", "parent": "ceo"}` | `tree_paths`, `tree_rollup`; `nodes_from_nested` makes it |
 | graph | one edge | `{"from": "web01", "to": "db01"}` | `reachable`, `components`; `node_link` exports it |
 | star | a fact table plus dimension tables | fact `{"site_id": "s1", "amount": 40}`, dimension `{"id": "s1", "region": "east"}` | `lookup`; `rollup`, `measure`, `calc`, `share` |
@@ -75,7 +75,7 @@ The library is one file, `analytics.jq`, in a directory `<dir>` below. Its time-
 | Python `jq` package | `jq.compile('include "analytics" {search: "<dir>"}; ' + program).input_value(rows).first()`; the package has no `-L` and an empty default search list, so the path goes in the program |
 | Python package `jq_analytics` | `jq_analytics.include()` returns the `include` line with this package's directory filled in |
 
-Tested on jq 1.7.1 (Apple's build), jq 1.8.2, gojq 0.12.20, jaq 3.1.2 and the `jq` Python package 1.13.0, which builds jq 1.8.2: all pass the same 74 test cases (`tests/run_tests.py`). The library uses no builtin that is missing from any of them, and it parenthesises `reduce … as` inside function arguments, which jq 1.7.1's grammar requires.
+Tested on jq 1.7.1 (Apple's build), jq 1.8.2, gojq 0.12.20, jaq 3.1.2 and the `jq` Python package 1.13.0, which builds jq 1.8.2: all pass the same 86 test cases (`tests/run_tests.py`). The library uses no builtin that is missing from any of them, and it parenthesises `reduce … as` inside function arguments, which jq 1.7.1's grammar requires.
 
 ## Rules that hold everywhere
 
@@ -336,7 +336,7 @@ Name each table with `as $name` and refer to it by that name in any later step, 
 
 <!-- example: several_tables -->
 ```jq
-[{t: "100", ip_address: "10.1.1.55", user: "bsmith", src_ip: "", event_type: "dhcp"}, {t: "300", ip_address: "10.1.1.55", user: "jdoe", src_ip: "", event_type: "dhcp"}, {t: "10", ip_address: "10.1.1.99", user: "olduser", src_ip: "", event_type: "dhcp"}, {t: "400", ip_address: "", user: "", src_ip: "10.1.1.55", event_type: "firewall"}, {t: "1000", ip_address: "", user: "", src_ip: "10.1.1.99", event_type: "firewall"}] | split_by(.event_type) as $by_type | ($by_type.dhcp | map({ip: .ip_address, user, lease_t: (.t | tonumber)})) as $leases | ($by_type.firewall | map({ip: .src_ip, t: (.t | tonumber)})) as $hits | {split: ($by_type | shape | map_values(.rows)), answer: ($hits | join_asof($leases; .ip; .ip; .t; .lease_t; 300) | map({t, ip, user}))}
+[{t: "100", ip_address: "10.1.1.55", user: "bsmith", src_ip: "", event_type: "dhcp"}, {t: "300", ip_address: "10.1.1.55", user: "jdoe", src_ip: "", event_type: "dhcp"}, {t: "10", ip_address: "10.1.1.99", user: "olduser", src_ip: "", event_type: "dhcp"}, {t: "400", ip_address: "", user: "", src_ip: "10.1.1.55", event_type: "firewall"}, {t: "1000", ip_address: "", user: "", src_ip: "10.1.1.99", event_type: "firewall"}] | split_by(.event_type) as $by_type | ($by_type.dhcp | map({ip: .ip_address, user, lease_t: (.t | tonumber)})) as $leases | ($by_type.firewall | map({ip: .src_ip, t: (.t | tonumber)})) as $hits | {split: ($by_type | shape | map_values(.rows)), answer: (($leases | intervals_from_events(.ip; .user; .lease_t; "hold"; 600)) as $held | $hits | join_within($held; .ip; .resource; .t; .start; .end) | map({t, ip, user: .holder}))}
 ```
 
 ```json
@@ -427,7 +427,7 @@ The input is the left table and `$right` the right table. Rules for all joins: a
 ```
 <!-- /example -->
 
-**`join_asof($right; lkey; rkey; ltime; rtime)` and `join_asof(…; $max_age)`.** For each left row, the right row with the same key whose `rtime` is the latest at or before the left row's `ltime`; the left row alone when there is none. With `$max_age`, a match older than that is rejected. On ties in `rtime`, the first such right row in input order (DuckDB 2.0.0 gave the same on the test; pandas takes the last; SQL leaves it open). Matches DuckDB `ASOF LEFT JOIN … ON l.k = r.k AND l.t >= r.t` and pandas `merge_asof(direction="backward", tolerance=…)`; Power Query has no as-of join. **Cost:** it binary-searches each key's sorted times, then steps back through a run of equal times, so many identical timestamps under one key slow it down (as they slow DuckDB's).
+**`join_asof($right; lkey; rkey; ltime; rtime)` and `join_asof(…; $max_age)`.** For each left row, the right row with the same key whose `rtime` is the latest at or before the left row's `ltime`; the left row alone when there is none. With `$max_age`, a match older than that is rejected. On ties in `rtime`, the first such right row in input order (DuckDB 2.0.0 gave the same on the test; pandas takes the last; SQL leaves it open). Matches DuckDB `ASOF LEFT JOIN … ON l.k = r.k AND l.t >= r.t` and pandas `merge_asof(direction="backward", tolerance=…)`; Power Query has no as-of join. Use it when a value stays true until the next one replaces it; for "who held this at T", where holding can end, use [`join_within`](#intervals). **Cost:** it binary-searches each key's sorted times, then steps back through a run of equal times, so many identical timestamps under one key slow it down (as they slow DuckDB's).
 
 <!-- example: join_asof -->
 ```jq
@@ -456,6 +456,114 @@ The input is the left table and `$right` the right table. Rules for all joins: a
 ]
 ```
 <!-- /example -->
+
+### Intervals
+
+Many questions about logs are about validity: who held this address at that moment, which session was this request part of, how many were open at once. The answer needs intervals, and logs give events. Intervals here are rows with a key, a start and an end, `[start, end)`: closed at the start, open at the end, a null end meaning still open.
+
+**Which join when.**
+
+| The question | Use | Why |
+|---|---|---|
+| the latest value at or before T: a price, a configuration version, a reading | `join_asof` | the value stays true until the next one replaces it |
+| who or what held this at T: a lease, a session, a lock, a shift | `intervals_from_events`, then `join_within` | holding ends: by release, by expiry, by someone else taking over. An as-of join cannot see an ending |
+| which spans overlap which: shifts and outages, bookings and maintenance | `join_overlap` | both sides are intervals |
+
+**`intervals_from_events(resource; holder; time; kind; ttl)`.** Builds validity intervals from an event log. A resource (an address, a seat, a session id) has at most one holder at a time. For each event, `kind` gives `"open"` or `"hold"` (evidence that the holder has the resource: a grant, a renewal, a start, a keep-alive), `"release"`, or null to ignore it; `ttl` gives how many seconds a hold stays valid without another one, or null when holds do not expire. A hold opens an interval, or extends the open one when it comes from the same holder. Every interval ends in exactly one way, given in `ended_by`:
+
+- `"released"`: a release from its holder, at that time;
+- `"taken_over"`: a hold from another holder while it was still valid, at that time;
+- `"lapsed"`: its time to live ran out before the next event on the resource;
+- `"open"`: still open when the data ends. Its end is the last hold plus `ttl`, or null.
+
+One row per interval: `{resource, holder, start, end, last, events, start_seen, ended_by}`. `last` is the time of its last hold, the last evidence. `start_seen` is true when its first event was `"open"`: a `"hold"` may be the renewal of something that began before the data does. Events at the same time apply in the order open, hold, release. A release from someone who does not hold the resource is ignored. Intervals of one resource never overlap. A kind other than the three, or a null time on an event with a kind, is an error naming the event.
+
+<!-- example: intervals_build -->
+```jq
+[{res: "A", who: "m1", t: 0, kind: "hold", ttl: 100}, {res: "A", who: "m1", t: 60, kind: "hold", ttl: 100}, {res: "A", who: "m1", t: 120, kind: "release"}, {res: "A", who: "m2", t: 200, kind: "hold", ttl: 100}, {res: "A", who: "m3", t: 350, kind: "hold", ttl: 100}, {res: "A", who: "m4", t: 400, kind: "hold", ttl: 100}] | intervals_from_events(.res; .who; .t; .kind; .ttl)
+```
+
+```json
+[
+  {"resource": "A", "holder": "m1", "start": 0, "end": 120, "last": 60, "events": 2, "start_seen": false, "ended_by": "released"},
+  {"resource": "A", "holder": "m2", "start": 200, "end": 300, "last": 200, "events": 1, "start_seen": false, "ended_by": "lapsed"},
+  {"resource": "A", "holder": "m3", "start": 350, "end": 400, "last": 350, "events": 1, "start_seen": false, "ended_by": "taken_over"},
+  {"resource": "A", "holder": "m4", "start": 400, "end": 500, "last": 400, "events": 1, "start_seen": false, "ended_by": "open"}
+]
+```
+<!-- /example -->
+
+Reading it: m1 holds from 0, renews at 60, and releases at 120. m2's hold at 200 is never renewed and lapses at 300. m3 arrives at 350 and is taken over by m4 at 400, while its own hold would have run to 450. m4 is still open when the data ends.
+
+**`join_within($intervals; lkey; rkey; ltime; rstart; rend)`.** Left outer: each left row with the interval of the same key whose `[rstart, rend)` contains the left row's `ltime`; a null `rend` is still open. No such interval, or a null key or time on the left: the left row alone. When several intervals of a key contain the time, the one that started last. Merged like every flat join. Matches DuckDB `LEFT JOIN … ON key AND start <= t AND (end IS NULL OR t < end)`.
+
+<!-- example: intervals_within -->
+```jq
+[{res: "A", who: "m1", t: 0, kind: "hold", ttl: 100}, {res: "A", who: "m1", t: 60, kind: "hold", ttl: 100}, {res: "A", who: "m1", t: 120, kind: "release"}, {res: "A", who: "m2", t: 200, kind: "hold", ttl: 100}, {res: "A", who: "m3", t: 350, kind: "hold", ttl: 100}, {res: "A", who: "m4", t: 400, kind: "hold", ttl: 100}] | intervals_from_events(.res; .who; .t; .kind; .ttl) as $iv | [{res: "A", t: 100}, {res: "A", t: 130}, {res: "A", t: 320}, {res: "A", t: 420}] | {within: (join_within($iv; .res; .resource; .t; .start; .end) | map({t, holder})), asof_no_limit: (join_asof($iv; .res; .resource; .t; .start) | map({t, holder}))}
+```
+
+```json
+{
+  "within": [{"t": 100, "holder": "m1"}, {"t": 130, "holder": null}, {"t": 320, "holder": null}, {"t": 420, "holder": "m4"}],
+  "asof_no_limit": [{"t": 100, "holder": "m1"}, {"t": 130, "holder": "m1"}, {"t": 320, "holder": "m2"}, {"t": 420, "holder": "m4"}]
+}
+```
+<!-- /example -->
+
+The second answer is what an as-of join gives on the same intervals: it names m1 at 130, ten seconds after m1 released, and m2 at 320, after m2 lapsed.
+
+**`merge_intervals(key; start; fin)`.** Per key, intervals that overlap or touch become one row `{key, start, end, merged}`; a null end is open-ended and absorbs everything of its key that starts after it. **`concurrency(start; fin)`.** How many intervals are open over time: one row `{t, open}` per moment the count changes; an interval counts from its start up to, not including, its end. (`end` is a jq keyword, so the parameter is `fin`.) An interval that ends before it starts is an error in both.
+
+<!-- example: intervals_ops -->
+```jq
+[{k: "a", s: 0, e: 10}, {k: "a", s: 5, e: 12}, {k: "a", s: 12, e: 20}, {k: "a", s: 30, e: 31}] | {merged: merge_intervals(.k; .s; .e), open_over_time: concurrency(.s; .e), peak: (concurrency(.s; .e) | max_by(.open))}
+```
+
+```json
+{
+  "merged": [{"key": "a", "start": 0, "end": 20, "merged": 3}, {"key": "a", "start": 30, "end": 31, "merged": 1}],
+  "open_over_time": [{"t": 0, "open": 1}, {"t": 5, "open": 2}, {"t": 10, "open": 1}, {"t": 20, "open": 0}, {"t": 30, "open": 1}, {"t": 31, "open": 0}],
+  "peak": {"t": 5, "open": 2}
+}
+```
+<!-- /example -->
+
+#### Traced: which device and which user had this address?
+
+Three made-up logs: address leases (a grant with a lease time, a release), network sessions (start, keep-alive, stop, each naming the device and the user), and three hits from address 10.0.0.5 that need a name.
+
+Step 1 turns each log into intervals. Leases are keyed by address and held by a device; a session is its own resource, with no time to live, and gets its device and user back with `lookup`.
+
+<!-- example: trace_leases -->
+```jq
+[{ip: "10.0.0.5", mac: "aa", t: 1000, msg: "ACK", lease: 3600}, {ip: "10.0.0.5", mac: "aa", t: 2800, msg: "ACK", lease: 3600}, {ip: "10.0.0.5", mac: "aa", t: 5000, msg: "RELEASE"}, {ip: "10.0.0.5", mac: "bb", t: 9000, msg: "ACK", lease: 3600}] as $dhcp | [{sid: "s1", mac: "aa", user: "avery", t: 1010, status: "Start"}, {sid: "s1", mac: "aa", user: "avery", t: 2810, status: "Interim"}, {sid: "s1", mac: "aa", user: "avery", t: 4990, status: "Stop"}, {sid: "s2", mac: "bb", user: "bo", t: 9020, status: "Interim"}] as $radius | [{hit: 1, src: "10.0.0.5", t: 3000}, {hit: 2, src: "10.0.0.5", t: 7000}, {hit: 3, src: "10.0.0.5", t: 9500}] as $hits | ($dhcp | intervals_from_events(.ip; .mac; .t; (if .msg == "ACK" then "hold" else "release" end); .lease)) as $leases | ($radius | intervals_from_events(.sid; .sid; .t; (if .status == "Start" then "open" elif .status == "Stop" then "release" else "hold" end); null) | lookup($radius | map({sid, mac, user}) | unique; .resource; .sid; "who") | map({mac: .who.mac, user: .who.user, s_start: .start, s_end: .end})) as $sessions | {leases: ($leases | map({resource, holder, start, end, ended_by})), sessions: $sessions}
+```
+
+```json
+{
+  "leases": [{"resource": "10.0.0.5", "holder": "aa", "start": 1000, "end": 5000, "ended_by": "released"}, {"resource": "10.0.0.5", "holder": "bb", "start": 9000, "end": 12600, "ended_by": "open"}],
+  "sessions": [{"mac": "aa", "user": "avery", "s_start": 1010, "s_end": 4990}, {"mac": "bb", "user": "bo", "s_start": 9020, "s_end": null}]
+}
+```
+<!-- /example -->
+
+Step 2 chains two `join_within`: the address and time give the lease, so the device; the device and time give the session, so the user.
+
+<!-- example: trace_who -->
+```jq
+[{ip: "10.0.0.5", mac: "aa", t: 1000, msg: "ACK", lease: 3600}, {ip: "10.0.0.5", mac: "aa", t: 2800, msg: "ACK", lease: 3600}, {ip: "10.0.0.5", mac: "aa", t: 5000, msg: "RELEASE"}, {ip: "10.0.0.5", mac: "bb", t: 9000, msg: "ACK", lease: 3600}] as $dhcp | [{sid: "s1", mac: "aa", user: "avery", t: 1010, status: "Start"}, {sid: "s1", mac: "aa", user: "avery", t: 2810, status: "Interim"}, {sid: "s1", mac: "aa", user: "avery", t: 4990, status: "Stop"}, {sid: "s2", mac: "bb", user: "bo", t: 9020, status: "Interim"}] as $radius | [{hit: 1, src: "10.0.0.5", t: 3000}, {hit: 2, src: "10.0.0.5", t: 7000}, {hit: 3, src: "10.0.0.5", t: 9500}] as $hits | ($dhcp | intervals_from_events(.ip; .mac; .t; (if .msg == "ACK" then "hold" else "release" end); .lease)) as $leases | ($radius | intervals_from_events(.sid; .sid; .t; (if .status == "Start" then "open" elif .status == "Stop" then "release" else "hold" end); null) | lookup($radius | map({sid, mac, user}) | unique; .resource; .sid; "who") | map({mac: .who.mac, user: .who.user, s_start: .start, s_end: .end})) as $sessions | $hits | join_within($leases; .src; .resource; .t; .start; .end) | map({hit, t, mac: .holder}) | join_within($sessions; .mac; .mac; .t; .s_start; .s_end) | map({hit, t, mac, user})
+```
+
+```json
+[
+  {"hit": 1, "t": 3000, "mac": "aa", "user": "avery"},
+  {"hit": 2, "t": 7000, "mac": null, "user": null},
+  {"hit": 3, "t": 9500, "mac": "bb", "user": "bo"}
+]
+```
+<!-- /example -->
+
+Checking by hand. Hit 1 at 3000: device aa has held the address since 1000 and renewed at 2800, and avery's session runs 1010 to 4990. Hit 2 at 7000: aa released at 5000 and bb's grant comes at 9000, so nobody held it. Hit 3 at 9500: bb, whose session has been seen since 9020 with no start in the data and no stop.
 
 ### Windows
 
@@ -802,9 +910,10 @@ A caller that partitions the input and runs each part separately gets the same a
 |---|---|---|
 | a sum or count over rows (`sum_nonnull`, `count_nonnull`, `group_agg` with sums and counts) | anywhere | adding the parts |
 | reads only its own group's rows (`median`, `quantile_cont`, `group_agg` with any aggregate, `over` windows, `pivot`) | by the group key | concatenating |
-| orders one entity's rows in time (`state_blocks`, `transitions`, `sessions`, `runs`, `join_asof`) | by the entity key, each part in time order | concatenating |
-| reads two tables (`join_*`, `lookup`, `join_overlap`) | both tables by the join key | concatenating |
+| orders one entity's rows in time (`state_blocks`, `transitions`, `sessions`, `runs`, `join_asof`, `intervals_from_events` by resource, `merge_intervals` by key) | by the entity key, each part in time order | concatenating |
+| reads two tables (`join_*`, `lookup`, `join_overlap`, `join_within`) | both tables by the join key | concatenating |
 | walks a tree or graph (`tree_paths`, `tree_rollup`, `reachable`, `components`) | by connected component, when the components are known in advance; otherwise do not split | concatenating |
+| counts across every key (`concurrency`) | do not split: the count at a moment reads every interval | |
 | totals at several levels (`rollup`, `calc`, `share`) | do not split: a subtotal reads rows of every part | |
 
 A mean is not a sum: split it with its group's rows, or carry the sum and the count and divide at the end. The library does not run the parts; that is the caller's job.
@@ -818,10 +927,11 @@ A mean is not a sum: split it with its group's rows, or carry the sum and the co
 - **Time zones.** Only the seven zones in the generated zone block, 1970 to 2100.
 - **Windows.** ROWS frames only; no RANGE or GROUPS frames.
 - **Measures in a context.** At 379,600 rows a daily report with share of total, prior day or to date takes 3.1 to 5.0 s on jq 1.8.2 and 1.5 to 2.6 s on gojq, about 1.3 to 2 times plain `group_by`, in step with the rows. A filter outside the report's levels costs a scan per cell (75 s on jq 1.8.2 for 77 cells). Not measured with thousands of cells.
+- **Intervals.** At 200,000 lease events over about 4,000 addresses in the Python `jq` package, parsing included: `intervals_from_events` 8.4 s (180,000 intervals), `join_within` 4.0 s for 50,000 lookups, `merge_intervals` 5.1 s, `concurrency` 4.7 s.
 - **Converters.** At 200,000 rows in the Python `jq` package, parsing included: `unnest` 2.1 s, `to_map` 0.9 s, `rows_from_map` 2.1 s, `to_csv` 0.8 s, `node_link` 2.6 s, `flatten_fields` 12.6 s (it walks every field of every row).
 - **Trees.** `tree_paths` walks each node's ancestry, so its cost grows with depth: 4,000 nodes took 0.5 s in a shallow tree and 16 s in one dozens of levels deep; 200,000 nodes in a shallow tree took 39 s. `tree_rollup` and `nested_from_nodes` call it and cost the same. Org charts and category trees are shallow.
 - **Graphs.** `reachable` and `components` are tested for correctness, not yet measured on large graphs.
-- **Not included yet.** Relationships between tables in the DAX sense (join or `lookup` first), funnels and cohorts, interval merging and concurrency, shortest path and topological order, fuzzy matching, approximate quantiles, mode, histograms, correlation, fill-down, top-n per group, date truncation to week or month.
+- **Not included yet.** Relationships between tables in the DAX sense (join or `lookup` first), funnels and cohorts, shortest path and topological order, fuzzy matching, approximate quantiles, mode, histograms, correlation, fill-down, top-n per group, date truncation to week or month.
 
 ## Files and tests
 
@@ -836,7 +946,7 @@ A mean is not a sum: split it with its group's rows, or carry the sum and the co
 | `tests/make_incidents.py` | writes `tests/fixtures/made_up_incidents.json` from a fixed seed |
 | `tests/run_tests.py` | runs every case on each jq engine and the Python `jq` package and compares with DuckDB |
 | `tools/reference_examples.py` | runs every example in this README and writes its output here |
-| `tools/bench_rows.py`, `tools/bench_converters.py` | time the library's questions and its converters at a given number of rows |
+| `tools/bench_rows.py`, `tools/bench_converters.py`, `tools/bench_intervals.py` | time the library's questions and its converters at a given number of rows |
 | `tests/check_names.py` | fails when a public function has the name of an engine builtin; runs before the cases |
 | `docs/design/`, `docs/specs/` | the shapes design, the feature matrix, and one spec per sprint |
 

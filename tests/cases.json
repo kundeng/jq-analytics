@@ -669,5 +669,215 @@
       0
     ],
     "jq": "tz(\"America/Detroit\") as $det | (map(.s | parse_ts | tz_offset($det))) + (map(.s | parse_ts | tz_offset(\"Europe/London\")))"
+  },
+  {
+    "name": "intervals_walkthrough",
+    "input": "tests/fixtures/lease_events.json",
+    "expect_value": [
+      {
+        "resource": "A",
+        "holder": "m1",
+        "start": 0,
+        "end": 120,
+        "last": 60,
+        "events": 2,
+        "start_seen": false,
+        "ended_by": "released"
+      },
+      {
+        "resource": "A",
+        "holder": "m2",
+        "start": 200,
+        "end": 300,
+        "last": 200,
+        "events": 1,
+        "start_seen": false,
+        "ended_by": "lapsed"
+      },
+      {
+        "resource": "A",
+        "holder": "m3",
+        "start": 350,
+        "end": 400,
+        "last": 350,
+        "events": 1,
+        "start_seen": false,
+        "ended_by": "taken_over"
+      },
+      {
+        "resource": "A",
+        "holder": "m4",
+        "start": 400,
+        "end": 500,
+        "last": 400,
+        "events": 1,
+        "start_seen": false,
+        "ended_by": "open"
+      },
+      {
+        "resource": "B",
+        "holder": "m5",
+        "start": 10,
+        "end": null,
+        "last": 10,
+        "events": 1,
+        "start_seen": false,
+        "ended_by": "open"
+      }
+    ],
+    "jq": "intervals_from_events(.res; .who; .t; .kind; .ttl)"
+  },
+  {
+    "name": "intervals_ties_and_strays",
+    "input": "tests/fixtures/lease_ties.json",
+    "expect_value": [
+      {
+        "resource": "A",
+        "holder": "m1",
+        "start": 0,
+        "end": 5,
+        "last": 5,
+        "events": 2,
+        "start_seen": true,
+        "ended_by": "released"
+      },
+      {
+        "resource": "A",
+        "holder": "m3",
+        "start": 20,
+        "end": null,
+        "last": 93,
+        "events": 3,
+        "start_seen": false,
+        "ended_by": "open"
+      }
+    ],
+    "jq": "intervals_from_events(.res; .who; .t; .kind; .ttl)"
+  },
+  {
+    "name": "intervals_never_overlap",
+    "input": "tests/fixtures/lease_generated.json",
+    "expect_value": {
+      "overlaps": 0,
+      "holds_in": true,
+      "open_only_last": true,
+      "ends": [
+        "lapsed",
+        "open",
+        "released",
+        "taken_over"
+      ]
+    },
+    "jq": ". as $ev | intervals_from_events(.res; .who; .t; .kind; .ttl) | . as $iv | {overlaps: ([group_by(.resource)[] | . as $g | range(1; length) | select($g[. - 1].end == null or $g[. - 1].end > $g[.].start)] | length), holds_in: ((map(.events) | add) == ($ev | map(select(.kind == \"open\" or .kind == \"hold\")) | length)), open_only_last: ([group_by(.resource)[] | .[:-1][] | select(.ended_by == \"open\")] | length == 0), ends: (map(.ended_by) | unique)}"
+  },
+  {
+    "name": "intervals_bad_kind_error",
+    "input": "tests/fixtures/lease_bad_kind.json",
+    "expect_error": "intervals_from_events: event 0 has kind",
+    "jq": "intervals_from_events(.res; .who; .t; .kind; .ttl)"
+  },
+  {
+    "name": "intervals_no_time_error",
+    "input": "tests/fixtures/lease_no_time.json",
+    "expect_error": "intervals_from_events: event 0 has a kind but no time",
+    "jq": "intervals_from_events(.res; .who; .t; .kind; .ttl)"
+  },
+  {
+    "name": "join_within",
+    "input": "tests/fixtures/lease_events.json",
+    "vars": {
+      "queries": "tests/fixtures/lease_queries.json"
+    },
+    "sql": "join_within.sql",
+    "jq": "intervals_from_events(.res; .who; .t; .kind; .ttl) as $iv | $queries | join_within($iv; .res; .resource; .t; .start; .end) | map({q, holder})"
+  },
+  {
+    "name": "merge_intervals",
+    "input": "tests/fixtures/spans.json",
+    "sql": "merge_intervals.sql",
+    "jq": "merge_intervals(.k; .s; .e)"
+  },
+  {
+    "name": "merge_intervals_open_end",
+    "input": "tests/fixtures/spans_open.json",
+    "expect_value": [
+      {
+        "key": "a",
+        "start": 0,
+        "end": null,
+        "merged": 3
+      },
+      {
+        "key": "b",
+        "start": 1,
+        "end": 2,
+        "merged": 1
+      }
+    ],
+    "jq": "merge_intervals(.k; .s; .e)"
+  },
+  {
+    "name": "merge_intervals_order_error",
+    "input": "tests/fixtures/spans_bad.json",
+    "expect_error": "merge_intervals: an interval ends before it starts",
+    "jq": "merge_intervals(.k; .s; .e)"
+  },
+  {
+    "name": "concurrency",
+    "input": "tests/fixtures/spans.json",
+    "sql": "concurrency.sql",
+    "jq": "concurrency(.s; .e)"
+  },
+  {
+    "name": "concurrency_open_end",
+    "input": "tests/fixtures/spans_open.json",
+    "expect_value": [
+      {
+        "t": 0,
+        "open": 1
+      },
+      {
+        "t": 1,
+        "open": 2
+      },
+      {
+        "t": 2,
+        "open": 1
+      },
+      {
+        "t": 8,
+        "open": 2
+      },
+      {
+        "t": 10,
+        "open": 1
+      },
+      {
+        "t": 50,
+        "open": 2
+      },
+      {
+        "t": 60,
+        "open": 1
+      }
+    ],
+    "jq": "concurrency(.s; .e)"
+  },
+  {
+    "name": "intervals_same_second_order",
+    "input": "tests/fixtures/lease_same_second.json",
+    "expect_value": [
+      {
+        "resource": "S",
+        "holder": "s1",
+        "start": 100,
+        "end": 100,
+        "last": 100,
+        "events": 2,
+        "start_seen": true,
+        "ended_by": "released"
+      }
+    ],
+    "jq": "intervals_from_events(.res; .who; .t; .kind; .ttl)"
   }
 ]
