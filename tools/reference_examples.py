@@ -131,6 +131,11 @@ PROFILE_EXAMPLES: dict[str, tuple[str, bool, bool]] = {
 }
 EXAMPLES.update(PROFILE_EXAMPLES)
 
+FUZZY_EXAMPLES: dict[str, tuple[str, bool, bool]] = {
+    "fuzzy": ('[{name: "Radiology North", site: "N"}, {name: "Pharmcy", site: "N"}, {name: "Billing", site: "S"}, {name: "Surgery", site: "S"}] | join_fuzzy([{dept: "radiology-north", site: "N"}, {dept: "pharmacy", site: "N"}, {dept: "Biling Office", site: "S"}]; .site; .site; (.name | ascii_downcase); (.dept | ascii_downcase); 0.5; "match") | map({name, matched: (.match.row.dept // null), similarity: (.match.similarity | if . == null then null else round_to(3) end)})', False, True),
+}
+EXAMPLES.update(FUZZY_EXAMPLES)
+
 CONTEXT_EXAMPLES: dict[str, tuple[str, bool, bool]] = {
     "context_rollup": (REVENUE + SALES + ' | rollup(["region", "product"]; {revenue: measure(revenue), share_of_region: share(revenue; without("product")), share_of_all: share(revenue; keep_only([]))})', False, True),
     "context_time": (REVENUE + SALES + ' | rollup(["month"]; {revenue: measure(revenue), prior: calc(revenue; shift("month"; -1)), to_date: calc(revenue; to_date("month")), east_only: calc(revenue; with_filter({region: "east"}))})', False, True),

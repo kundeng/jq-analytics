@@ -166,9 +166,12 @@ A caller that partitions the input and runs each part separately gets the same a
 
 A mean is not a sum: split it as its group's rows, or carry the sum and the count and divide at the end.
 
+Keys that almost match are a property of two tables, not a shape: clean the key expression first; `join_fuzzy` compares within a blocking key for small tables; edit distance belongs in a database.
+
 ## What stays out
 
 - **Model fitting and machine learning.**
+- **Edit distance and phonetic matching.** jq computes them about a thousand times slower than a database.
 - **Heavy volume.** jq works on one value at a time on one core. Past a few hundred thousand rows, or when the same data answers many questions, shape the data out to a columnar engine such as DuckDB. The README carries the measured line.
 - **Binary formats.** jq cannot write Parquet or Excel.
 

@@ -1065,3 +1065,49 @@ def diff_tables($old; key):
                       | map(select(. as $f | ($a | has($f)) != ($b | has($f)) or $a[$f] != $b[$f]))),
              old: $b, new: $a}
        end];
+
+# ---------------------------------------------------------------- approximate matching
+
+# Clean the key first: most keys that should match differ by case, spacing or punctuation, and an
+# ordinary join on a cleaned key expression (join_inner($r; (.name | ascii_downcase); ...)) handles
+# them at no extra cost. What follows is for small tables where that is not enough: similarity
+# compares about 11,000 pairs a second and join_fuzzy about 30,000 (it computes each right row's
+# bigrams once). For edit distance, or for millions of comparisons, use a database: jq runs an edit
+# distance about a thousand times slower than DuckDB.
+
+# the distinct two-character slices of a string, sorted
+def _bigrams:
+  if type != "string" then error("similarity: \(tojson) is not a string")
+  else explode as $c | [range(0; ($c | length) - 1) | $c[.:. + 2] | implode] | unique end;
+def _dice($x; $y):
+  if ($x | length) == 0 or ($y | length) == 0 then 0
+  else 2 * (($x - ($x - $y)) | length) / (($x | length) + ($y | length)) end;
+
+# similarity: how alike two strings are, from 0 to 1: the Dice coefficient over their distinct
+# character bigrams (twice the bigrams they share, divided by the bigrams of both). Equal strings
+# give 1, including strings too short to have a bigram; null on either side gives null. It compares
+# what it is given: lowercase and trim in the expressions if that is wanted.
+def similarity(a; b):
+  (a) as $a | (b) as $b
+  | if $a == null or $b == null then null
+    elif ($a | type) != "string" then ($a | _bigrams) elif ($b | type) != "string" then ($b | _bigrams)
+    elif $a == $b then 1
+    else _dice($a | _bigrams; $b | _bigrams) end;
+
+# join_fuzzy (left outer): each left row with field $as holding {similarity, row} for the right row
+# of the same block whose rstr is most similar to the left row's lstr, when that similarity is at
+# least $min; null otherwise. lblock and rblock give an exact key two rows must share to be
+# compared at all (a site, a first letter): the cost is one comparison per pair of rows that share
+# a block, so choose blocks that stay small. Among equally similar right rows, the first in input
+# order. A null block or a null string never matches.
+def join_fuzzy($right; lblock; rblock; lstr; rstr; $min; $as):
+  ([$right[] | select((rblock) != null and (rstr) != null) | {b: (rblock | tojson), s: (rstr), g: (rstr | _bigrams), r: .}]
+   | group_by(.b) | map({key: .[0].b, value: .}) | from_entries) as $ix
+  | map(. as $l | ($l | lblock) as $bk | ($l | lstr) as $s
+      | (if $bk == null or $s == null then null
+         else ($s | _bigrams) as $g
+           | reduce ($ix[$bk | tojson] // [])[] as $c (null;
+               (if $c.s == $s then 1 else _dice($g; $c.g) end) as $sim
+               | if $sim >= $min and (. == null or $sim > .similarity) then {similarity: $sim, row: $c.r} else . end)
+         end) as $m
+      | $l + {($as): $m});

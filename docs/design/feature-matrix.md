@@ -1,6 +1,6 @@
 # Feature matrix
 
-What the library does, family by family, and how far each part is carried: the functions in `analytics.jq`, the test cases, the answer key, and the README. Counts are as of version 0.7.0 and come from `tests/cases.json` and the library file.
+What the library does, family by family, and how far each part is carried: the functions in `analytics.jq`, the test cases, the answer key, and the README. Counts are as of version 0.8.0 and come from `tests/cases.json` and the library file.
 
 ```mermaid
 flowchart LR
@@ -38,6 +38,7 @@ Legend: ✅ done · 🟡 partial · ⏳ planned · — not involved. A case coun
 | distributions, correlation | a list of values; a table | ✅ 5 | ✅ 8 | 1 | ✅ | five engines, 2026-11-18 | [35](../specs/35-profiles/spec.md) |
 | table-profile | table | ✅ 1 | ✅ 3 | 1 | ✅ | five engines, 2026-11-18 | [35](../specs/35-profiles/spec.md) |
 | table-diff | two tables with a key | ✅ 1 | ✅ 4 | 1 | ✅ | five engines, 2026-11-18 | [35](../specs/35-profiles/spec.md) |
+| string-similarity, fuzzy-join | two tables with a blocking key | ✅ 2 | ✅ 5 | 0 | ✅ | five engines; equal to an independent Python implementation, 2026-11-18 | [40](../specs/40-fuzzy-match/spec.md) |
 | converters-in | sources to table or tree | ✅ 6 | ✅ 12 | 3 | ✅ | five engines, 2026-11-18 | [10](../specs/10-shape-converters/spec.md) |
 | converters-out | shapes to map, nested tree, node-link, CSV | ✅ 4 | ✅ 7 | 0 | ✅ | five engines, 2026-11-18 | [10](../specs/10-shape-converters/spec.md) |
 | shapes-model | | — | — | — | ✅ | document and README | [05](../specs/05-shapes-model/spec.md) |
@@ -51,6 +52,4 @@ Legend: ✅ done · 🟡 partial · ⏳ planned · — not involved. A case coun
 
 ## Planned
 
-| Feature | Shape | State | Spec |
-|---|---|---|---|
-| approximate key matching | two tables | ⏳ least certain | 40 |
+Nothing further is specified. Edit distance was measured and left out on purpose (spec 40).

@@ -1497,5 +1497,80 @@
     },
     "expect_error": "appears twice in the new table",
     "jq": "diff_tables($old; .id)"
+  },
+  {
+    "name": "join_fuzzy_walkthrough",
+    "input": "tests/fixtures/depts_left.json",
+    "vars": {
+      "right": "tests/fixtures/depts_right.json"
+    },
+    "expect_value": [
+      {
+        "name": "Radiology North",
+        "to": "radiology-north",
+        "sim": 0.857
+      },
+      {
+        "name": "Pharmcy",
+        "to": "pharmacy",
+        "sim": 0.769
+      },
+      {
+        "name": "Billing",
+        "to": "Biling Office",
+        "sim": 0.556
+      },
+      {
+        "name": "Surgery",
+        "to": null,
+        "sim": null
+      },
+      {
+        "name": "Lab",
+        "to": null,
+        "sim": null
+      }
+    ],
+    "jq": "join_fuzzy($right; .site; .site; (.name | ascii_downcase); (.dept | ascii_downcase); 0.5; \"m\") | map({name, to: (.m.row.dept // null), sim: (.m.similarity | if . == null then null else round_to(3) end)})"
+  },
+  {
+    "name": "similarity_edges",
+    "input": "tests/fixtures/nums.json",
+    "expect_value": {
+      "equal": 1,
+      "one_char_equal": 1,
+      "one_char_differ": 0,
+      "empty_both": 1,
+      "empty_one": 0,
+      "shared": 0.25,
+      "null": null,
+      "case_matters": 0,
+      "symmetric": true,
+      "threshold_met": "x"
+    },
+    "jq": "{equal: similarity(\"ab\"; \"ab\"), one_char_equal: similarity(\"a\"; \"a\"), one_char_differ: similarity(\"a\"; \"b\"), empty_both: similarity(\"\"; \"\"), empty_one: similarity(\"\"; \"abc\"), shared: similarity(\"night\"; \"nacht\"), null: similarity(\"ab\"; null), case_matters: similarity(\"ABC\"; \"abc\"), symmetric: (similarity(\"pharmcy\"; \"pharmacy\") == similarity(\"pharmacy\"; \"pharmcy\")), threshold_met: ([{k: 1, s: \"night\"}] | join_fuzzy([{k: 1, t: \"nacht\", id: \"x\"}, {k: 1, t: \"nacht\", id: \"y\"}]; .k; .k; .s; .t; 0.25; \"m\") | .[0].m.row.id)}"
+  },
+  {
+    "name": "similarity_generated",
+    "input": "tests/fixtures/fuzzy_pairs.json",
+    "expect_file": "tests/expected/fuzzy.json",
+    "expect_jq": ".pairs",
+    "jq": "map(similarity(.[0]; .[1]))"
+  },
+  {
+    "name": "join_fuzzy_generated",
+    "input": "tests/fixtures/fuzzy_left.json",
+    "vars": {
+      "right": "tests/fixtures/fuzzy_right.json"
+    },
+    "expect_file": "tests/expected/fuzzy.json",
+    "expect_jq": ".best",
+    "jq": "join_fuzzy($right; .site; .site; .name; .dept; 0.4; \"m\") | map({id, to: (if .m == null then null else .m.row.rid end), similarity: (if .m == null then null else .m.similarity end)})"
+  },
+  {
+    "name": "similarity_not_string_error",
+    "input": "tests/fixtures/nums.json",
+    "expect_error": "is not a string",
+    "jq": "similarity(\"ab\"; 12)"
   }
 ]

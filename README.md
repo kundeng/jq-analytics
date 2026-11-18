@@ -1,6 +1,6 @@
 # analytics.jq: tables and statistics for jq
 
-`analytics.jq` is a jq module of 96 functions that let a jq program answer the questions people usually send to SQL, pandas or a graph library: hold several named tables at once, join them by key, condition and time, group and aggregate, percentiles, running and lagged values over ordered partitions, time series read as state machines, roll-ups over trees, reachability, shortest paths and dependency order in graphs, validity intervals built from events, a calendar table, funnels and retention, column profiles and table diffs, measures evaluated at several levels of a report, and local time in a named time zone. Each function states its rule in a comment beside it (how it treats nulls, ties, order and rounding), and each rule is pinned by a test whose expected answer DuckDB computes. Its time-zone tables, generated from the IANA time-zone database, are a block inside the same file.
+`analytics.jq` is a jq module of 98 functions that let a jq program answer the questions people usually send to SQL, pandas or a graph library: hold several named tables at once, join them by key, condition and time, group and aggregate, percentiles, running and lagged values over ordered partitions, time series read as state machines, roll-ups over trees, reachability, shortest paths and dependency order in graphs, validity intervals built from events, a calendar table, funnels and retention, column profiles and table diffs, measures evaluated at several levels of a report, and local time in a named time zone. Each function states its rule in a comment beside it (how it treats nulls, ties, order and rounding), and each rule is pinned by a test whose expected answer DuckDB computes. Its time-zone tables, generated from the IANA time-zone database, are a block inside the same file.
 
 It exists because plain jq leaves those rules to whoever writes the program. In one analysis of service requests, four shared jq helpers each decided a number without saying how: one dropped unresolved tickets, one used a different percentile rule, one hardcoded a single year's daylight-saving switch, one rounded before comparing with a threshold and miscounted by one. This library is one place where those rules are written down, tested against DuckDB, and the same for every analysis that loads it.
 
@@ -75,7 +75,7 @@ The library is one file, `analytics.jq`, in a directory `<dir>` below. Its time-
 | Python `jq` package | `jq.compile('include "analytics" {search: "<dir>"}; ' + program).input_value(rows).first()`; the package has no `-L` and an empty default search list, so the path goes in the program |
 | Python package `jq_analytics` | `jq_analytics.include()` returns the `include` line with this package's directory filled in |
 
-Tested on jq 1.7.1 (Apple's build), jq 1.8.2, gojq 0.12.20, jaq 3.1.2 and the `jq` Python package 1.13.0, which builds jq 1.8.2: all pass the same 129 test cases (`tests/run_tests.py`). The library uses no builtin that is missing from any of them, and it parenthesises `reduce … as` inside function arguments, which jq 1.7.1's grammar requires.
+Tested on jq 1.7.1 (Apple's build), jq 1.8.2, gojq 0.12.20, jaq 3.1.2 and the `jq` Python package 1.13.0, which builds jq 1.8.2: all pass the same 134 test cases (`tests/run_tests.py`). The library uses no builtin that is missing from any of them, and it parenthesises `reduce … as` inside function arguments, which jq 1.7.1's grammar requires.
 
 ## Rules that hold everywhere
 
@@ -553,6 +553,39 @@ The input is the left table and `$right` the right table. Rules for all joins: a
 ]
 ```
 <!-- /example -->
+
+### Keys that almost match
+
+Three answers, in the order to try them.
+
+**1. Clean the key.** Most keys that should match differ by case, spacing or punctuation. A key is an expression, so clean it there, at no extra cost: `join_inner($r; (.name | ascii_downcase | gsub("[^a-z0-9]"; "")); (.dept | ascii_downcase | gsub("[^a-z0-9]"; "")))`.
+
+**2. `similarity(a; b)` and `join_fuzzy($right; lblock; rblock; lstr; rstr; $min; $as)`, for small tables.** `similarity` is a number from 0 to 1: the Dice coefficient over the distinct character bigrams of two strings (twice the bigrams they share, divided by the bigrams of both); 1 for equal strings, null when either is null. It does no cleaning. `join_fuzzy` is a left outer join: each left row gets, in field `$as`, `{similarity, row}` for the most similar right row of its block when that similarity is at least `$min`, else null; the first in input order on ties. `lblock` and `rblock` give an exact key two rows must share to be compared at all, such as a site or a first letter. The join makes one comparison per pair of rows that share a block, about 30,000 a second in the Python `jq` package, so choose blocks that stay small: 2,000 rows against 2,000 in 20 blocks is 200,000 comparisons and took 4.6 s.
+
+<!-- example: fuzzy -->
+```jq
+[{name: "Radiology North", site: "N"}, {name: "Pharmcy", site: "N"}, {name: "Billing", site: "S"}, {name: "Surgery", site: "S"}] | join_fuzzy([{dept: "radiology-north", site: "N"}, {dept: "pharmacy", site: "N"}, {dept: "Biling Office", site: "S"}]; .site; .site; (.name | ascii_downcase); (.dept | ascii_downcase); 0.5; "match") | map({name, matched: (.match.row.dept // null), similarity: (.match.similarity | if . == null then null else round_to(3) end)})
+```
+
+```json
+[
+  {"name": "Radiology North", "matched": "radiology-north", "similarity": 0.857},
+  {"name": "Pharmcy", "matched": "pharmacy", "similarity": 0.769},
+  {"name": "Billing", "matched": "Biling Office", "similarity": 0.556},
+  {"name": "Surgery", "matched": null, "similarity": null}
+]
+```
+<!-- /example -->
+
+`Pharmcy` and `pharmacy` share five bigrams (`ar`, `cy`, `ha`, `ph`, `rm`) out of six and seven: 2 × 5 / 13 = 0.769. `Surgery` has nothing in its block above 0.5.
+
+**3. A database, for edit distance or volume.** jq computes an edit distance about a thousand times slower than DuckDB (20,000 pairs: 22 s against 0.008 s, same answers), so this library does not offer one. Shape the two key columns out and compare there:
+
+```sql
+SELECT l.id, r.id, jaro_winkler_similarity(l.name, r.name) AS s
+FROM l JOIN r ON l.site = r.site
+WHERE levenshtein(l.name, r.name) <= 2;
+```
 
 ### Intervals
 
@@ -1094,7 +1127,7 @@ A caller that partitions the input and runs each part separately gets the same a
 | follows one entity through its events (`funnel_steps`, `cohorts`) | by the entity key | concatenating |
 | counts entities (`funnel`, `retention`) | by the entity key: run `funnel_steps` or `cohorts` on the parts, concatenate, then count once | counting after concatenating |
 | orders one entity's rows in time (`state_blocks`, `transitions`, `sessions`, `runs`, `join_asof`, `intervals_from_events` by resource, `merge_intervals` by key) | by the entity key, each part in time order | concatenating |
-| reads two tables (`join_*`, `lookup`, `join_overlap`, `join_within`) | both tables by the join key | concatenating |
+| reads two tables (`join_*`, `lookup`, `join_overlap`, `join_within`; `join_fuzzy` by its blocking key) | both tables by the join key | concatenating |
 | walks a tree or graph (`tree_paths`, `tree_rollup`, `reachable`, `components`) | by connected component, when the components are known in advance; otherwise do not split | concatenating |
 | counts across every key (`concurrency`) | do not split: the count at a moment reads every interval | |
 | totals at several levels (`rollup`, `calc`, `share`) | do not split: a subtotal reads rows of every part | |
@@ -1115,7 +1148,7 @@ A mean is not a sum: split it with its group's rows, or carry the sum and the co
 - **Distributions, profiles, diffs.** At 200,000 rows of five fields in the Python `jq` package, parsing included: `mode` 1.5 s, `value_counts` 1.6 s, `histogram` 2.8 s, `corr` 2.0 s, `profile` 7.8 s, `diff_tables` 4.4 s.
 - **Converters.** At 200,000 rows in the Python `jq` package, parsing included: `unnest` 2.1 s, `to_map` 0.9 s, `rows_from_map` 2.1 s, `to_csv` 0.8 s, `node_link` 2.6 s, `flatten_fields` 12.6 s (it walks every field of every row).
 - **Trees and graphs.** Time grows in step with the input. In the Python `jq` package, parsing included, 200,000 edges or nodes take: `reachable` 6.9 s, `hops` 7.1 s, `components` 11.6 s, `topo_order` 8.1 s, `tree_paths` 7.7 s in a shallow tree and 20.1 s in one thousands of levels deep (its output, every node's full ancestry, is what grows). `tree_rollup` and `nested_from_nodes` call `tree_paths`. The weighted `shortest_path` scans for the nearest node at each step and is meant for a few thousand nodes.
-- **Not included yet.** Relationships between tables in the DAX sense (join or `lookup` first), fuzzy matching, approximate quantiles, rank correlation, fill-down, top-n per group, fiscal calendars and holidays.
+- **Not included yet.** Relationships between tables in the DAX sense (join or `lookup` first), edit distance and phonetic matching (use a database), approximate quantiles, rank correlation, fill-down, top-n per group, fiscal calendars and holidays.
 
 ## Files and tests
 
@@ -1127,10 +1160,11 @@ A mean is not a sum: split it with its group's rows, or carry the sum and the co
 | `tests/cases.json`, `tests/fixtures/*.json` | the test cases: edge-case fixtures, questions over 600 made-up service requests, and ports of three worked examples |
 | `tests/sql/*.sql` | the answer key: one DuckDB query per case that has one |
 | `tests/expected/ported_examples.json` | the answers the three ported examples must give, recorded from their original Python versions |
+| `tests/make_fuzzy.py` | writes the approximate-matching fixtures and their expected answers from its own Python implementation |
 | `tests/make_incidents.py` | writes `tests/fixtures/made_up_incidents.json` from a fixed seed |
 | `tests/run_tests.py` | runs every case on each jq engine and the Python `jq` package and compares with DuckDB |
 | `tools/reference_examples.py` | runs every example in this README and writes its output here |
-| `tools/bench_rows.py`, `tools/bench_converters.py`, `tools/bench_intervals.py`, `tools/bench_event_paths.py`, `tools/bench_graphs.py`, `tools/bench_profiles.py` | time the library's questions and its converters at a given number of rows |
+| `tools/bench_rows.py`, `tools/bench_converters.py`, `tools/bench_intervals.py`, `tools/bench_event_paths.py`, `tools/bench_graphs.py`, `tools/bench_profiles.py`, `tools/bench_fuzzy.py` | time the library's questions and its converters at a given number of rows |
 | `tests/check_names.py` | fails when a public function has the name of an engine builtin; runs before the cases |
 | `docs/design/`, `docs/specs/` | the shapes design, the feature matrix, and one spec per sprint |
 

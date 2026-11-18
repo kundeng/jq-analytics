@@ -9,7 +9,7 @@ the directory; include() writes that line. From the command line: jq -L "$(pytho
 """
 from pathlib import Path
 
-__version__ = "0.7.0"
+__version__ = "0.8.0"
 
 LIB_DIR = Path(__file__).resolve().parent
 
