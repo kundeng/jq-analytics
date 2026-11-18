@@ -14,6 +14,7 @@ Expected answer, per case, from the first of:
   expect_error  no answer: the run must fail with a message holding this text
 Each engine runs `<binary> -c -L src/jq_analytics [--argjson <var> <file>] 'include "analytics"; <jq>' <input>`;
 the package compiles 'include "analytics" {search: "<lib dir>"}; <jq>' with args={var: value}.
+Before any case, tests/check_names.py must find no public function named like an engine builtin.
 Numbers match within 1e-9 relative; everything else must be equal, and a field missing on one side
 is a difference. Prints one JSON object; exits 1 if any case fails anywhere.
 """
@@ -31,6 +32,9 @@ import jq
 ROOT = Path(__file__).resolve().parents[1]
 LIB = ROOT / "src" / "jq_analytics"
 TESTS = ROOT / "tests"
+
+sys.path.insert(0, str(TESTS))
+from check_names import check as check_names  # noqa: E402
 
 
 def diffs(a: object, b: object, path: str = "") -> list[str]:
@@ -97,6 +101,10 @@ def version(binary: str) -> str:
 def main() -> None:
     os.chdir(ROOT)  # the answer SQL reads fixtures by paths relative to the repository root
     engines = sys.argv[1:] or [p for p in (shutil.which(n) for n in ("jq", "gojq", "jaq")) if p]
+    names = check_names(engines)
+    if names["clashes"]:  # a def that shadows a builtin changes callers' programs: stop before any case
+        print(json.dumps({"name_check": names}, indent=1))
+        sys.exit(1)
     cases = json.loads((TESTS / "cases.json").read_text())
     want = {c["name"]: None if "expect_error" in c else expected(c) for c in cases}
     runners = [(f"{b} ({version(b)})", lambda c, b=b: run_engine(b, c)) for b in engines]
@@ -105,7 +113,7 @@ def main() -> None:
     for label, run in runners:
         failures = [{"case": c["name"], "diffs": d} for c in cases if (d := judge(c, want[c["name"]], run(c)))]
         report.append({"engine": label, "passed": len(cases) - len(failures), "of": len(cases), "failures": failures})
-    print(json.dumps({"cases": len(cases), "engines": report}, indent=1))
+    print(json.dumps({"name_check": names, "cases": len(cases), "engines": report}, indent=1))
     sys.exit(1 if any(r["failures"] for r in report) else 0)
 
 

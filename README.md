@@ -4,6 +4,8 @@
 
 It exists because plain jq leaves those rules to whoever writes the program. In one analysis of service requests, four shared jq helpers each decided a number without saying how: one dropped unresolved tickets, one used a different percentile rule, one hardcoded a single year's daylight-saving switch, one rounded before comparing with a threshold and miscounted by one. This library is one place where those rules are written down, tested against DuckDB, and the same for every analysis that loads it.
 
+**What it is for.** JSON or YAML as it arrives, often nested and with every value a string, and everyday analytic work on it short of fitting a model. It also reshapes a result into what the next tool reads. Past about 200,000 rows, or when the same data answers many questions, hand the heavy step to a columnar engine such as DuckDB: see [Costs and limits](#costs-and-limits).
+
 ## What it reads and what it produces
 
 **Input: a table, which in jq is an array of objects, one object per row.** Values arrive the way Splunk and ServiceNow hand them over: every field a string, an empty string for a missing timestamp, timestamps as UTC wall-clock text without a zone. The examples in this file use four made-up service requests of that shape:
@@ -31,6 +33,21 @@ It exists because plain jq leaves those rules to whoever writes the program. In 
 <!-- /example -->
 
 **Checking that by hand.** REQ0003 is unresolved, so three rows count. REQ0001 opened at 13:30 UTC on Wednesday 12 August 2026, which is 09:30 in Detroit (UTC−4 in summer): inside office hours; it took 2.5 h. REQ0002 opened at 23:10 UTC on Friday, 19:10 Detroit time: outside; it took 11.5 h. REQ0004 opened at 14:00 UTC on Monday 2 November 2026, after the 1 November switch to winter time, so 09:00 Detroit time (UTC−5): inside; it took 1 h. Inside: two rows, 2.5 h and 1 h; the nearest-rank median of two values is the value at rank ⌈2 × 0.5⌉ = 1, which is 1 h. Outside: one row, 11.5 h.
+
+## Shapes: what the functions take
+
+Every function takes rows, an array of objects. What differs is which fields a row must carry: that is the function's shape. Fields are always read through expressions (`tree_paths(.emp_id; .manager_id)`), never fixed names.
+
+| Shape | One row is | Example row | Functions |
+|---|---|---|---|
+| table | one record | `{"id": "REQ1", "site": "North", "hours": "4.5"}` | math over a list, types and time, grouping and windows, joins |
+| several tables | not a row: one object whose fields are tables | `{"dhcp": [...], "firewall": [...]}` | `split_by` makes it; `keep`, `shape` |
+| intervals | one span of one key, from a start to an end | `{"ip": "10.0.0.5", "mac": "m1", "start": 1731900000, "end": 1731943200}` | `join_overlap`; made by `state_blocks`, `sessions` |
+| tree | one node, pointing at its parent | `{"id": "ops", "parent": "ceo"}` | `tree_paths`, `tree_rollup` |
+| graph | one edge | `{"from": "web01", "to": "db01"}` | `reachable`, `components` |
+| star | a fact table plus dimension tables | fact `{"site_id": "s1", "amount": 40}`, dimension `{"id": "s1", "region": "east"}` | `lookup`; `rollup`, `measure`, `calc`, `share` |
+
+An event log is not a shape: its rows are a table, and the question decides whether it becomes intervals, a tree, a graph or a star. Nested documents, objects keyed by id and YAML are sources that have to become rows first. [docs/design/05-shapes.md](docs/design/05-shapes.md) defines each shape and source, draws the conversions between them, and traces one nested export through three shapes.
 
 ## How the parts fit
 
@@ -681,9 +698,25 @@ Measured on a table of 3,796 service requests and copies of it up to 379,600 row
 - **Look a zone up once**: `tz("America/Detroit") as $det`, then `local_time($det)`.
 - **Compare first, round last**, and never rely on the order of an object's keys (gojq sorts them).
 
+### Splitting large input
+
+A caller that partitions the input and runs each part separately gets the same answer only when the split respects the function:
+
+| The function's answer | Safe split | Combine by |
+|---|---|---|
+| a sum or count over rows (`sum_nonnull`, `count_nonnull`, `group_agg` with sums and counts) | anywhere | adding the parts |
+| reads only its own group's rows (`median`, `quantile_cont`, `group_agg` with any aggregate, `over` windows, `pivot`) | by the group key | concatenating |
+| orders one entity's rows in time (`state_blocks`, `transitions`, `sessions`, `runs`, `join_asof`) | by the entity key, each part in time order | concatenating |
+| reads two tables (`join_*`, `lookup`, `join_overlap`) | both tables by the join key | concatenating |
+| walks a tree or graph (`tree_paths`, `tree_rollup`, `reachable`, `components`) | by connected component, when the components are known in advance; otherwise do not split | concatenating |
+| totals at several levels (`rollup`, `calc`, `share`) | do not split: a subtotal reads rows of every part | |
+
+A mean is not a sum: split it with its group's rows, or carry the sum and the count and divide at the end. The library does not run the parts; that is the caller's job.
+
 ## Costs and limits
 
 - **Speed.** jq interprets every step and holds the whole input in memory. At 379,600 rows the office-hours question takes 25.8 s on jq 1.8.2 and 7.1 s on gojq, with 1.6 to 2.2 GB of memory; grouping, joining and window functions take 1.4 to 5.5 s. Each grows in step with the rows. gojq and jaq run the library unchanged and fastest.
+- **Where to hand off.** At 200,000 made-up service requests of ten fields, seven of the library's questions took 7.8 to 20.0 s each in the Python `jq` 1.13.0 package, with 0.7 to 1.0 GB of memory; the same at 500,000 rows took 20 to 54 s. DuckDB 2.0.0 answered six of them in 0.12 to 0.17 s at 200,000 rows, reading the JSON file included, on 14 cores. It took 149 s on the seventh, an as-of join, where the library took 15 s. All answers were equal. Measured 2026-11-18 on an Apple Silicon Mac with `tools/bench_rows.py 200000`. So past about 200,000 rows, grouping, windows and plain joins belong in DuckDB when it is available; the line is a judgement about waiting time, not a limit.
 - **As-of join with identical timestamps.** Many right rows with the same key and time slow `join_asof`: on copies where every timestamp repeated 100 times it took 24 to 47 s and grew 20 to 29 times for 10 times the rows.
 - **Streaming.** Every table function needs its whole table. Counts and sums can stream over NDJSON with plain `reduce inputs`; quantiles cannot.
 - **Time zones.** Only the seven zones in the generated zone block, 1970 to 2100.
