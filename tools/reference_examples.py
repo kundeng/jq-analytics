@@ -107,6 +107,14 @@ CALENDAR_EXAMPLES: dict[str, tuple[str, bool, bool]] = {
 }
 EXAMPLES.update(CALENDAR_EXAMPLES)
 
+SHOP = ('[{u: "u1", t: 0, step: "view"}, {u: "u1", t: 100, step: "cart"}, {u: "u1", t: 200, step: "pay"}, {u: "u2", t: 0, step: "view"}, {u: "u2", t: 50, step: "pay"}, {u: "u2", t: 60, step: "cart"}, '
+        '{u: "u3", t: 0, step: "view"}, {u: "u3", t: 5000, step: "cart"}, {u: "u4", t: 0, step: "view"}, {u: "u4", t: 4000, step: "view"}, {u: "u4", t: 4100, step: "cart"}, {u: "u4", t: 4200, step: "pay"}, {u: "u5", t: 10, step: "cart"}]')
+PATH_EXAMPLES: dict[str, tuple[str, bool, bool]] = {
+    "funnel": (SHOP + ' | {per_entity: funnel_steps(.u; .t; .step; ["view", "cart", "pay"]; 3600), per_step: (funnel(.u; .t; .step; ["view", "cart", "pay"]; 3600) | map(.from_previous |= (if . == null then null else round_to(4) end)))}', False, True),
+    "retention": ('[{u: "a", m: "2026-01"}, {u: "a", m: "2026-02"}, {u: "a", m: "2026-03"}, {u: "b", m: "2026-01"}, {u: "b", m: "2026-03"}, {u: "c", m: "2026-02"}] | ["2026-01", "2026-02", "2026-03"] as $months | {cohorts: cohorts(.u; .m; $months), retention: retention(.u; .m; $months)}', False, True),
+}
+EXAMPLES.update(PATH_EXAMPLES)
+
 CONTEXT_EXAMPLES: dict[str, tuple[str, bool, bool]] = {
     "context_rollup": (REVENUE + SALES + ' | rollup(["region", "product"]; {revenue: measure(revenue), share_of_region: share(revenue; without("product")), share_of_all: share(revenue; keep_only([]))})', False, True),
     "context_time": (REVENUE + SALES + ' | rollup(["month"]; {revenue: measure(revenue), prior: calc(revenue; shift("month"; -1)), to_date: calc(revenue; to_date("month")), east_only: calc(revenue; with_filter({region: "east"}))})', False, True),

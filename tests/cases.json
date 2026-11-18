@@ -954,5 +954,165 @@
       }
     ],
     "jq": "def revenue: map(.amount) | add; map(select(.region == \"east\")) | rollup([\"month\"]; {prior: calc(revenue; on_calendar(\"month\"; [\"2026-02\", \"2026-03\", \"2026-04\"]) | shift(\"month\"; -1))}) | map(select(.level == \"month\") | del(.level))"
+  },
+  {
+    "name": "funnel_walkthrough",
+    "input": "tests/fixtures/shop_events.json",
+    "expect_value": [
+      {
+        "step": "view",
+        "entities": 4,
+        "from_previous": null,
+        "from_first": 1
+      },
+      {
+        "step": "cart",
+        "entities": 3,
+        "from_previous": 0.75,
+        "from_first": 0.75
+      },
+      {
+        "step": "pay",
+        "entities": 2,
+        "from_previous": 0.6666666666666666,
+        "from_first": 0.5
+      }
+    ],
+    "jq": "funnel(.u; .t; .step; [\"view\", \"cart\", \"pay\"]; 3600)"
+  },
+  {
+    "name": "funnel_steps_walkthrough",
+    "input": "tests/fixtures/shop_events.json",
+    "expect_value": [
+      {
+        "key": "u1",
+        "depth": 3,
+        "times": [
+          0,
+          100,
+          200
+        ]
+      },
+      {
+        "key": "u2",
+        "depth": 2,
+        "times": [
+          0,
+          60
+        ]
+      },
+      {
+        "key": "u3",
+        "depth": 1,
+        "times": [
+          0
+        ]
+      },
+      {
+        "key": "u4",
+        "depth": 3,
+        "times": [
+          4000,
+          4100,
+          4200
+        ]
+      }
+    ],
+    "jq": "funnel_steps(.u; .t; .step; [\"view\", \"cart\", \"pay\"]; 3600)"
+  },
+  {
+    "name": "funnel_window",
+    "input": "tests/fixtures/shop_generated.json",
+    "sql": "funnel_window.sql",
+    "jq": "{counts: (funnel(.u; .t; .step; [\"view\", \"cart\", \"pay\"]; 600) | map(.entities)), depths: (funnel_steps(.u; .t; .step; [\"view\", \"cart\", \"pay\"]; 600) | map({u: .key, depth}) | sort_by(.u))}"
+  },
+  {
+    "name": "funnel_no_window",
+    "input": "tests/fixtures/shop_generated.json",
+    "sql": "funnel_no_window.sql",
+    "jq": "{counts: (funnel(.u; .t; .step; [\"view\", \"cart\", \"pay\"]; null) | map(.entities)), depths: (funnel_steps(.u; .t; .step; [\"view\", \"cart\", \"pay\"]; null) | map({u: .key, depth}) | sort_by(.u))}"
+  },
+  {
+    "name": "funnel_only_narrows",
+    "input": "tests/fixtures/shop_generated.json",
+    "expect_value": true,
+    "jq": ". as $ev | [null, 60, 600, 5000] | map(. as $w | $ev | funnel(.u; .t; .step; [\"view\", \"cart\", \"pay\"]; $w) | map(.entities) | (.[0] >= .[1] and .[1] >= .[2])) | all"
+  },
+  {
+    "name": "funnel_empty_steps_error",
+    "input": "tests/fixtures/shop_events.json",
+    "expect_error": "funnel: the step list is empty",
+    "jq": "funnel(.u; .t; .step; []; null)"
+  },
+  {
+    "name": "funnel_repeated_step_error",
+    "input": "tests/fixtures/shop_events.json",
+    "expect_error": "is listed twice",
+    "jq": "funnel(.u; .t; .step; [\"view\", \"cart\", \"view\"]; null)"
+  },
+  {
+    "name": "funnel_no_time_error",
+    "input": "tests/fixtures/shop_events.json",
+    "expect_error": "has no time",
+    "jq": "map(if .u == \"u3\" then .t = null else . end) | funnel(.u; .t; .step; [\"view\", \"cart\"]; null)"
+  },
+  {
+    "name": "retention_walkthrough",
+    "input": "tests/fixtures/visits.json",
+    "expect_value": [
+      {
+        "cohort": "2026-01",
+        "period": "2026-01",
+        "offset": 0,
+        "entities": 2,
+        "cohort_size": 2,
+        "rate": 1
+      },
+      {
+        "cohort": "2026-01",
+        "period": "2026-02",
+        "offset": 1,
+        "entities": 1,
+        "cohort_size": 2,
+        "rate": 0.5
+      },
+      {
+        "cohort": "2026-01",
+        "period": "2026-03",
+        "offset": 2,
+        "entities": 2,
+        "cohort_size": 2,
+        "rate": 1
+      },
+      {
+        "cohort": "2026-02",
+        "period": "2026-02",
+        "offset": 0,
+        "entities": 1,
+        "cohort_size": 1,
+        "rate": 1
+      },
+      {
+        "cohort": "2026-02",
+        "period": "2026-03",
+        "offset": 1,
+        "entities": 0,
+        "cohort_size": 1,
+        "rate": 0
+      }
+    ],
+    "jq": "retention(.u; .m; [\"2026-01\", \"2026-02\", \"2026-03\"])"
+  },
+  {
+    "name": "cohorts_retention",
+    "input": "tests/fixtures/visits_generated.json",
+    "sql": "retention.sql",
+    "jq": "{table: retention(.u; .m; [\"2026-01\", \"2026-02\", \"2026-03\", \"2026-04\", \"2026-05\", \"2026-06\", \"2026-07\"]), cohorts: (cohorts(.u; .m; [\"2026-01\", \"2026-02\", \"2026-03\", \"2026-04\", \"2026-05\", \"2026-06\", \"2026-07\"]) | map({u: .key, cohort}) | sort_by(.u))}"
+  },
+  {
+    "name": "retention_period_error",
+    "input": "tests/fixtures/visits.json",
+    "expect_error": "is not in the period list",
+    "jq": "retention(.u; .m; [\"2026-01\", \"2026-02\"])"
   }
 ]

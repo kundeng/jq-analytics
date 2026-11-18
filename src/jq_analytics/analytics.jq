@@ -805,3 +805,83 @@ def calendar($from; $to; $zone):
         start: ($m | _cal_midnight($z)), end: (($m + 86400) | _cal_midnight($z))}]
     end;
 def calendar($from; $to): calendar($from; $to; "UTC");
+
+# ---------------------------------------------------------------- event paths: funnels, cohorts, retention
+
+def _entity_key: if type == "object" then . else {key: .} end;
+
+def _funnel_check(time; step; $steps):
+  if ($steps | length) == 0 then error("funnel: the step list is empty")
+  elif ($steps | unique | length) != ($steps | length)
+  then error("funnel: step \($steps | group_by(.) | map(select(length > 1)[0])[0] | tojson) is listed twice")
+  else (first(.[] | select((step) as $s | any($steps[]; . == $s) and (time) == null) | [step]) // null) as $bad
+    | if $bad != null then error("funnel: an event of step \($bad[0] | tojson) has no time") else . end
+  end;
+
+# funnel_steps: how far each entity gets through the ordered steps in $steps. An entity reaches
+# step n when it has events for steps 1 to n in time order (a later step at the same time as the
+# one before counts). With $within (seconds; null for no limit) every step must happen within that
+# long of the entity's first step, and the entity is credited with the deepest chain any of its
+# first-step events can start: an early first step that times out does not hide a later one that
+# completes. One row per entity that reaches step 1, entities in order of first appearance:
+# {entity key..., depth (1 to the number of steps), times (the time of each step reached)}.
+# Events whose step is not listed are ignored. An empty step list, a step listed twice, or a null
+# time on an event of a listed step is an error.
+def funnel_steps(entity; time; step; $steps; $within):
+  _funnel_check(time; step; $steps)
+  | ($steps | length) as $n
+  | [map(select((step) as $s | any($steps[]; . == $s))) | _groups(entity)[]
+     | (.[0] | entity | _entity_key) as $k
+     | (. as $ev | [$steps[] as $s | [$ev[] | select((step) == $s) | time] | sort]) as $t
+     | (reduce $t[0][] as $t1 (null;
+          if . != null and length == $n then .
+          else (if $within == null then null else $t1 + $within end) as $lim
+            # for a fixed first event the earliest matching event is always the best next step:
+            # a later one can only remove options for the steps after it
+            | (reduce range(1; $n) as $i ({c: [$t1], ok: true};
+                 if .ok | not then .
+                 else .c[-1] as $prev
+                   | (first($t[$i][] | select(. >= $prev and ($lim == null or . <= $lim)) | [.]) // null) as $x
+                   | if $x == null then .ok = false else .c += $x end
+                 end) | .c) as $chain
+            | if . == null or ($chain | length) > length then $chain else . end
+          end)) as $best
+     | select($best != null) | $k + {depth: ($best | length), times: $best}];
+
+# funnel: one row per step, in order: {step, entities (how many reached it), from_previous,
+# from_first}: the count divided by the previous step's and by the first step's; null where the
+# divisor is zero, and from_previous is null on the first step. A funnel only narrows.
+def funnel(entity; time; step; $steps; $within):
+  (funnel_steps(entity; time; step; $steps; $within) | map(.depth)) as $d
+  | [range(0; $steps | length) as $i | ($d | map(select(. > $i)) | length)] as $c
+  | [range(0; $steps | length) as $i
+     | {step: $steps[$i], entities: $c[$i],
+        from_previous: (if $i == 0 or $c[$i - 1] == 0 then null else $c[$i] / $c[$i - 1] end),
+        from_first: (if $c[0] == 0 then null else $c[$i] / $c[0] end)}];
+
+def _period_pos: . as $p | reduce range(0; length) as $i ({}; .[$p[$i] | tojson] = $i);
+def _period_idx(period; $pos; $who):
+  (period) as $p | $pos[$p | tojson] as $i
+  | if $i == null then error("\($who): period \($p | tojson) is not in the period list") else $i end;
+
+# cohorts: one row per entity, in order of first appearance: {entity key..., cohort}, the earliest
+# period, in $periods order, in which it has an event. $periods is every period in order, for
+# example calendar(...) | map(.year_month) | unique. A period not in the list is an error.
+def cohorts(entity; period; $periods):
+  ($periods | _period_pos) as $pos
+  | [_groups(entity)[] | (.[0] | entity | _entity_key) + {cohort: $periods[map(_period_idx(period; $pos; "cohorts")) | min]}];
+
+# retention: of the entities first seen in a period (a cohort), how many have at least one event
+# in each later period. One row per cohort and period, from the cohort's own period to the last in
+# $periods: {cohort, period, offset (periods after the cohort's; 0 for its own), entities,
+# cohort_size, rate (entities / cohort_size)}. The table is complete: a period in which nobody of
+# the cohort is active has a row with 0. Periods with no first-time entities form no cohort.
+def retention(entity; period; $periods):
+  ($periods | _period_pos) as $pos
+  | [_groups(entity)[] | map(_period_idx(period; $pos; "retention")) | {c: min, a: unique}] as $e
+  | ($periods | length) as $np
+  | [range(0; $np) as $c | ($e | map(select(.c == $c))) as $m | select(($m | length) > 0)
+     | ($m | [.[].a[]] | group_by(.) | map({key: (.[0] | tostring), value: length}) | from_entries) as $cnt
+     | range($c; $np) as $p | ($cnt[$p | tostring] // 0) as $n
+     | {cohort: $periods[$c], period: $periods[$p], offset: ($p - $c), entities: $n,
+        cohort_size: ($m | length), rate: ($n / ($m | length))}];

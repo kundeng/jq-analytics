@@ -1,6 +1,6 @@
 # Feature matrix
 
-What the library does, family by family, and how far each part is carried: the functions in `analytics.jq`, the test cases, the answer key, and the README. Counts are as of version 0.4.0 and come from `tests/cases.json` and the library file.
+What the library does, family by family, and how far each part is carried: the functions in `analytics.jq`, the test cases, the answer key, and the README. Counts are as of version 0.5.0 and come from `tests/cases.json` and the library file.
 
 ```mermaid
 flowchart LR
@@ -31,6 +31,8 @@ Legend: ✅ done · 🟡 partial · ⏳ planned · — not involved. A case coun
 | interval-merge, interval-concurrency | intervals | ✅ 2 | ✅ 5 | 2 | ✅ | five engines, 2026-11-18 | [15](../specs/15-intervals/spec.md) |
 | calendar-table | none in; day rows out, each an interval and a dimension row | ✅ 1 | ✅ 7 | 2 | ✅ | five engines, 2026-11-18 | [20](../specs/20-calendar/spec.md) |
 | calendar-periods | star, inside a cell | ✅ 1 | ✅ 2 | 1 | ✅ | five engines, 2026-11-18 | [20](../specs/20-calendar/spec.md) |
+| funnel | an event table, per entity | ✅ 2 | ✅ 8 | 2 | ✅ | five engines, 2026-11-18 | [25](../specs/25-event-paths/spec.md) |
+| cohort-retention | an event table, per entity, with a period list | ✅ 2 | ✅ 3 | 1 | ✅ | five engines, 2026-11-18 | [25](../specs/25-event-paths/spec.md) |
 | converters-in | sources to table or tree | ✅ 6 | ✅ 12 | 3 | ✅ | five engines, 2026-11-18 | [10](../specs/10-shape-converters/spec.md) |
 | converters-out | shapes to map, nested tree, node-link, CSV | ✅ 4 | ✅ 7 | 0 | ✅ | five engines, 2026-11-18 | [10](../specs/10-shape-converters/spec.md) |
 | shapes-model | | — | — | — | ✅ | document and README | [05](../specs/05-shapes-model/spec.md) |
@@ -47,7 +49,6 @@ Legend: ✅ done · 🟡 partial · ⏳ planned · — not involved. A case coun
 
 | Feature | Shape | State | Spec |
 |---|---|---|---|
-| funnels, cohorts, retention | event table | ⏳ | 25 |
 | shortest path, dependency order | graph | ⏳ | 30 |
 | mode, histogram, correlation, profile, table diff | table | ⏳ | 35 |
 | approximate key matching | two tables | ⏳ least certain | 40 |

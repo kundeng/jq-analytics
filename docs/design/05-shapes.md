@@ -84,6 +84,8 @@ A source is a form data arrives in. It has to become a shape before a function c
 | which device held this address at 14:05? | intervals | `intervals_from_events`, then `join_within` |
 | who reports to whom after these HR changes? | a tree | the latest row per person, then `tree_paths` |
 | which hosts talked to which? | a graph | one edge row per pair, then `components` |
+| how far do users get through view, cart, pay? | a table of one row per entity, then one per step | `funnel_steps`, `funnel` |
+| of the users first seen in January, how many came back? | a table of one row per cohort and period | `cohorts`, `retention` |
 | requests per site per month, with subtotals? | a star | `lookup` to attach dimensions, then `rollup` |
 
 ## One case through three shapes

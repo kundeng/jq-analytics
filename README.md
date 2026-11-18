@@ -1,6 +1,6 @@
 # analytics.jq: tables and statistics for jq
 
-`analytics.jq` is a jq module of 82 functions that let a jq program answer the questions people usually send to SQL, pandas or a graph library: hold several named tables at once, join them by key, condition and time, group and aggregate, percentiles, running and lagged values over ordered partitions, time series read as state machines, roll-ups over trees, reachability in graphs, validity intervals built from events, a calendar table, measures evaluated at several levels of a report, and local time in a named time zone. Each function states its rule in a comment beside it (how it treats nulls, ties, order and rounding), and each rule is pinned by a test whose expected answer DuckDB computes. Its time-zone tables, generated from the IANA time-zone database, are a block inside the same file.
+`analytics.jq` is a jq module of 86 functions that let a jq program answer the questions people usually send to SQL, pandas or a graph library: hold several named tables at once, join them by key, condition and time, group and aggregate, percentiles, running and lagged values over ordered partitions, time series read as state machines, roll-ups over trees, reachability in graphs, validity intervals built from events, a calendar table, funnels and retention, measures evaluated at several levels of a report, and local time in a named time zone. Each function states its rule in a comment beside it (how it treats nulls, ties, order and rounding), and each rule is pinned by a test whose expected answer DuckDB computes. Its time-zone tables, generated from the IANA time-zone database, are a block inside the same file.
 
 It exists because plain jq leaves those rules to whoever writes the program. In one analysis of service requests, four shared jq helpers each decided a number without saying how: one dropped unresolved tickets, one used a different percentile rule, one hardcoded a single year's daylight-saving switch, one rounded before comparing with a threshold and miscounted by one. This library is one place where those rules are written down, tested against DuckDB, and the same for every analysis that loads it.
 
@@ -75,7 +75,7 @@ The library is one file, `analytics.jq`, in a directory `<dir>` below. Its time-
 | Python `jq` package | `jq.compile('include "analytics" {search: "<dir>"}; ' + program).input_value(rows).first()`; the package has no `-L` and an empty default search list, so the path goes in the program |
 | Python package `jq_analytics` | `jq_analytics.include()` returns the `include` line with this package's directory filled in |
 
-Tested on jq 1.7.1 (Apple's build), jq 1.8.2, gojq 0.12.20, jaq 3.1.2 and the `jq` Python package 1.13.0, which builds jq 1.8.2: all pass the same 95 test cases (`tests/run_tests.py`). The library uses no builtin that is missing from any of them, and it parenthesises `reduce … as` inside function arguments, which jq 1.7.1's grammar requires.
+Tested on jq 1.7.1 (Apple's build), jq 1.8.2, gojq 0.12.20, jaq 3.1.2 and the `jq` Python package 1.13.0, which builds jq 1.8.2: all pass the same 106 test cases (`tests/run_tests.py`). The library uses no builtin that is missing from any of them, and it parenthesises `reduce … as` inside function arguments, which jq 1.7.1's grammar requires.
 
 ## Rules that hold everywhere
 
@@ -778,6 +778,48 @@ Events of one entity, ordered by time, are read as a machine that is in one stat
 ```
 <!-- /example -->
 
+### Funnels, cohorts and retention
+
+Two questions asked of any event table that names an entity: how far entities get through an ordered series of steps, and how many of those first seen in a period come back later.
+
+**`funnel_steps(entity; time; step; $steps; $within)`.** How far each entity gets through the steps listed in `$steps`. An entity reaches step n when it has events for steps 1 to n in time order; a later step at the same time as the one before counts. With `$within` (seconds; null for no limit) every step must happen within that long of the entity's first step, and the entity is credited with the deepest chain any of its first-step events can start, so an early first step that times out does not hide a later one that completes. One row per entity that reaches step 1: its key, `depth` and `times`. Events of steps not listed are ignored. An empty list, a step listed twice, or a null time on a listed step is an error.
+
+**`funnel(entity; time; step; $steps; $within)`.** One row per step: `{step, entities, from_previous, from_first}`, the number of entities that reached it and that number divided by the previous step's and the first step's (null where the divisor is zero or there is no previous step). Checked against a DuckDB query that states the rule as existence of events in order within the limit.
+
+<!-- example: funnel -->
+```jq
+[{u: "u1", t: 0, step: "view"}, {u: "u1", t: 100, step: "cart"}, {u: "u1", t: 200, step: "pay"}, {u: "u2", t: 0, step: "view"}, {u: "u2", t: 50, step: "pay"}, {u: "u2", t: 60, step: "cart"}, {u: "u3", t: 0, step: "view"}, {u: "u3", t: 5000, step: "cart"}, {u: "u4", t: 0, step: "view"}, {u: "u4", t: 4000, step: "view"}, {u: "u4", t: 4100, step: "cart"}, {u: "u4", t: 4200, step: "pay"}, {u: "u5", t: 10, step: "cart"}] | {per_entity: funnel_steps(.u; .t; .step; ["view", "cart", "pay"]; 3600), per_step: (funnel(.u; .t; .step; ["view", "cart", "pay"]; 3600) | map(.from_previous |= (if . == null then null else round_to(4) end)))}
+```
+
+```json
+{
+  "per_entity": [{"key": "u1", "depth": 3, "times": [0, 100, 200]}, {"key": "u2", "depth": 2, "times": [0, 60]}, {"key": "u3", "depth": 1, "times": [0]}, {"key": "u4", "depth": 3, "times": [4000, 4100, 4200]}],
+  "per_step": [{"step": "view", "entities": 4, "from_previous": null, "from_first": 1}, {"step": "cart", "entities": 3, "from_previous": 0.75, "from_first": 0.75}, {"step": "pay", "entities": 2, "from_previous": 0.6667, "from_first": 0.5}]
+}
+```
+<!-- /example -->
+
+Reading it: u2 paid before adding to the cart, so its pay does not count after the cart at 60. u3's cart is outside the hour. u4's first view times out, and its second view at 4000 completes the funnel. u5 never viewed and is not in the funnel. Four viewed, three reached the cart, two paid.
+
+**`cohorts(entity; period; $periods)`.** One row per entity: its key and `cohort`, the earliest period in which it has an event. `$periods` is every period in order, usually from [`calendar`](#time-zones-and-calendar): `calendar(…) | map(.year_month) | unique`. A period not in the list is an error.
+
+**`retention(entity; period; $periods)`.** Of the entities first seen in a period, how many have at least one event in each later one. One row per cohort and period from the cohort's own to the last in `$periods`: `{cohort, period, offset, entities, cohort_size, rate}`. The table is complete: a period in which nobody of the cohort is active has a row with 0, and a period with no events at all still counts as a period.
+
+<!-- example: retention -->
+```jq
+[{u: "a", m: "2026-01"}, {u: "a", m: "2026-02"}, {u: "a", m: "2026-03"}, {u: "b", m: "2026-01"}, {u: "b", m: "2026-03"}, {u: "c", m: "2026-02"}] | ["2026-01", "2026-02", "2026-03"] as $months | {cohorts: cohorts(.u; .m; $months), retention: retention(.u; .m; $months)}
+```
+
+```json
+{
+  "cohorts": [{"key": "a", "cohort": "2026-01"}, {"key": "b", "cohort": "2026-01"}, {"key": "c", "cohort": "2026-02"}],
+  "retention": [{"cohort": "2026-01", "period": "2026-01", "offset": 0, "entities": 2, "cohort_size": 2, "rate": 1}, {"cohort": "2026-01", "period": "2026-02", "offset": 1, "entities": 1, "cohort_size": 2, "rate": 0.5}, {"cohort": "2026-01", "period": "2026-03", "offset": 2, "entities": 2, "cohort_size": 2, "rate": 1}, {"cohort": "2026-02", "period": "2026-02", "offset": 0, "entities": 1, "cohort_size": 1, "rate": 1}, {"cohort": "2026-02", "period": "2026-03", "offset": 1, "entities": 0, "cohort_size": 1, "rate": 0}]
+}
+```
+<!-- /example -->
+
+Checking by hand: a and b are first seen in January, c in February. Of the January cohort, only a is active in February (1 of 2) and both in March. Nobody of the February cohort is active in March.
+
 ### Hierarchies
 
 A tree is a table of nodes, each naming its parent; a root's parent is null or `""`.
@@ -964,6 +1006,8 @@ A caller that partitions the input and runs each part separately gets the same a
 |---|---|---|
 | a sum or count over rows (`sum_nonnull`, `count_nonnull`, `group_agg` with sums and counts) | anywhere | adding the parts |
 | reads only its own group's rows (`median`, `quantile_cont`, `group_agg` with any aggregate, `over` windows, `pivot`) | by the group key | concatenating |
+| follows one entity through its events (`funnel_steps`, `cohorts`) | by the entity key | concatenating |
+| counts entities (`funnel`, `retention`) | by the entity key: run `funnel_steps` or `cohorts` on the parts, concatenate, then count once | counting after concatenating |
 | orders one entity's rows in time (`state_blocks`, `transitions`, `sessions`, `runs`, `join_asof`, `intervals_from_events` by resource, `merge_intervals` by key) | by the entity key, each part in time order | concatenating |
 | reads two tables (`join_*`, `lookup`, `join_overlap`, `join_within`) | both tables by the join key | concatenating |
 | walks a tree or graph (`tree_paths`, `tree_rollup`, `reachable`, `components`) | by connected component, when the components are known in advance; otherwise do not split | concatenating |
@@ -982,10 +1026,11 @@ A mean is not a sum: split it with its group's rows, or carry the sum and the co
 - **Windows.** ROWS frames only; no RANGE or GROUPS frames.
 - **Measures in a context.** At 379,600 rows a daily report with share of total, prior day or to date takes 3.1 to 5.0 s on jq 1.8.2 and 1.5 to 2.6 s on gojq, about 1.3 to 2 times plain `group_by`, in step with the rows. A filter outside the report's levels costs a scan per cell (75 s on jq 1.8.2 for 77 cells). Not measured with thousands of cells.
 - **Intervals.** At 200,000 lease events over about 4,000 addresses in the Python `jq` package, parsing included: `intervals_from_events` 8.4 s (180,000 intervals), `join_within` 4.0 s for 50,000 lookups, `merge_intervals` 5.1 s, `concurrency` 4.7 s.
+- **Funnels and retention.** At 200,000 events over about 25,000 entities in the Python `jq` package, parsing included: `funnel` 5.7 s, `retention` over 12 periods 3.0 s, `cohorts` 2.2 s.
 - **Converters.** At 200,000 rows in the Python `jq` package, parsing included: `unnest` 2.1 s, `to_map` 0.9 s, `rows_from_map` 2.1 s, `to_csv` 0.8 s, `node_link` 2.6 s, `flatten_fields` 12.6 s (it walks every field of every row).
 - **Trees.** `tree_paths` walks each node's ancestry, so its cost grows with depth: 4,000 nodes took 0.5 s in a shallow tree and 16 s in one dozens of levels deep; 200,000 nodes in a shallow tree took 39 s. `tree_rollup` and `nested_from_nodes` call it and cost the same. Org charts and category trees are shallow.
 - **Graphs.** `reachable` and `components` are tested for correctness, not yet measured on large graphs.
-- **Not included yet.** Relationships between tables in the DAX sense (join or `lookup` first), funnels and cohorts, shortest path and topological order, fuzzy matching, approximate quantiles, mode, histograms, correlation, fill-down, top-n per group, fiscal calendars and holidays.
+- **Not included yet.** Relationships between tables in the DAX sense (join or `lookup` first), shortest path and topological order, fuzzy matching, approximate quantiles, mode, histograms, correlation, fill-down, top-n per group, fiscal calendars and holidays.
 
 ## Files and tests
 
@@ -1000,7 +1045,7 @@ A mean is not a sum: split it with its group's rows, or carry the sum and the co
 | `tests/make_incidents.py` | writes `tests/fixtures/made_up_incidents.json` from a fixed seed |
 | `tests/run_tests.py` | runs every case on each jq engine and the Python `jq` package and compares with DuckDB |
 | `tools/reference_examples.py` | runs every example in this README and writes its output here |
-| `tools/bench_rows.py`, `tools/bench_converters.py`, `tools/bench_intervals.py` | time the library's questions and its converters at a given number of rows |
+| `tools/bench_rows.py`, `tools/bench_converters.py`, `tools/bench_intervals.py`, `tools/bench_event_paths.py` | time the library's questions and its converters at a given number of rows |
 | `tests/check_names.py` | fails when a public function has the name of an engine builtin; runs before the cases |
 | `docs/design/`, `docs/specs/` | the shapes design, the feature matrix, and one spec per sprint |
 
