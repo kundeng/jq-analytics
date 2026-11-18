@@ -16,7 +16,7 @@ The comment explains why this is not written as a `reduce` that appends each row
 [{g: "b", x: 1}, {g: "a", x: 2}, {g: null, x: 3}, {g: "b", x: 4}] | _groups(.g)
 ```
 
-**Review finding 5, fixed in 0.9.0.** The comments of `group_agg`, `intervals_from_events` and `state_blocks` used to sit above their helper functions. Each now sits directly above the function it describes.
+**Review finding 5, fixed in 0.9.0.** The comments of `group_agg`, `intervals_from_events` and `state_blocks` used to sit above their helper functions. Each now sits directly above the function it describes. Version 0.9.1 moved five more: `parse_ts`'s, displaced by the 0.9.0 fix itself, and four in the shapes family that this finding had missed. The read-out build now refuses a comment that opens with another function's name.
 
 ## group_agg/2
 <!-- code: 2c78cb5d -->

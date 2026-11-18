@@ -6,7 +6,7 @@ Two definitions: `unpivot` turns columns into rows, and `pivot` turns rows into 
 
 ## unpivot
 
-`unpivot/3`, lines 326 to 329:
+`unpivot/3`, lines 327 to 330:
 
 ```jq
 # unpivot: every field not in $keep becomes its own row {keep fields..., $name: field, $value: value}.
@@ -40,7 +40,7 @@ For each row, the fields named in `$keep` stay as they are (`$base`); every othe
 
 ## pivot
 
-`pivot/5`, lines 334 to 336:
+`pivot/5`, lines 335 to 337:
 
 ```jq
 # pivot: one output row per rowkey (an object) and one column per name in $cols (Power Query's

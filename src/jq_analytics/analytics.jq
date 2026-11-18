@@ -79,6 +79,13 @@ def round_to($d): if . == null then null else pow(10; $d) as $m | (. * $m | roun
 
 # ---------------------------------------------------------------- types
 
+# "YYYY-MM-DDTHH:MM:SSZ" to epoch seconds, refusing a date or time that does not exist. Some engines
+# accept 2026-02-30 and carry it over to 2 March; printing the result back and comparing catches
+# that on every engine. $s is the caller's original text, for the message.
+def _ts_exact($s):
+  . as $iso | (try ($iso | fromdateiso8601) catch null) as $e
+  | if $e == null or ($e | todate) != $iso then error("parse_ts: not a timestamp: \($s | tojson)") else $e end;
+
 # a timestamp string to UTC epoch seconds (fractions kept). Accepts "YYYY-MM-DD HH:MM:SS" or "T",
 # optional fraction, optional "Z" or +HH:MM / +HHMM offset. No offset means UTC (as ServiceNow
 # and Splunk's _time strings store it). null and "" give null; anything else is an error, never
@@ -88,12 +95,6 @@ def round_to($d): if . == null then null else pow(10; $d) as $m | (. * $m | roun
 # the cost (at 500,000 rows in the Python jq package, 24.7 s with the regex, 7.5 s without); its
 # dashes, colons and digits are still checked, by fromdateiso8601's own format, and a bad one is the
 # same error.
-# "YYYY-MM-DDTHH:MM:SSZ" to epoch seconds, refusing a date or time that does not exist. Some engines
-# accept 2026-02-30 and carry it over to 2 March; printing the result back and comparing catches
-# that on every engine. $s is the caller's original text, for the message.
-def _ts_exact($s):
-  . as $iso | (try ($iso | fromdateiso8601) catch null) as $e
-  | if $e == null or ($e | todate) != $iso then error("parse_ts: not a timestamp: \($s | tojson)") else $e end;
 def parse_ts:
   if . == null or . == "" then null
   elif length == 19 and (.[10:11] | . == " " or . == "T")
@@ -660,28 +661,32 @@ def to_date($dim):
 def _distinct_in_order: reduce .[] as $x ({n: 0, s: {}}; ($x | tojson) as $k
   | if .s[$k] then . else .s[$k] = [.n, $x] | .n += 1 end) | [.s[]] | sort_by(.[0]) | map(.[1]);
 
-# unnest: one row per element of the array at f, the element in field $as. A row whose array is
-# empty or null is dropped, as SQL's UNNEST drops it; unnest_outer keeps it once with $as null
-# (LEFT JOIN LATERAL). A value at f that is neither an array nor null is an error naming the row's
-# position. Elements come out in array order, rows in input order.
+# the array at f for one row: [] for null, an error naming the row for anything else
 def _unnest_arr(f; $i):
   (f) as $a
   | if $a == null then [] elif ($a | type) == "array" then $a
     else error("unnest: row \($i) holds a \($a | type), not an array") end;
+
+# unnest: one row per element of the array at f, the element in field $as. A row whose array is
+# empty or null is dropped, as SQL's UNNEST drops it; unnest_outer keeps it once with $as null
+# (LEFT JOIN LATERAL). A value at f that is neither an array nor null is an error naming the row's
+# position. Elements come out in array order, rows in input order.
 def unnest(f; $as):
   [to_entries[] | .key as $i | .value as $r | ($r | _unnest_arr(f; $i))[] as $x | $r + {($as): $x}];
 def unnest_outer(f; $as):
   [to_entries[] | .key as $i | .value as $r
    | ($r | _unnest_arr(f; $i) | if length == 0 then [null] else . end)[] as $x | $r + {($as): $x}];
 
-# flatten_fields: nested objects become columns named by their path joined with $sep
-# ({"user": {"dept": "x"}} gives "user.dept"). Arrays and scalars are left as values, for unnest to
-# take; an empty object stays as the value {}. Two paths that flatten to the same name are an error.
-# (jq's own flatten flattens arrays; this flattens the objects inside each row.)
+# one value flattened to {key: path, value} pairs; a non-empty object recurses, anything else is a leaf
 def _flat($p; $sep):
   if type == "object" and length > 0
   then to_entries[] | .key as $k | .value | _flat(if $p == null then $k else $p + $sep + $k end; $sep)
   else {key: $p, value: .} end;
+
+# flatten_fields: nested objects become columns named by their path joined with $sep
+# ({"user": {"dept": "x"}} gives "user.dept"). Arrays and scalars are left as values, for unnest to
+# take; an empty object stays as the value {}. Two paths that flatten to the same name are an error.
+# (jq's own flatten flattens arrays; this flattens the objects inside each row.)
 def flatten_fields($sep):
   map(if length == 0 then {}
       else [_flat(null; $sep)] as $e | ($e | from_entries) as $o
@@ -690,11 +695,13 @@ def flatten_fields($sep):
           else $o end
       end);
 
+# one nested node and its descendants as rows, depth first, each with its parent's id
+def _nodes(id; children; $p): . as $n
+  | ($n | del(children) + {parent: $p}), ((($n | children) // [])[] | _nodes(id; children; ($n | id)));
+
 # nodes_from_nested: a nested tree (each node holding its children in an array at `children`)
 # becomes node rows, each with `parent` set to its parent's id (null for a root) and the children
 # array removed. The input is one root object or an array of roots. Rows are in depth-first order.
-def _nodes(id; children; $p): . as $n
-  | ($n | del(children) + {parent: $p}), ((($n | children) // [])[] | _nodes(id; children; ($n | id)));
 def nodes_from_nested(id; children): [(if type == "array" then .[] else . end) | _nodes(id; children; null)];
 
 # rows_from_map: an object keyed by id becomes rows, the key in field $as, sorted by key. A value
@@ -733,10 +740,12 @@ def to_map(key):
   reduce .[] as $r ({}; ($r | key | tostring) as $k
     | if has($k) then error("to_map: duplicate key \($k | tojson)") else .[$k] = $r end);
 
+# one node with its children, and theirs, nested under field $as
+def _nest($by; id; $as): . as $n | $n + {($as): [($by[$n | id | tojson] // [])[] | _nest($by; id; $as)]};
+
 # nested_from_nodes: node rows (id, parent) become a nested tree, each node's children in an array
 # in field $as, the roots in an array. Checked with tree_paths first, so a missing parent or a
 # cycle is the same error as there.
-def _nest($by; id; $as): . as $n | $n + {($as): [($by[$n | id | tojson] // [])[] | _nest($by; id; $as)]};
 def nested_from_nodes(id; parent; $as):
   (tree_paths(id; parent) | length) as $_
   | (group_by(parent) | map({key: (.[0] | parent | tojson), value: .}) | from_entries) as $by

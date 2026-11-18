@@ -8,7 +8,7 @@ No function here reads the machine's own time zone, so a result does not depend 
 
 ## tz
 
-`tz/1`, line 138:
+`tz/1`, line 139:
 
 ```jq
 # the transition rules of one IANA zone, from the generated tzdata block above (from the tzdata package; covers
@@ -34,7 +34,7 @@ It exists as a separate step because `tz_rules` is a large literal that jq build
 
 ## tz_offset
 
-`tz_offset/1`, lines 141 to 145:
+`tz_offset/1`, lines 142 to 146:
 
 ```jq
 # UTC offset in seconds at the input epoch; $tz is a zone name or the object tz($name) returned
@@ -69,7 +69,7 @@ Winter is five hours behind UTC and summer four. The last two rows are the secon
 
 ## local_time
 
-`local_time/1`, lines 150 to 154:
+`local_time/1`, lines 151 to 155:
 
 ```jq
 # the local wall clock of the input epoch in zone $tz (a name or tz($name)), as an object:
@@ -111,7 +111,7 @@ Input: a moment. Output: the local clock reading as an object.
 
 ## hours_between
 
-`hours_between/2`, lines 157 to 158:
+`hours_between/2`, lines 158 to 159:
 
 ```jq
 # hours from epoch a to epoch b, exact (no rounding); null when either is null

@@ -18,7 +18,7 @@ flowchart LR
 
 ## _distinct_in_order
 
-`_distinct_in_order/0`, lines 660 to 661:
+`_distinct_in_order/0`, lines 661 to 662:
 
 ```jq
 # the distinct values of an array in order of first appearance (jq's unique sorts them)
@@ -44,27 +44,28 @@ The number 1 and the string `"1"` stay distinct because their JSON texts differ.
 
 ## _unnest_arr, unnest, unnest_outer
 
-`_unnest_arr/2`, lines 667 to 670:
+`_unnest_arr/2`, lines 665 to 668:
 
 ```jq
-# unnest: one row per element of the array at f, the element in field $as. A row whose array is
-# empty or null is dropped, as SQL's UNNEST drops it; unnest_outer keeps it once with $as null
-# (LEFT JOIN LATERAL). A value at f that is neither an array nor null is an error naming the row's
-# position. Elements come out in array order, rows in input order.
+# the array at f for one row: [] for null, an error naming the row for anything else
 def _unnest_arr(f; $i):
   (f) as $a
   | if $a == null then [] elif ($a | type) == "array" then $a
     else error("unnest: row \($i) holds a \($a | type), not an array") end;
 ```
 
-`unnest/2`, lines 671 to 672:
+`unnest/2`, lines 674 to 675:
 
 ```jq
+# unnest: one row per element of the array at f, the element in field $as. A row whose array is
+# empty or null is dropped, as SQL's UNNEST drops it; unnest_outer keeps it once with $as null
+# (LEFT JOIN LATERAL). A value at f that is neither an array nor null is an error naming the row's
+# position. Elements come out in array order, rows in input order.
 def unnest(f; $as):
   [to_entries[] | .key as $i | .value as $r | ($r | _unnest_arr(f; $i))[] as $x | $r + {($as): $x}];
 ```
 
-`unnest_outer/2`, lines 673 to 675:
+`unnest_outer/2`, lines 676 to 678:
 
 ```jq
 def unnest_outer(f; $as):
@@ -96,19 +97,20 @@ The original array field stays on every output row; drop it afterwards with `del
 `_flat/2`, lines 681 to 684:
 
 ```jq
-# flatten_fields: nested objects become columns named by their path joined with $sep
-# ({"user": {"dept": "x"}} gives "user.dept"). Arrays and scalars are left as values, for unnest to
-# take; an empty object stays as the value {}. Two paths that flatten to the same name are an error.
-# (jq's own flatten flattens arrays; this flattens the objects inside each row.)
+# one value flattened to {key: path, value} pairs; a non-empty object recurses, anything else is a leaf
 def _flat($p; $sep):
   if type == "object" and length > 0
   then to_entries[] | .key as $k | .value | _flat(if $p == null then $k else $p + $sep + $k end; $sep)
   else {key: $p, value: .} end;
 ```
 
-`flatten_fields/1`, lines 685 to 691:
+`flatten_fields/1`, lines 690 to 696:
 
 ```jq
+# flatten_fields: nested objects become columns named by their path joined with $sep
+# ({"user": {"dept": "x"}} gives "user.dept"). Arrays and scalars are left as values, for unnest to
+# take; an empty object stays as the value {}. Two paths that flatten to the same name are an error.
+# (jq's own flatten flattens arrays; this flattens the objects inside each row.)
 def flatten_fields($sep):
   map(if length == 0 then {}
       else [_flat(null; $sep)] as $e | ($e | from_entries) as $o
@@ -135,19 +137,20 @@ Nested objects become columns named by their path.
 
 ## _nodes, nodes_from_nested
 
-`_nodes/3`, lines 696 to 697:
+`_nodes/3`, lines 699 to 700:
+
+```jq
+# one nested node and its descendants as rows, depth first, each with its parent's id
+def _nodes(id; children; $p): . as $n
+  | ($n | del(children) + {parent: $p}), ((($n | children) // [])[] | _nodes(id; children; ($n | id)));
+```
+
+`nodes_from_nested/2`, line 705:
 
 ```jq
 # nodes_from_nested: a nested tree (each node holding its children in an array at `children`)
 # becomes node rows, each with `parent` set to its parent's id (null for a root) and the children
 # array removed. The input is one root object or an array of roots. Rows are in depth-first order.
-def _nodes(id; children; $p): . as $n
-  | ($n | del(children) + {parent: $p}), ((($n | children) // [])[] | _nodes(id; children; ($n | id)));
-```
-
-`nodes_from_nested/2`, line 698:
-
-```jq
 def nodes_from_nested(id; children): [(if type == "array" then .[] else . end) | _nodes(id; children; null)];
 ```
 
@@ -170,7 +173,7 @@ A nested tree to node rows.
 
 ## rows_from_map
 
-`rows_from_map/1`, lines 704 to 709:
+`rows_from_map/1`, lines 711 to 716:
 
 ```jq
 # rows_from_map: an object keyed by id becomes rows, the key in field $as, sorted by key. A value
@@ -201,7 +204,7 @@ An object keyed by id to rows, the key in field `$as`. `sort_by(.key)` because g
 
 ## fill_grid
 
-`fill_grid/4`, lines 717 to 728:
+`fill_grid/4`, lines 724 to 735:
 
 ```jq
 # fill_grid: every combination of the $keys fields' values (in first appearance) at every time from
@@ -248,7 +251,7 @@ Without the filler rows, `lag` or `moving_mean` would treat the row after a gap 
 
 ## to_map
 
-`to_map/1`, lines 732 to 734:
+`to_map/1`, lines 739 to 741:
 
 ```jq
 # to_map: rows become an object keyed by `key` (as a string). A duplicate key is an error; jq's
@@ -272,18 +275,19 @@ Rows to an object keyed by `key` as text. Unlike jq's `INDEX`, which keeps the l
 
 ## _nest, nested_from_nodes
 
-`_nest/3`, line 739:
+`_nest/3`, line 744:
+
+```jq
+# one node with its children, and theirs, nested under field $as
+def _nest($by; id; $as): . as $n | $n + {($as): [($by[$n | id | tojson] // [])[] | _nest($by; id; $as)]};
+```
+
+`nested_from_nodes/3`, lines 749 to 752:
 
 ```jq
 # nested_from_nodes: node rows (id, parent) become a nested tree, each node's children in an array
 # in field $as, the roots in an array. Checked with tree_paths first, so a missing parent or a
 # cycle is the same error as there.
-def _nest($by; id; $as): . as $n | $n + {($as): [($by[$n | id | tojson] // [])[] | _nest($by; id; $as)]};
-```
-
-`nested_from_nodes/3`, lines 740 to 743:
-
-```jq
 def nested_from_nodes(id; parent; $as):
   (tree_paths(id; parent) | length) as $_
   | (group_by(parent) | map({key: (.[0] | parent | tojson), value: .}) | from_entries) as $by
@@ -311,7 +315,7 @@ Node rows to a nested tree.
 
 ## node_link
 
-`node_link/2`, lines 747 to 749:
+`node_link/2`, lines 756 to 758:
 
 ```jq
 # node_link: edge rows become the node-link form graph tools read (networkx, d3, Cytoscape):
@@ -336,7 +340,7 @@ Edge rows to the `{nodes, links}` form that networkx, d3 and Cytoscape read. The
 
 ## to_csv
 
-`to_csv/1`, line 754:
+`to_csv/1`, line 763:
 
 ```jq
 # to_csv: a header line, then one CSV line per row, columns in the order of $cols; a stream of

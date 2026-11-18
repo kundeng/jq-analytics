@@ -23,7 +23,7 @@ The obvious alternative, `reduce` appending each finished interval to a result a
 
 ## _iv_check
 
-`_iv_check/2`, lines 762 to 768:
+`_iv_check/2`, lines 771 to 777:
 
 ```jq
 # an event's kind must be one of the three and, when it has a kind, it needs a time
@@ -54,7 +54,7 @@ Input: the event rows. Emits nothing; it exists to raise an error before any wor
 
 ## intervals_from_events
 
-`intervals_from_events/5`, lines 790 to 819:
+`intervals_from_events/5`, lines 799 to 828:
 
 ```jq
 # intervals_from_events: validity intervals built from an event log. A resource (an address, a
@@ -160,7 +160,7 @@ One resource, traced. `ttl` is 100 on every event except the last two, where it 
 
 ## join_within
 
-`join_within/6`, lines 826 to 845:
+`join_within/6`, lines 835 to 854:
 
 ```jq
 # join_within (left outer): each left row with the interval of the same key whose [rstart, rend)
@@ -229,7 +229,7 @@ Without `m`, step 3 would have to walk to the front of the key's intervals for e
 
 ## _iv_order_check
 
-`_iv_order_check/3`, lines 848 to 850:
+`_iv_order_check/3`, lines 857 to 859:
 
 ```jq
 # an interval needs a start, and an end that is not before it
@@ -254,7 +254,7 @@ Passes its input through unchanged, or stops with an error when any interval has
 
 ## merge_intervals
 
-`merge_intervals/3`, lines 855 to 871:
+`merge_intervals/3`, lines 864 to 880:
 
 ```jq
 # merge_intervals: per key, intervals that overlap or touch become one row
@@ -301,7 +301,7 @@ Per key, intervals that overlap or touch become one.
 
 ## concurrency
 
-`concurrency/2`, lines 876 to 882:
+`concurrency/2`, lines 885 to 891:
 
 ```jq
 # concurrency: how many intervals are open over time: one row {t, open} per moment the count

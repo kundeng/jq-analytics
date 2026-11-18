@@ -6,7 +6,7 @@ Three small definitions for a program that carries several tables in one object,
 
 ## split_by
 
-`split_by/1`, lines 187 to 192:
+`split_by/1`, lines 188 to 193:
 
 ```jq
 # split a stream of rows into an object of tables by a tag: rows with the same tagf value form one table,
@@ -45,7 +45,7 @@ A null tag gives a table called `"null"`.
 
 ## keep
 
-`keep/1`, line 195:
+`keep/1`, line 196:
 
 ```jq
 # keep only the named tables (drop the rest before a heavy step or before output)
@@ -64,7 +64,7 @@ def keep($names): with_entries(select(.key as $k | $names | any(. == $k)));
 
 ## shape
 
-`shape/0`, line 198:
+`shape/0`, line 199:
 
 ```jq
 # for checking a pipeline midway: each table's row count and field names (sorted)

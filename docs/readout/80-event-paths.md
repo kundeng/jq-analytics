@@ -15,7 +15,7 @@ flowchart LR
 
 ## _entity_key
 
-`_entity_key/0`, line 937:
+`_entity_key/0`, line 946:
 
 ```jq
 def _entity_key: if type == "object" then . else {key: .} end;
@@ -36,7 +36,7 @@ An object stays as it is; anything else becomes `{key: value}`. The same rule `g
 
 ## _funnel_check
 
-`_funnel_check/3`, lines 939 to 945:
+`_funnel_check/3`, lines 948 to 954:
 
 ```jq
 def _funnel_check(time; step; $steps):
@@ -65,7 +65,7 @@ Passes its input through, or stops with an error, before any work:
 
 ## funnel_steps
 
-`funnel_steps/5`, lines 956 to 975:
+`funnel_steps/5`, lines 965 to 984:
 
 ```jq
 # funnel_steps: how far each entity gets through the ordered steps in $steps. An entity reaches
@@ -138,7 +138,7 @@ Five made-up users, steps view, cart, pay, all within an hour (3,600 s):
 
 ## funnel
 
-`funnel/5`, lines 980 to 986:
+`funnel/5`, lines 989 to 995:
 
 ```jq
 # funnel: one row per step, in order: {step, entities (how many reached it), from_previous,
@@ -176,13 +176,13 @@ Four viewed, three of them reached the cart, two paid.
 
 ## _period_pos, _period_idx
 
-`_period_pos/0`, line 988:
+`_period_pos/0`, line 997:
 
 ```jq
 def _period_pos: . as $p | reduce range(0; length) as $i ({}; .[$p[$i] | tojson] = $i);
 ```
 
-`_period_idx/3`, lines 989 to 991:
+`_period_idx/3`, lines 998 to 1000:
 
 ```jq
 def _period_idx(period; $pos; $who):
@@ -203,7 +203,7 @@ def _period_idx(period; $pos; $who):
 
 ## cohorts
 
-`cohorts/3`, lines 996 to 998:
+`cohorts/3`, lines 1005 to 1007:
 
 ```jq
 # cohorts: one row per entity, in order of first appearance: {entity key..., cohort}, the earliest
@@ -232,7 +232,7 @@ One row per entity: its key and `cohort`, the earliest period in which it has an
 
 ## retention
 
-`retention/3`, lines 1005 to 1014:
+`retention/3`, lines 1014 to 1023:
 
 ```jq
 # retention: of the entities first seen in a period (a cohort), how many have at least one event

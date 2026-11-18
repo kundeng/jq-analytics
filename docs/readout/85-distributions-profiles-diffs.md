@@ -6,7 +6,7 @@ Eight definitions for the first questions asked of a table: which values are com
 
 ## mode
 
-`mode/0`, line 1020:
+`mode/0`, line 1029:
 
 ```jq
 # mode: the most frequent non-null value of a list; among equally frequent values the smallest in
@@ -30,7 +30,7 @@ The most frequent non-null value.
 
 ## value_counts
 
-`value_counts/0`, lines 1024 to 1025:
+`value_counts/0`, lines 1033 to 1034:
 
 ```jq
 # value_counts: one row per distinct non-null value of a list: {value, count, share (of the non-null
@@ -55,7 +55,7 @@ One row per distinct non-null value, with its count and its share of the non-nul
 
 ## bin_edges, histogram
 
-`bin_edges/3`, lines 1028 to 1030:
+`bin_edges/3`, lines 1037 to 1039:
 
 ```jq
 # bin_edges: $n + 1 equally spaced numbers from $lo to $hi, the edges of $n bins
@@ -64,7 +64,7 @@ def bin_edges($lo; $hi; $n):
   else [range(0; $n + 1) | $lo + ($hi - $lo) * . / $n] end;
 ```
 
-`histogram/1`, lines 1036 to 1049:
+`histogram/1`, lines 1045 to 1058:
 
 ```jq
 # histogram: counts of a list of numbers per bin, the bins given by their edges (bin_edges, or any
@@ -111,7 +111,7 @@ bin_edges(0; 64; 4) as $e | $e, ([16, 32, 64, 64, 8, null] | histogram($e) | map
 
 ## corr
 
-`corr/2`, lines 1053 to 1061:
+`corr/2`, lines 1062 to 1070:
 
 ```jq
 # corr: Pearson's correlation of x and y over the rows where both are non-null; null with fewer than
@@ -148,7 +148,7 @@ Hand check of the first: the means are 2.5 and 5.25; the three sums are 11.5, 5 
 
 ## profile
 
-`profile/0`, lines 1069 to 1080:
+`profile/0`, lines 1078 to 1089:
 
 ```jq
 # profile: one row per column of a table, columns in name order:
@@ -199,7 +199,7 @@ Each column is one pass over the rows, so the cost is rows times columns.
 
 ## _diff_index, diff_tables
 
-`_diff_index/2`, lines 1082 to 1086:
+`_diff_index/2`, lines 1091 to 1095:
 
 ```jq
 def _diff_index(key; $who):
@@ -209,7 +209,7 @@ def _diff_index(key; $who):
       else .[$k | tojson] = $r end);
 ```
 
-`diff_tables/2`, lines 1094 to 1105:
+`diff_tables/2`, lines 1103 to 1114:
 
 ```jq
 # diff_tables: what changed between two versions of a table that share a key. The input is the new

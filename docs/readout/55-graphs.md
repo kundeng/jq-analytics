@@ -22,7 +22,7 @@ docs  -> package
 
 ## _adj
 
-`_adj/2`, line 435:
+`_adj/2`, line 436:
 
 ```jq
 # node (as JSON text) -> the nodes its edges lead to, in input order
@@ -48,7 +48,7 @@ A lookup from a node (as JSON text) to the list of nodes its edges lead to. `gro
 
 ## _search
 
-`_search/2`, lines 441 to 450:
+`_search/2`, lines 442 to 451:
 
 ```jq
 # breadth-first search from $start: the nodes reached, the start first, in the order met, as
@@ -95,7 +95,7 @@ Each round takes the frontier, and for every edge out of it, in input order, rec
 
 ## reachable, hops
 
-`reachable/3`, line 455:
+`reachable/3`, line 456:
 
 ```jq
 # reachable: every node that can be reached from $start along directed edges from -> to, at any
@@ -104,7 +104,7 @@ Each round takes the frontier, and for every edge out of it, in input order, rec
 def reachable(from; to; $start): _adj(from; to) as $adj | _search($adj; $start) | .[1:] | map(.node);
 ```
 
-`hops/3`, line 460:
+`hops/3`, line 461:
 
 ```jq
 # hops: one row per node that can be reached from $start along directed edges, the start itself
@@ -130,7 +130,7 @@ Both are `_search` with a different cut of its output: `reachable` drops the sta
 
 ## shortest_path
 
-`shortest_path/4`, lines 466 to 471:
+`shortest_path/4`, lines 467 to 472:
 
 ```jq
 # shortest_path, four arguments: the route from $start to $goal with the fewest edges, as
@@ -159,7 +159,7 @@ The fewest edges. `$ix` indexes the search result by node. `[$goal | recurse($ix
 
 ## shortest_path
 
-`shortest_path/5`, lines 477 to 500:
+`shortest_path/5`, lines 478 to 501:
 
 ```jq
 # shortest_path, five arguments: the route with the lowest total weight (weights are numbers >= 0;
@@ -218,7 +218,7 @@ Weights in minutes: fetch to compile 1, compile to test 1, test to package 1, fe
 
 ## topo_order
 
-`topo_order/2`, lines 506 to 525:
+`topo_order/2`, lines 507 to 526:
 
 ```jq
 # topo_order: a dependency order of the nodes of a directed graph. One row per node: {node, level},
@@ -270,7 +270,7 @@ A dependency order with levels.
 
 ## components
 
-`components/2`, lines 529 to 538:
+`components/2`, lines 530 to 539:
 
 ```jq
 # components: connected groups, edges read as undirected. One row per node: {node, component},

@@ -13,7 +13,7 @@ flowchart LR
 
 ## over
 
-`over/4`, lines 299 to 304:
+`over/4`, lines 300 to 305:
 
 ```jq
 # Window over partitions: split rows by part (first appearance), sort each partition by ord
@@ -55,7 +55,7 @@ The first row is day 2 of site N: second in its partition, running sum 3 + 5, pr
 
 ## row_number
 
-`row_number/0`, line 307:
+`row_number/0`, line 308:
 
 ```jq
 # window value functions: input is one sorted partition (array of rows)
@@ -74,7 +74,7 @@ def row_number: [range(1; length + 1)];
 
 ## rank_by
 
-`rank_by/1`, lines 311 to 313:
+`rank_by/1`, lines 312 to 314:
 
 ```jq
 # rank with gaps (SQL RANK) by f over the partition's order: tied f values share a rank
@@ -103,13 +103,13 @@ SQL's `RANK`: tied values share a rank and the next rank skips. A row's rank is 
 
 ## lag, lead
 
-`lag/2`, line 314:
+`lag/2`, line 315:
 
 ```jq
 def lag(f; $k): . as $a | [range(length) as $i | if $i - $k >= 0 then ($a[$i - $k] | f) else null end];
 ```
 
-`lead/2`, line 315:
+`lead/2`, line 316:
 
 ```jq
 def lead(f; $k): . as $a | length as $n | [range($n) as $i | if $i + $k < $n then ($a[$i + $k] | f) else null end];
@@ -127,7 +127,7 @@ The value of `f` on the row `$k` places before (`lag`) or after (`lead`) the cur
 
 ## running_sum
 
-`running_sum/1`, line 317:
+`running_sum/1`, line 318:
 
 ```jq
 # running sum of f, ROWS frame from the partition start: nulls skipped; null until the first non-null
@@ -146,7 +146,7 @@ def running_sum(f): [foreach .[] as $r (null; ($r | f) as $v | if $v == null the
 
 ## moving_mean
 
-`moving_mean/2`, line 319:
+`moving_mean/2`, line 320:
 
 ```jq
 # moving mean of f over the current row and the $n - 1 rows before it (fewer at the start); nulls skipped

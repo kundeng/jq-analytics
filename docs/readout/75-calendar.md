@@ -15,13 +15,13 @@ flowchart LR
 
 ## _cal_bad, _cal_date
 
-`_cal_bad/1`, line 886:
+`_cal_bad/1`, line 895:
 
 ```jq
 def _cal_bad($who): error("\($who): \(tojson) is not a date (YYYY-MM-DD)");
 ```
 
-`_cal_date/1`, lines 888 to 893:
+`_cal_date/1`, lines 897 to 902:
 
 ```jq
 # "YYYY-MM-DD" as epoch seconds of that day's midnight UTC; an impossible date (2026-02-30) is an error
@@ -52,13 +52,13 @@ This is the guard that `parse_ts` lacks (review finding 3).
 
 ## _cal_p, _cal_iso_weeks
 
-`_cal_p/0`, line 894:
+`_cal_p/0`, line 903:
 
 ```jq
 def _cal_p: (. + (. / 4 | floor) - (. / 100 | floor) + (. / 400 | floor)) % 7;
 ```
 
-`_cal_iso_weeks/0`, line 895:
+`_cal_iso_weeks/0`, line 904:
 
 ```jq
 def _cal_iso_weeks: if _cal_p == 4 or ((. - 1) | _cal_p) == 3 then 53 else 52 end;   # ISO weeks in year .
@@ -85,7 +85,7 @@ Input: a year. `_cal_iso_weeks` gives the number of ISO weeks in it, 52 or 53.
 
 ## _cal_pad2
 
-`_cal_pad2/0`, line 896:
+`_cal_pad2/0`, line 905:
 
 ```jq
 def _cal_pad2: if . < 10 then "0\(.)" else tostring end;
@@ -103,7 +103,7 @@ A number below 10 gets a leading zero and becomes text; `"0\(.)"` is string inte
 
 ## _cal_midnight
 
-`_cal_midnight/1`, line 899:
+`_cal_midnight/1`, line 908:
 
 ```jq
 # the moment whose local clock in zone $z reads the UTC date of the input at 00:00; the second step
@@ -139,7 +139,7 @@ tz("America/Detroit") as $z
 
 ## calendar
 
-`calendar/3`, lines 911 to 932:
+`calendar/3`, lines 920 to 941:
 
 ```jq
 # calendar: one row per day from $from to $to inclusive (both "YYYY-MM-DD"), ignoring its input:
@@ -176,7 +176,7 @@ def calendar($from; $to; $zone):
     end;
 ```
 
-`calendar/2`, line 933:
+`calendar/2`, line 942:
 
 ```jq
 def calendar($from; $to): calendar($from; $to; "UTC");

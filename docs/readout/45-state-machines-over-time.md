@@ -15,7 +15,7 @@ blocks:     [0, 2)      [2, 3) [3, 4) [4, end)
 
 ## _time_check
 
-`_time_check/2`, line 343:
+`_time_check/2`, line 344:
 
 ```jq
 # an event with a null time cannot be placed in time: an error naming the calling function
@@ -34,7 +34,7 @@ Passes its input through, or stops with `F: an event has no time` when any event
 
 ## _blocks
 
-`_blocks/2`, lines 346 to 355:
+`_blocks/2`, lines 347 to 356:
 
 ```jq
 # the blocks of one entity's events, already sorted by time
@@ -75,7 +75,7 @@ The two Open events at 0 and 10 are one block of 30: a repeated state does not r
 
 ## state_blocks
 
-`state_blocks/3`, lines 363 to 366:
+`state_blocks/3`, lines 364 to 367:
 
 ```jq
 # state_blocks: per entity, events sorted by time (stable), consecutive events with the same state
@@ -113,7 +113,7 @@ def state_blocks(entity; time; state):
 
 ## transitions
 
-`transitions/3`, lines 369 to 373:
+`transitions/3`, lines 370 to 374:
 
 ```jq
 # transitions: one row per change of state: {entity key..., from, to, at (time of the change)}
@@ -141,7 +141,7 @@ The same blocks, read as changes: for each block after the first, a row `{from, 
 
 ## sessions
 
-`sessions/3`, lines 378 to 385:
+`sessions/3`, lines 379 to 386:
 
 ```jq
 # sessions: per entity, events sorted by time; a new session starts when the gap since the previous
@@ -175,7 +175,7 @@ Gaps of 10 and 20 stay inside a session; gaps of 90 and 80 start a new one. A ga
 
 ## runs
 
-`runs/1`, lines 389 to 393:
+`runs/1`, lines 390 to 394:
 
 ```jq
 # runs: run-length encoding of an array in its given order: consecutive items with the same f value

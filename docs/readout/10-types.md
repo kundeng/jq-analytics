@@ -6,7 +6,18 @@ Two definitions that turn text into typed values: `parse_ts` for one timestamp, 
 
 ## _ts_exact, parse_ts
 
-`_ts_exact/1`, lines 94 to 96:
+`_ts_exact/1`, lines 85 to 87:
+
+```jq
+# "YYYY-MM-DDTHH:MM:SSZ" to epoch seconds, refusing a date or time that does not exist. Some engines
+# accept 2026-02-30 and carry it over to 2 March; printing the result back and comparing catches
+# that on every engine. $s is the caller's original text, for the message.
+def _ts_exact($s):
+  . as $iso | (try ($iso | fromdateiso8601) catch null) as $e
+  | if $e == null or ($e | todate) != $iso then error("parse_ts: not a timestamp: \($s | tojson)") else $e end;
+```
+
+`parse_ts/0`, lines 98 to 111:
 
 ```jq
 # a timestamp string to UTC epoch seconds (fractions kept). Accepts "YYYY-MM-DD HH:MM:SS" or "T",
@@ -18,17 +29,6 @@ Two definitions that turn text into typed values: `parse_ts` for one timestamp, 
 # the cost (at 500,000 rows in the Python jq package, 24.7 s with the regex, 7.5 s without); its
 # dashes, colons and digits are still checked, by fromdateiso8601's own format, and a bad one is the
 # same error.
-# "YYYY-MM-DDTHH:MM:SSZ" to epoch seconds, refusing a date or time that does not exist. Some engines
-# accept 2026-02-30 and carry it over to 2 March; printing the result back and comparing catches
-# that on every engine. $s is the caller's original text, for the message.
-def _ts_exact($s):
-  . as $iso | (try ($iso | fromdateiso8601) catch null) as $e
-  | if $e == null or ($e | todate) != $iso then error("parse_ts: not a timestamp: \($s | tojson)") else $e end;
-```
-
-`parse_ts/0`, lines 97 to 110:
-
-```jq
 def parse_ts:
   if . == null or . == "" then null
   elif length == 19 and (.[10:11] | . == " " or . == "T")
@@ -72,7 +72,7 @@ The first three are the same moment written three ways.
 
 ## cast
 
-`cast/1`, lines 117 to 130:
+`cast/1`, lines 118 to 131:
 
 ```jq
 # cast the named columns of every row. $schema = {column: "number" | "timestamp" | "string" | "boolean"}.

@@ -6,7 +6,7 @@ Two definitions. `_groups` is used all over the library (intervals, funnels, sha
 
 ## _groups
 
-`_groups/1`, line 167:
+`_groups/1`, line 168:
 
 ```jq
 # rows grouped by f: an array of groups in order of first appearance, each group in input order.
@@ -38,11 +38,11 @@ The comment explains why this is not written as a `reduce` that appends each row
 ]
 ```
 
-**Review finding 5, fixed in 0.9.0.** The comments of `group_agg`, `intervals_from_events` and `state_blocks` used to sit above their helper functions. Each now sits directly above the function it describes.
+**Review finding 5, fixed in 0.9.0.** The comments of `group_agg`, `intervals_from_events` and `state_blocks` used to sit above their helper functions. Each now sits directly above the function it describes. Version 0.9.1 moved five more: `parse_ts`'s, displaced by the 0.9.0 fix itself, and four in the shapes family that this finding had missed. The read-out build now refuses a comment that opens with another function's name.
 
 ## group_agg
 
-`group_agg/2`, lines 173 to 174:
+`group_agg/2`, lines 174 to 175:
 
 ```jq
 # group rows by keyf and aggregate each group with aggf (applied to the group's array of rows).

@@ -6,7 +6,7 @@ Two definitions. A tree here is a table of nodes, each naming its parent; a root
 
 ## tree_paths
 
-`tree_paths/2`, lines 404 to 420:
+`tree_paths/2`, lines 405 to 421:
 
 ```jq
 # tree_paths: adds to every node `ancestry` (the ids from its root down to itself) and `depth`
@@ -78,7 +78,7 @@ The first node, `web`, walks up through `eng` to `ceo` and fills all three; `ceo
 
 ## tree_rollup
 
-`tree_rollup/3`, lines 424 to 428:
+`tree_rollup/3`, lines 425 to 429:
 
 ```jq
 # tree_rollup: tree_paths, plus `subtree`: the node's own value plus the values of all its
