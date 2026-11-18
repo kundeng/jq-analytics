@@ -5,7 +5,7 @@ Generated from `src/jq_analytics/analytics.jq` and `docs/readout/notes/calendar.
 Eight definitions; six are small helpers of `calendar`, which makes one row per day. A day row carries the day's calendar fields (year, quarter, month, ISO week, US week) and the moments its local day starts and ends in a named zone, so a day is an interval and `join_within` can put an event in its day.
 
 ```mermaid
-flowchart TD
+flowchart LR
   D[_cal_date: text to midnight UTC, refusing impossible dates] --> C[calendar]
   W[_cal_p, _cal_iso_weeks: does this year have 53 ISO weeks] --> C
   M[_cal_midnight: local midnight in the zone] --> C

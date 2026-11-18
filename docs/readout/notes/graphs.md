@@ -1,7 +1,7 @@
 Eight definitions. A graph is a table of edges: one row per edge. The arguments `from` and `to` are filters that give each edge's two ends, so `reachable(.a; .b; "fetch")` reads an edge row's start from its `a` field and its end from its `b` field. In jq a `;` separates arguments, a bare parameter such as `from` is a filter run on each row, and a `$name` parameter such as `$start` is a value. Four functions share one breadth-first search, `_search`.
 
 ```mermaid
-flowchart TD
+flowchart LR
   A[_adj: node to its neighbours] --> S[_search: breadth first, records position, hops and where each node was reached from]
   S --> R[reachable] & H[hops] & P[shortest_path by hops] & C[components]
   W[shortest_path by weight: settle the nearest open node, relax its edges]

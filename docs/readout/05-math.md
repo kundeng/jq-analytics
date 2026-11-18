@@ -5,7 +5,7 @@ Generated from `src/jq_analytics/analytics.jq` and `docs/readout/notes/math.md`.
 Eighteen definitions over a list of values, usually one column of a table (`map(.x)`). One rule runs through all of them: **nulls are skipped, and "no values" gives null**, as SQL aggregates do. jq's own `add`, `min` and `length` do not skip nulls, which is why these exist under their own names.
 
 ```mermaid
-flowchart TD
+flowchart LR
   N[nonnull: drop the nulls] --> C[count_nonnull] & S[sum_nonnull] & M[mean] & MM[min_nonnull, max_nonnull]
   N --> V[var_samp, var_pop] --> SD[stddev_samp, stddev_pop]
   N --> Q[quantile_disc, quantile_cont] --> QQ[median, quantiles_disc, quantiles_cont]

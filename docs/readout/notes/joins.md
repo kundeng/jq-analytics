@@ -1,7 +1,7 @@
 Thirteen definitions. Two helpers do the work: `_matches` pairs each left row with its right rows, and `_merge` joins one left row to one right row. `join_on` chooses what to emit from those pairs. Everything else except `lookup` and `join_asof` is a one-line call of `join_on` or `_matches`.
 
 ```mermaid
-flowchart TD
+flowchart LR
   M[_matches: index the right table by key, pair each left row with its matches] --> ON[join_on: emit by kind]
   MG[_merge: one left row + one right row] --> ON
   ON --> EQ[join_inner, join_left, join_full, join_semi, join_anti]
