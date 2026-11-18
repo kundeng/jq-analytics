@@ -16,7 +16,7 @@ The comment explains why this is not written as a `reduce` that appends each row
 [{g: "b", x: 1}, {g: "a", x: 2}, {g: null, x: 3}, {g: "b", x: 4}] | _groups(.g)
 ```
 
-**Review finding 5.** The first four comment lines above `_groups` describe `group_agg`, the function after it. The same happens at `_iv_check` and `intervals_from_events`. Each public function's comment should sit directly above that function.
+**Review finding 5, fixed in 0.9.0.** The comments of `group_agg`, `intervals_from_events` and `state_blocks` used to sit above their helper functions. Each now sits directly above the function it describes.
 
 ## group_agg/2
 <!-- code: 2c78cb5d -->

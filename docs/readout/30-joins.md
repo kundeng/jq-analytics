@@ -22,7 +22,7 @@ Two idioms recur and are explained once here:
 
 ## _merge
 
-`_merge/2`, lines 203 to 207:
+`_merge/2`, lines 216 to 220:
 
 ```jq
 def _merge($l; $r):
@@ -50,7 +50,7 @@ _merge({id: 1, k: "a"}; {k: "a", v: 9}),
 
 ## _matches
 
-`_matches/4`, lines 210 to 215:
+`_matches/4`, lines 223 to 228:
 
 ```jq
 # each left row with its matching right rows: [{l: row, m: [{key: right position, value: right row}]}]
@@ -85,7 +85,7 @@ Input: the left table. Returns one entry per left row, in left order: `{l: the r
 
 ## join_on
 
-`join_on/5`, lines 218 to 229:
+`join_on/5`, lines 231 to 242:
 
 ```jq
 # the general flat join
@@ -153,32 +153,32 @@ With `true` for both keys every right row is in one group, so every pair is chec
 
 ## join_inner, join_left, join_full, join_semi, join_anti
 
-`join_inner/3`, line 232:
+`join_inner/3`, line 245:
 
 ```jq
 # equality joins: shorthands for join_on with no condition
 def join_inner($right; lkey; rkey): join_on($right; lkey; rkey; true; "inner");
 ```
 
-`join_left/3`, line 233:
+`join_left/3`, line 246:
 
 ```jq
 def join_left($right; lkey; rkey): join_on($right; lkey; rkey; true; "left");
 ```
 
-`join_full/3`, line 234:
+`join_full/3`, line 247:
 
 ```jq
 def join_full($right; lkey; rkey): join_on($right; lkey; rkey; true; "full");
 ```
 
-`join_semi/3`, line 235:
+`join_semi/3`, line 248:
 
 ```jq
 def join_semi($right; lkey; rkey): join_on($right; lkey; rkey; true; "semi");
 ```
 
-`join_anti/3`, line 236:
+`join_anti/3`, line 249:
 
 ```jq
 def join_anti($right; lkey; rkey): join_on($right; lkey; rkey; true; "anti");
@@ -199,7 +199,7 @@ Each is `join_on` with `true` for the condition and its kind fixed. They exist s
 
 ## join_nest
 
-`join_nest/5`, lines 240 to 241:
+`join_nest/5`, lines 253 to 254:
 
 ```jq
 # nested join: every left row once, with field $as holding the array of its matching right rows
@@ -224,7 +224,7 @@ Every left row exactly once, with field `$as` holding the array of its matching 
 
 ## lookup
 
-`lookup/4`, lines 245 to 251:
+`lookup/4`, lines 258 to 264:
 
 ```jq
 # lookup: attach exactly one record of a dimension table under field $as (null when none).
@@ -257,7 +257,7 @@ Attaches one row of a dimension table under field `$as`. It builds its own index
 
 ## join_overlap
 
-`join_overlap/7`, lines 255 to 256:
+`join_overlap/7`, lines 268 to 269:
 
 ```jq
 # interval overlap: pairs with the same key whose intervals overlap, each interval closed at its
@@ -281,7 +281,7 @@ An inner `join_on` whose condition is the overlap test for half-open intervals: 
 
 ## join_asof
 
-`join_asof/6`, lines 264 to 276:
+`join_asof/6`, lines 277 to 289:
 
 ```jq
 # As-of join (left outer): for each left row, the right row with the same key whose rtime is the
@@ -305,7 +305,7 @@ def join_asof($right; lkey; rkey; ltime; rtime; $max_age):
        end];
 ```
 
-`join_asof/5`, line 277:
+`join_asof/5`, line 290:
 
 ```jq
 def join_asof($right; lkey; rkey; ltime; rtime): join_asof($right; lkey; rkey; ltime; rtime; null);

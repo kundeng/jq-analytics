@@ -15,12 +15,12 @@ For each row, the fields named in `$keep` stay as they are (`$base`); every othe
 ```
 
 ## pivot/5
-<!-- code: 9db28264 -->
+<!-- code: 09ec9157 -->
 
 One output row per `rowkey`, one column per name in `$cols`.
 
 - `group_agg(rowkey; …)` makes the row groups.
-- Inside each group, `reduce .[] as $r ({}; .[$r | colf | tostring] += [$r | valf])` collects the values under their column name: `$cells` is `{column: [values]}`.
+- Inside each group, `group_by(colf | tostring)` gathers the rows of each column name, keeping input order, and `map(valf)` takes their values: `$cells` is `{column: [values]}`.
 - `reduce $cols[] as $c ({}; .[$c] = …)` builds the output columns in the order of `$cols`: `agg` applied to the column's values, or null when the group has none. Column values that are not in `$cols` are dropped.
 
 The caller lists the columns because jq cannot know them before reading all the data, and a fixed list gives every row the same columns in the same order.
@@ -33,4 +33,4 @@ The caller lists the columns because jq cannot know them before reading all the 
 
 `db01` has no `cpu` rows, so its `cpu` is null; its `disk` row is dropped because `disk` is not in the list.
 
-**Review finding 8.** The inner `reduce` appends to an array inside an object, the pattern the comment above `_groups` says is avoided everywhere in this file. Its cost grows with the square of the number of values in one cell: one row key and one column with 20,000 values took 0.5 s, 40,000 took 1.6 s and 80,000 took 5.9 s (jq 1.8.2). With many row keys and few values per cell it is fine (80,000 rows over 5,000 keys: 1.0 s). Grouping by column inside each row group would remove it.
+**Review finding 8, fixed in 0.9.0.** Until 0.8.1 the values were collected by appending to an array inside a `reduce`, which the comment above `_groups` says the file avoids, and which took time with the square of the values in one cell. In the Python `jq` package, one cell of 80,000 values took 24.3 s before and 0.76 s after; the values reach `agg` in the same order as before.

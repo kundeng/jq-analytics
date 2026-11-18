@@ -78,7 +78,7 @@ Hand check on `[40, 10, null, 30, 20]`: sorted `[10, 20, 30, 40]`, `$n = 4`.
                           median: median, none: ([null] | [quantile_disc(0.5), quantiles_cont([0.5])])}
 ```
 
-**Review finding 2.** The comment above `quantile_disc` says the rule matches "the sibling slug's lib.jq pctl". That refers to a file outside this repository and means nothing to a reader here; the comment should lose that clause.
+**Review finding 2, fixed in 0.9.0.** The comment above `quantile_disc` used to name a file outside this repository; that clause is gone.
 
 ## round_to/1
 <!-- code: faf62b1a -->

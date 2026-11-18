@@ -161,20 +161,19 @@ Hand check on `[2, 4, 4, 4, 5, 5, 7, 9]`: the mean is 5; the squared differences
 
 ## quantile_disc, quantile_cont, median, quantiles_disc, quantiles_cont
 
-`quantile_disc/1`, lines 65 to 66:
+`quantile_disc/1`, lines 64 to 65:
 
 ```jq
 # Quantiles over non-null values, p in [0, 1]; null when none.
 # quantile_disc: nearest rank, an element of the data: the value at 1-based rank ceil(n * p) of the
-#   sorted values, at least rank 1. DuckDB's quantile_disc gives the same (checked by the tests),
-#   and so did the sibling slug's lib.jq pctl.
+#   sorted values, at least rank 1. DuckDB's quantile_disc gives the same (checked by the tests).
 # quantile_cont: linear interpolation at h = (n - 1) * p between the neighbours of h, the rule of
 #   DuckDB's quantile_cont and median, Excel PERCENTILE.INC and Power Query PercentileMode.ExcelInc.
 def quantile_disc($p): nonnull | sort as $x | length as $n
   | if $n == 0 then null else $x[([(($n * $p) | ceil), 1] | max) - 1] end;
 ```
 
-`quantile_cont/1`, lines 67 to 71:
+`quantile_cont/1`, lines 66 to 70:
 
 ```jq
 def quantile_cont($p): nonnull | sort as $x | length as $n
@@ -184,20 +183,20 @@ def quantile_cont($p): nonnull | sort as $x | length as $n
     end;
 ```
 
-`median/0`, line 72:
+`median/0`, line 71:
 
 ```jq
 def median: quantile_cont(0.5);
 ```
 
-`quantiles_disc/1`, line 74:
+`quantiles_disc/1`, line 73:
 
 ```jq
 # several quantiles at once, as DuckDB's list form: null (not a list of nulls) when no values
 def quantiles_disc($ps): if count_nonnull == 0 then null else [$ps[] as $p | quantile_disc($p)] end;
 ```
 
-`quantiles_cont/1`, line 75:
+`quantiles_cont/1`, line 74:
 
 ```jq
 def quantiles_cont($ps): if count_nonnull == 0 then null else [$ps[] as $p | quantile_cont($p)] end;
@@ -228,11 +227,11 @@ Hand check on `[40, 10, null, 30, 20]`: sorted `[10, 20, 30, 40]`, `$n = 4`.
 {"disc":[10,10,20,30,40],"cont":[17.5,25,32.5,40],"median":25,"none":[null,null]}
 ```
 
-**Review finding 2.** The comment above `quantile_disc` says the rule matches "the sibling slug's lib.jq pctl". That refers to a file outside this repository and means nothing to a reader here; the comment should lose that clause.
+**Review finding 2, fixed in 0.9.0.** The comment above `quantile_disc` used to name a file outside this repository; that clause is gone.
 
 ## round_to
 
-`round_to/1`, line 79:
+`round_to/1`, line 78:
 
 ```jq
 # round to $d decimal places, halves away from zero, on the binary double (so 1.005 becomes 1.0,

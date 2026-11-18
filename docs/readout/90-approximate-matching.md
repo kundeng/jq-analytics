@@ -6,7 +6,7 @@ Four definitions for keys that should match and do not. The comment at the top o
 
 ## _bigrams, _dice
 
-`_bigrams/0`, lines 1079 to 1081:
+`_bigrams/0`, lines 1117 to 1119:
 
 ```jq
 # the distinct two-character slices of a string, sorted
@@ -15,7 +15,7 @@ def _bigrams:
   else explode as $c | [range(0; ($c | length) - 1) | $c[.:. + 2] | implode] | unique end;
 ```
 
-`_dice/2`, lines 1082 to 1084:
+`_dice/2`, lines 1120 to 1122:
 
 ```jq
 def _dice($x; $y):
@@ -40,7 +40,7 @@ Two shared out of three and four: 2 × 2 / 7.
 
 ## similarity
 
-`similarity/2`, lines 1090 to 1095:
+`similarity/2`, lines 1128 to 1133:
 
 ```jq
 # similarity: how alike two strings are, from 0 to 1: the Dice coefficient over their distinct
@@ -75,7 +75,7 @@ Hand check of the second: `pharmcy` has `ph ha ar rm mc cy` and `pharmacy` has `
 
 ## join_fuzzy
 
-`join_fuzzy/7`, lines 1103 to 1113:
+`join_fuzzy/7`, lines 1141 to 1151:
 
 ```jq
 # join_fuzzy (left outer): each left row with field $as holding {similarity, row} for the right row

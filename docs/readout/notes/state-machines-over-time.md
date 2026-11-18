@@ -9,6 +9,15 @@ blocks:     [0, 2)      [2, 3) [3, 4) [4, end)
 
 `$st` in the code is that list of start positions. Building it with `range | select` and then slicing by position does one pass over the events and appends to nothing.
 
+## _time_check/2
+<!-- code: da10aa6a -->
+
+Passes its input through, or stops with `F: an event has no time` when any event's time is null; `$who` is the calling function's name. `state_blocks`, `transitions` and `sessions` each call it first, because a null time cannot be sorted into place or subtracted.
+
+```jq run
+[{e: 1, t: null}, {e: 1, t: 5}] | try _time_check(.t; "sessions") catch .
+```
+
 ## _blocks/2
 <!-- code: e3881968 -->
 
@@ -27,8 +36,9 @@ Input: one entity's events, already sorted by time. Output: its blocks.
 The two Open events at 0 and 10 are one block of 30: a repeated state does not restart the clock.
 
 ## state_blocks/3
-<!-- code: 008464de -->
+<!-- code: d2bc4a2b -->
 
+- `_time_check(time; "state_blocks")` refuses an event with no time.
 - `group_agg(entity; {blocks: (sort_by(time) | _blocks(time; state))})` gives one row per entity with its key fields and a `blocks` array.
 - `[.[] | del(.blocks) as $k | .blocks[] | $k + .]` flattens: `$k` is the row without `blocks`, which is the entity key, and each block gets those fields.
 
@@ -37,10 +47,10 @@ The two Open events at 0 and 10 are one block of 30: a repeated state does not r
 | state_blocks({id}; .t; .s)
 ```
 
-**Review finding 9.** A null time is not checked in this family. `state_blocks` and `sessions` then stop with jq's own message, `number (5) and null (null) cannot be subtracted`, which names neither the function nor the event. `intervals_from_events` and `funnel_steps` both check and name the event; these should do the same.
+**Review finding 9, fixed in 0.9.0.** Until 0.8.1 a null time was not checked in this family, and `sessions` stopped with jq's own `number (5) and null (null) cannot be subtracted`. All three functions now raise `F: an event has no time`.
 
 ## transitions/3
-<!-- code: e35eb2db -->
+<!-- code: 4cb8d9cf -->
 
 The same blocks, read as changes: for each block after the first, a row `{from, to, at}` where `at` is the block's start. `range(1; $b | length)` skips the first block, which has nothing before it.
 
@@ -50,7 +60,7 @@ The same blocks, read as changes: for each block after the first, a row `{from, 
 ```
 
 ## sessions/3
-<!-- code: 151bf427 -->
+<!-- code: ef77a136 -->
 
 The same cut, with a different test: a position starts a session when the gap from the previous event is greater than `$gap`. Each session reports its number within the entity, its first and last event time, and its event count. `$a[$nx - 1]` is the last event before the next start.
 

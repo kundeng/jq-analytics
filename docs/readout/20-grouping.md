@@ -6,13 +6,9 @@ Two definitions. `_groups` is used all over the library (intervals, funnels, sha
 
 ## _groups
 
-`_groups/1`, line 165:
+`_groups/1`, line 167:
 
 ```jq
-# group rows by keyf and aggregate each group with aggf (applied to the group's array of rows).
-# Output: one row per group, in order of first appearance (group_by sorts by key instead).
-# A key that is an object is merged into the output row; any other key goes in field "key".
-# aggf must return an object. Null keys form one group, as in SQL GROUP BY.
 # rows grouped by f: an array of groups in order of first appearance, each group in input order.
 # Built on the builtin group_by (a stable sort), then put back in first-appearance order by each
 # group's first input position. Appending rows to groups inside a reduce is avoided everywhere in
@@ -42,13 +38,17 @@ The comment explains why this is not written as a `reduce` that appends each row
 ]
 ```
 
-**Review finding 5.** The first four comment lines above `_groups` describe `group_agg`, the function after it. The same happens at `_iv_check` and `intervals_from_events`. Each public function's comment should sit directly above that function.
+**Review finding 5, fixed in 0.9.0.** The comments of `group_agg`, `intervals_from_events` and `state_blocks` used to sit above their helper functions. Each now sits directly above the function it describes.
 
 ## group_agg
 
-`group_agg/2`, lines 167 to 168:
+`group_agg/2`, lines 173 to 174:
 
 ```jq
+# group rows by keyf and aggregate each group with aggf (applied to the group's array of rows).
+# Output: one row per group, in order of first appearance (group_by sorts by key instead).
+# A key that is an object is merged into the output row; any other key goes in field "key".
+# aggf must return an object. Null keys form one group, as in SQL GROUP BY.
 def group_agg(keyf; aggf):
   _groups(keyf) | map((.[0] | keyf | if type == "object" then . else {key: .} end) + aggf);
 ```

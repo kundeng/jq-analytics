@@ -126,17 +126,18 @@ Each edits `.at`, the filter object, and nothing else.
 ```
 
 ## shift/2
-<!-- code: 376033dd -->
+<!-- code: 520696ad -->
 
 Moves the filter on `$dim` to the value `$k` places along in `.members[$dim]`.
 
 - No filter on `$dim` (a total row), a null value, or a range: `.void = true`, since there is nothing to move from.
+- A field with no member list (not a level of the report, and no `on_calendar`) is an error naming the field.
 - `index($v)` finds the current value's position in the members. Not found, or the move would step off either end: void.
 - Otherwise the filter takes the neighbouring value.
 
 Members are the values present in the data unless `on_calendar` replaced them.
 
-**Review finding 12.** When `$dim` has no member list (it is not a field of any level of the report, and `on_calendar` was not used), `.members[$dim]` is null. jq 1.8.2 and gojq then return no context, and the cell quietly shows null; jaq stops with `cannot index null`. The engines disagree, and neither says what is wrong. Proposed: an error naming the field and saying it is not a level of the report.
+**Review finding 12, fixed in 0.9.0.** Until 0.8.1, `shift` on a field with no member list gave a null cell on jq and gojq and the error `cannot index null` on jaq. It is now one error on every engine: `shift: "m" is not a level of this report; add it to a level or use on_calendar`.
 
 ## on_calendar/2
 <!-- code: d032a9ab -->

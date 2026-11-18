@@ -13,18 +13,31 @@ blocks:     [0, 2)      [2, 3) [3, 4) [4, end)
 
 `$st` in the code is that list of start positions. Building it with `range | select` and then slicing by position does one pass over the events and appends to nothing.
 
-## _blocks
+## _time_check
 
-`_blocks/2`, lines 333 to 342:
+`_time_check/2`, line 343:
 
 ```jq
-# state_blocks: per entity, events sorted by time (stable), consecutive events with the same state
-# merged into one block: {entity key..., state, start (time of its first event), end (time of the
-# next block's first event, null for the entity's last block), duration (end - start, null when
-# open), events (how many events it merged)}. A repeated state does not restart the clock: an
-# assignee change while the status stays Open is still the same Open block. The entity key is
-# merged in as group_agg does (an object key's fields, or field "key"). Order: entities by first
-# appearance, blocks by time.
+# an event with a null time cannot be placed in time: an error naming the calling function
+def _time_check(time; $who): if any(.[]; (time) == null) then error("\($who): an event has no time") else . end;
+```
+
+Passes its input through, or stops with `F: an event has no time` when any event's time is null; `$who` is the calling function's name. `state_blocks`, `transitions` and `sessions` each call it first, because a null time cannot be sorted into place or subtracted.
+
+```jq
+[{e: 1, t: null}, {e: 1, t: 5}] | try _time_check(.t; "sessions") catch .
+```
+
+```json
+"sessions: an event has no time"
+```
+
+## _blocks
+
+`_blocks/2`, lines 346 to 355:
+
+```jq
+# the blocks of one entity's events, already sorted by time
 def _blocks(time; state):
   # positions where a new block starts, then each block from its start to the next start
   . as $a | length as $n
@@ -62,14 +75,23 @@ The two Open events at 0 and 10 are one block of 30: a repeated state does not r
 
 ## state_blocks
 
-`state_blocks/3`, lines 343 to 345:
+`state_blocks/3`, lines 363 to 366:
 
 ```jq
+# state_blocks: per entity, events sorted by time (stable), consecutive events with the same state
+# merged into one block: {entity key..., state, start (time of its first event), end (time of the
+# next block's first event, null for the entity's last block), duration (end - start, null when
+# open), events (how many events it merged)}. A repeated state does not restart the clock: an
+# assignee change while the status stays Open is still the same Open block. The entity key is
+# merged in as group_agg does (an object key's fields, or field "key"). Order: entities by first
+# appearance, blocks by time. An event with a null time is an error.
 def state_blocks(entity; time; state):
-  group_agg(entity; {blocks: (sort_by(time) | _blocks(time; state))})
+  _time_check(time; "state_blocks")
+  | group_agg(entity; {blocks: (sort_by(time) | _blocks(time; state))})
   | [.[] | del(.blocks) as $k | .blocks[] | $k + .];
 ```
 
+- `_time_check(time; "state_blocks")` refuses an event with no time.
 - `group_agg(entity; {blocks: (sort_by(time) | _blocks(time; state))})` gives one row per entity with its key fields and a `blocks` array.
 - `[.[] | del(.blocks) as $k | .blocks[] | $k + .]` flattens: `$k` is the row without `blocks`, which is the entity key, and each block gets those fields.
 
@@ -87,16 +109,17 @@ def state_blocks(entity; time; state):
 ]
 ```
 
-**Review finding 9.** A null time is not checked in this family. `state_blocks` and `sessions` then stop with jq's own message, `number (5) and null (null) cannot be subtracted`, which names neither the function nor the event. `intervals_from_events` and `funnel_steps` both check and name the event; these should do the same.
+**Review finding 9, fixed in 0.9.0.** Until 0.8.1 a null time was not checked in this family, and `sessions` stopped with jq's own `number (5) and null (null) cannot be subtracted`. All three functions now raise `F: an event has no time`.
 
 ## transitions
 
-`transitions/3`, lines 348 to 351:
+`transitions/3`, lines 369 to 373:
 
 ```jq
 # transitions: one row per change of state: {entity key..., from, to, at (time of the change)}
 def transitions(entity; time; state):
-  group_agg(entity; {blocks: (sort_by(time) | _blocks(time; state))})
+  _time_check(time; "transitions")
+  | group_agg(entity; {blocks: (sort_by(time) | _blocks(time; state))})
   | [.[] | del(.blocks) as $k | .blocks as $b | range(1; $b | length) as $i
      | $k + {from: $b[$i - 1].state, to: $b[$i].state, at: $b[$i].start}];
 ```
@@ -118,14 +141,15 @@ The same blocks, read as changes: for each block after the first, a row `{from, 
 
 ## sessions
 
-`sessions/3`, lines 356 to 362:
+`sessions/3`, lines 378 to 385:
 
 ```jq
 # sessions: per entity, events sorted by time; a new session starts when the gap since the previous
 # event is greater than $gap. Rows: {entity key..., session (1, 2, ... within the entity), start,
 # end (time of its last event), events}.
 def sessions(entity; time; $gap):
-  group_agg(entity; {sessions: (sort_by(time) | . as $a | length as $n
+  _time_check(time; "sessions")
+  | group_agg(entity; {sessions: (sort_by(time) | . as $a | length as $n
       | [range($n) | select(. == 0 or (($a[.] | time) - ($a[. - 1] | time)) > $gap)] as $st
       | [range($st | length) as $j | $st[$j] as $i
          | (if $j + 1 < ($st | length) then $st[$j + 1] else $n end) as $nx
@@ -151,7 +175,7 @@ Gaps of 10 and 20 stay inside a session; gaps of 90 and 80 start a new one. A ga
 
 ## runs
 
-`runs/1`, lines 366 to 370:
+`runs/1`, lines 389 to 393:
 
 ```jq
 # runs: run-length encoding of an array in its given order: consecutive items with the same f value

@@ -1578,5 +1578,108 @@
     "input": "tests/fixtures/nums.json",
     "expect_error": "is not a string",
     "jq": "similarity(\"ab\"; 12)"
+  },
+  {
+    "name": "hardening_parse_ts_impossible_date",
+    "input": "tests/fixtures/hardening.json",
+    "expect_value": [
+      "refused",
+      "refused",
+      "refused"
+    ],
+    "jq": ".bad_dates | map(try (parse_ts | \"accepted\") catch \"refused\")"
+  },
+  {
+    "name": "hardening_parse_ts_real_dates",
+    "input": "tests/fixtures/hardening.json",
+    "expect_value": [
+      1772323199,
+      1835395200,
+      1798757999.5
+    ],
+    "jq": ".good_dates | map(parse_ts)"
+  },
+  {
+    "name": "hardening_split_by_same_text",
+    "input": "tests/fixtures/hardening.json",
+    "expect_error": "give the same table name",
+    "jq": ".mixed_tags | split_by(.t)"
+  },
+  {
+    "name": "hardening_split_by_null_and_text",
+    "input": "tests/fixtures/hardening.json",
+    "expect_error": "give the same table name",
+    "jq": ".null_tags | split_by(.t)"
+  },
+  {
+    "name": "hardening_tree_paths_duplicate_id",
+    "input": "tests/fixtures/hardening.json",
+    "expect_error": "appears twice",
+    "jq": ".dup_ids | tree_paths(.id; .p)"
+  },
+  {
+    "name": "hardening_nested_from_nodes_duplicate_id",
+    "input": "tests/fixtures/hardening.json",
+    "expect_error": "appears twice",
+    "jq": ".dup_ids | nested_from_nodes(.id; .p; \"kids\")"
+  },
+  {
+    "name": "hardening_shift_no_members",
+    "input": "tests/fixtures/hardening.json",
+    "expect_error": "is not a level of this report",
+    "jq": ".sales | rollup([\"r\"]; {v: calc(length; with_filter({m: \"2026-01\"}) | shift(\"m\"; 1))})"
+  },
+  {
+    "name": "hardening_rows_from_map_clash",
+    "input": "tests/fixtures/hardening.json",
+    "expect_error": "already has a field",
+    "jq": ".map_clash | rows_from_map(\"id\")"
+  },
+  {
+    "name": "hardening_merge_intervals_null_start",
+    "input": "tests/fixtures/hardening.json",
+    "expect_error": "merge_intervals: an interval has no start",
+    "jq": ".null_start | merge_intervals(.k; .s; .e)"
+  },
+  {
+    "name": "hardening_concurrency_null_start",
+    "input": "tests/fixtures/hardening.json",
+    "expect_error": "concurrency: an interval has no start",
+    "jq": ".null_start | concurrency(.s; .e)"
+  },
+  {
+    "name": "hardening_state_blocks_null_time",
+    "input": "tests/fixtures/hardening.json",
+    "expect_error": "state_blocks: an event has no time",
+    "jq": ".null_time | state_blocks(.e; .t; .s)"
+  },
+  {
+    "name": "hardening_transitions_null_time",
+    "input": "tests/fixtures/hardening.json",
+    "expect_error": "transitions: an event has no time",
+    "jq": ".null_time | transitions(.e; .t; .s)"
+  },
+  {
+    "name": "hardening_sessions_null_time",
+    "input": "tests/fixtures/hardening.json",
+    "expect_error": "sessions: an event has no time",
+    "jq": ".null_time | sessions(.e; .t; 10)"
+  },
+  {
+    "name": "hardening_fill_grid_null_time",
+    "input": "tests/fixtures/hardening.json",
+    "expect_error": "fill_grid: a row has no time",
+    "jq": ".grid_null | fill_grid([\"g\"]; \"t\"; 60; {v: 0})"
+  },
+  {
+    "name": "hardening_cast_missing_column",
+    "input": "tests/fixtures/hardening.json",
+    "expect_value": [
+      {
+        "a": 1,
+        "b": null
+      }
+    ],
+    "jq": ".cast_missing | cast({a: \"number\", b: \"number\"})"
   }
 ]

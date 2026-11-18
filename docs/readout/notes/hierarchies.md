@@ -1,13 +1,13 @@
 Two definitions. A tree here is a table of nodes, each naming its parent; a root's parent is null or `""`.
 
 ## tree_paths/2
-<!-- code: d590c35c -->
+<!-- code: d56459c6 -->
 
 Adds to every node its `ancestry` (the ids from its root down to itself) and `depth`.
 
 Three parts:
 
-1. **`$par`**: a lookup from node id to `[parent]`. The parent is wrapped in an array so that "this id is a node whose parent is null" (`[null]`) can be told from "this id is not a node" (`null`).
+1. **`$par`**: a lookup from node id to `[parent]`. The parent is wrapped in an array so that "this id is a node whose parent is null" (`[null]`) can be told from "this id is not a node" (`null`). While it is built, an id that is already in it is an error: two rows with one id would otherwise share the last row's parent.
 2. **The outer `reduce`** builds `.m`, a lookup from id to ancestry, one node at a time. A node already in `.m` is skipped. Otherwise:
    - **walk up.** `.chain` collects the ids met, starting with the node itself; `.on` is the same ids as an object, for the cycle test. The `until` stops at a root, or at the first ancestor whose ancestry is already in `.m`. On the way, a parent that is not a node, or one already on this walk, is an error.
    - **fill down.** `.a` starts as the ancestry of the node the walk stopped under (empty at a root). `reduce (.chain | reverse)[]` then goes back down the chain, top first, extending `.a` by one id and storing it for that id.
@@ -24,10 +24,11 @@ The first node, `web`, walks up through `eng` to `ceo` and fills all three; `ceo
 
 ```jq run
 ([{id: "a", boss: "b"}, {id: "b", boss: "a"}] | try tree_paths(.id; .boss) catch .),
-([{id: "a", boss: "zz"}] | try tree_paths(.id; .boss) catch .)
+([{id: "a", boss: "zz"}] | try tree_paths(.id; .boss) catch .),
+([{id: 1, p: null}, {id: 1, p: 2}, {id: 2, p: null}] | try tree_paths(.id; .p) catch .)
 ```
 
-**Review finding 11.** An id that appears on two rows is not detected. `$par` keeps the last row's parent for that id, and both rows get the same ancestry: `[{id: 1, p: null}, {id: 1, p: 2}, {id: 2, p: null}]` gives the first row, a root, the ancestry `[2, 1]`. `lookup` and `diff_tables` raise an error on a repeated key; `tree_paths` should too.
+**Review finding 11, fixed in 0.9.0.** Until 0.8.1 an id on two rows was not detected: the lookup kept the last row's parent, and a root could come back with an ancestry. It is now the error in the last line above; `tree_rollup` and `nested_from_nodes` get it too, since they call `tree_paths`.
 
 ## tree_rollup/3
 <!-- code: 425ecb0a -->

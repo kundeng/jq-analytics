@@ -67,21 +67,23 @@ A nested tree to node rows.
 ```
 
 ## rows_from_map/1
-<!-- code: 5800ac00 -->
+<!-- code: 70158b64 -->
 
-An object keyed by id to rows, the key in field `$as`. `sort_by(.key)` because gojq does not keep the order keys were written in, so sorted order is the only order every engine can agree on. An object value contributes its fields; any other value goes in a field called `value`.
+An object keyed by id to rows, the key in field `$as`. `sort_by(.key)` because gojq does not keep the order keys were written in, so sorted order is the only order every engine can agree on. An object value contributes its fields; any other value goes in a field called `value`. An object value that already has a field named `$as` is an error, because it would replace the key.
 
 ```jq run
-{web01: {ram: 16}, db01: {ram: 64}, note: "spare"} | rows_from_map("host")
+{web01: {ram: 16}, db01: {ram: 64}, note: "spare"} | rows_from_map("host"),
+(try ({a: {id: "zzz"}} | rows_from_map("id")) catch .)
 ```
 
-**Review finding 13.** The row is built as `{($as): key} + value`, so a value that already has a field named `$as` overwrites the key: `{"a": {"id": "zzz"}} | rows_from_map("id")` gives `[{"id": "zzz"}]` and the key `a` is gone. Proposed: an error when the value has that field, as joins raise one on a clashing field.
+**Review finding 13, fixed in 0.9.0.** Until 0.8.1 the row was built as the key field plus the value, so a value with a field of that name replaced the key and the key was lost. It is now the error shown above.
 
 ## fill_grid/4
-<!-- code: be1e7f4a -->
+<!-- code: a7376410 -->
 
 Every combination of the key fields at every time step, with made-up rows where the data has none.
 
+- A row with a null time is an error.
 - `$t0`, `$t1`: the earliest and latest time. A row whose time is not a whole number of steps from `$t0` is an error.
 - `$ix`: the rows by `[key values…, time]`.
 - `$combos`: the distinct key combinations, in order of first appearance.
@@ -94,7 +96,7 @@ Without the filler rows, `lag` or `moving_mean` would treat the row after a gap 
 (try ([{g: "a", t: 0}, {g: "a", t: 90}] | fill_grid(["g"]; "t"; 60; {})) catch .)
 ```
 
-**Review finding 14.** A null time is not checked: `fill_grid` then stops with jq's own `null (null) and null (null) cannot be subtracted`. This is the same gap as review finding 9.
+**Review finding 14, fixed in 0.9.0.** Until 0.8.1 a null time ended in jq's own subtraction error. It is now `fill_grid: a row has no time`.
 
 ## to_map/1
 <!-- code: 91913b64 -->
@@ -107,12 +109,12 @@ Rows to an object keyed by `key` as text. Unlike jq's `INDEX`, which keeps the l
 ```
 
 ## _nest/3, nested_from_nodes/3
-<!-- code: c32c022b -->
+<!-- code: 153a5eb6 -->
 
 Node rows to a nested tree.
 
 - `(tree_paths(id; parent) | length) as $_` runs `tree_paths` only for its checks: a missing parent or a cycle stops here with that function's error.
-- `$by`: the rows grouped under their parent's id.
+- `$by`: the rows grouped under their parent's id, by `group_by(parent)`, which keeps the children in input order.
 - The roots (parent null or `""`) are each expanded by `_nest`, which adds field `$as` holding the node's children, each expanded the same way.
 
 ```jq run
@@ -120,7 +122,7 @@ Node rows to a nested tree.
 | nested_from_nodes(.id; .boss; "reports")
 ```
 
-**Review finding 15.** `$by` is built by appending each row to its parent's array inside a `reduce`, so the time grows with the square of the number of children of one parent: a root with 20,000 children took 0.9 s, 40,000 took 2.9 s and 80,000 took 11.4 s (jq 1.8.2). A tree where every node has three children is fine (80,000 nodes: 1.4 s). `group_by(parent)` would remove it, as `_adj` does for graphs.
+**Review finding 15, fixed in 0.9.0.** Until 0.8.1 `$by` was built by appending each row to its parent's array inside a `reduce`, which took time with the square of one parent's children. In the Python `jq` package, 80,000 nodes under one root took 44.2 s before and 3.67 s after.
 
 ## node_link/2
 <!-- code: 93013b54 -->

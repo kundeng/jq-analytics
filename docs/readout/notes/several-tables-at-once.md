@@ -1,18 +1,23 @@
 Three small definitions for a program that carries several tables in one object, `{leases: […], hits: […]}`, usually because the host can hand it only one stream of rows with a field saying which table each row belongs to.
 
 ## split_by/1
-<!-- code: c78d6da1 -->
+<!-- code: 3636e7a7 -->
 
-Rows to an object of tables. `_groups(tagf)` makes the groups; each becomes an entry whose name is the tag as text (`tostring`), and `from_entries` builds the object.
+Rows to an object of tables.
+
+- `_groups(tagf)` makes the groups; each becomes `{key: the tag as text, tag: the tag itself, value: the rows}`.
+- `group_by(.key) | map(select(length > 1))[0]` looks for a name that two groups share. Groups are formed by the tag's value, names by its text, so the number 1 and the string `"1"` are two groups with one name.
+- Such a pair is an error naming both tags and the name. Otherwise `from_entries` builds the object.
 
 ```jq run
 [{type: "lease", ip: "a"}, {type: "hit", ip: "a"}, {type: "lease", ip: "b"}, {type: null, ip: "c"}]
-| split_by(.type) | map_values(length)
+| split_by(.type) | map_values(length),
+  (try ([{t: 1}, {t: "1"}] | split_by(.t)) catch .)
 ```
 
 A null tag gives a table called `"null"`.
 
-**Review finding 6.** Because the tag is turned into text, two different tags with the same text collide, and `from_entries` keeps only the last: `[{t: 1}, {t: "1"}] | split_by(.t)` returns `{"1": [{"t": "1"}]}`, and the row with the number 1 is gone without an error. Tags are nearly always strings, so this is rare, but rows should never vanish silently. Proposed: merge groups whose names are equal, or raise an error.
+**Review finding 6, fixed in 0.9.0.** Until 0.8.1 two tags with the same text collided, `from_entries` kept only the last, and the other table's rows were lost without an error. It is now the error shown above.
 
 ## keep/1
 <!-- code: 23493c55 -->

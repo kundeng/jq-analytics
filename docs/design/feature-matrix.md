@@ -1,6 +1,6 @@
 # Feature matrix
 
-What the library does, family by family, and how far each part is carried: the functions in `analytics.jq`, the test cases, the answer key, and the README. Counts are as of version 0.8.1 and come from `tests/cases.json` and the library file.
+What the library does, family by family, and how far each part is carried: the functions in `analytics.jq`, the test cases, the answer key, and the README. Counts are as of version 0.9.0 and come from `tests/cases.json` and the library file.
 
 ```mermaid
 flowchart LR
@@ -52,4 +52,4 @@ Legend: ✅ done · 🟡 partial · ⏳ planned · — not involved. A case coun
 
 ## Planned
 
-Nothing further is specified. Edit distance was measured and left out on purpose (spec 40).
+Nothing further is specified. Edit distance was measured and left out on purpose (spec 40). Spec 55 fixed the fifteen findings of the code read-out; it added no feature.

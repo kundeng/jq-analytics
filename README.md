@@ -75,7 +75,7 @@ The library is one file, `analytics.jq`, in a directory `<dir>` below. Its time-
 | Python `jq` package | `jq.compile('include "analytics" {search: "<dir>"}; ' + program).input_value(rows).first()`; the package has no `-L` and an empty default search list, so the path goes in the program |
 | Python package `jq_analytics` | `jq_analytics.include()` returns the `include` line with this package's directory filled in |
 
-Tested on jq 1.7.1 (Apple's build), jq 1.8.2, gojq 0.12.20, jaq 3.1.2 and the `jq` Python package 1.13.0, which builds jq 1.8.2: all pass the same 135 test cases (`tests/run_tests.py`). The library uses no builtin that is missing from any of them, and it parenthesises `reduce … as` inside function arguments, which jq 1.7.1's grammar requires.
+Tested on jq 1.7.1 (Apple's build), jq 1.8.2, gojq 0.12.20, jaq 3.1.2 and the `jq` Python package 1.13.0, which builds jq 1.8.2: all pass the same 150 test cases (`tests/run_tests.py`). The library uses no builtin that is missing from any of them, and it parenthesises `reduce … as` inside function arguments, which jq 1.7.1's grammar requires.
 
 ## Rules that hold everywhere
 
@@ -84,7 +84,7 @@ These are the rules a reader can rely on without reading each function; a functi
 1. **Nulls.** Aggregates skip nulls, as SQL does, and return null when nothing is left. `count_nonnull` counts non-null values; `length` still counts everything.
 2. **Keys.** Join keys that are null never match. Group keys that are null form one group of their own, as in SQL `GROUP BY`. Keys are compared by their JSON text, so `1` and `"1"` are different keys.
 3. **Order.** Group output comes in order of first appearance on every engine (jq's `group_by` sorts by key instead; gojq keeps object keys sorted, so the library records each group's first position rather than relying on an object's order). Join output follows the left table, then the right table's order among matches. Sorting is stable: ties keep input order.
-4. **Errors are loud.** A timestamp that does not parse, a value that is not a number where a number is asked for, or an unknown time zone raises an error naming the value. Nothing is silently dropped or turned into null except `""`, which means missing.
+4. **Errors are loud.** A timestamp that does not parse or names a date that does not exist, a value that is not a number where a number is asked for, an unknown time zone, an event with no time, an interval with no start, a key or id that appears twice where one is expected: each raises an error naming the function and the value. Nothing is silently dropped, replaced or turned into null except `""`, which means missing.
 5. **No hidden state.** No function reads the process time zone (`TZ`), the locale or the clock.
 
 ## Tracing the question
@@ -311,7 +311,7 @@ The two values of 64 fall in the last bin because it includes its upper edge.
 
 ### Types
 
-**`parse_ts`**. A timestamp string to UTC epoch seconds, fractions kept. Accepts `YYYY-MM-DD HH:MM:SS` or with `T`, an optional fraction, and an optional `Z` or `±HH:MM` / `±HHMM` offset. No offset means UTC, which is how ServiceNow and Splunk store wall-clock strings. `null` and `""` give null; anything else that does not match is an error. Why: jq's `fromdateiso8601` rejects fractions and offsets, and `strptime("%z")` parses an offset but ignores it. Matches DuckDB `ts::TIMESTAMPTZ` with `TimeZone = 'UTC'`.
+**`parse_ts`**. A timestamp string to UTC epoch seconds, fractions kept. Accepts `YYYY-MM-DD HH:MM:SS` or with `T`, an optional fraction, and an optional `Z` or `±HH:MM` / `±HHMM` offset. No offset means UTC, which is how ServiceNow and Splunk store wall-clock strings. `null` and `""` give null; anything else that does not match is an error. Why: jq's `fromdateiso8601` rejects fractions and offsets, and `strptime("%z")` parses an offset but ignores it. Matches DuckDB `ts::TIMESTAMPTZ` with `TimeZone = 'UTC'`. A date or time that does not exist, such as 30 February, is an error on every engine: the parsed moment is printed back and compared with the input, because some engines would otherwise carry the extra days into the next month.
 
 <!-- example: parse_ts -->
 ```jq
@@ -323,7 +323,7 @@ The two values of 64 fall in the last bin because it includes its upper edge.
 ```
 <!-- /example -->
 
-**`cast($schema)`**. Converts named columns of every row: `$schema` maps a column to `"number"`, `"timestamp"` (via `parse_ts`), `"string"` or `"boolean"`. `""` and null become null; a value that does not convert is an error naming the column and value, as in Power Query's `Table.TransformColumnTypes`. A number must look like a JSON number, because jq 1.7.1's `tonumber` accepts `" 12"` and jq 1.8's rejects it.
+**`cast($schema)`**. Converts named columns of every row: `$schema` maps a column to `"number"`, `"timestamp"` (via `parse_ts`), `"string"` or `"boolean"`. `""` and null become null; a value that does not convert is an error naming the column and value, as in Power Query's `Table.TransformColumnTypes`. A number must look like a JSON number, because jq 1.7.1's `tonumber` accepts `" 12"` and jq 1.8's rejects it. A schema column that a row lacks is added to it as null, so every row comes out with the same columns.
 
 <!-- example: cast -->
 ```jq
@@ -429,7 +429,7 @@ Event 2, at 05:30 UTC on 8 March, is 00:30 in Detroit on the 8th; event 1, an ho
 
 Name each table with `as $name` and refer to it by that name in any later step, as SPL2 names its searches and Python names its variables. No other structure is needed.
 
-**`split_by(tagf)`, `keep($names)`, `shape`.** Some steps make several tables at once; they return one object whose fields are the tables, such as `{dhcp: [...], firewall: [...]}`, and the next steps take `.dhcp` and `.firewall` out of it. `split_by` turns one stream of rows into such an object, one table per value of `tagf` (the value as a string names the table). This is how several tables reach a Splunk search command: a search appends them into one stream with a field saying which table each row belongs to. `keep` drops every table not named. `shape` gives each table's row count and sorted field names, for checking a step's output. From the jq command line a second table arrives with `--slurpfile`, from Python with `args=`; see Loading it.
+**`split_by(tagf)`, `keep($names)`, `shape`.** Some steps make several tables at once; they return one object whose fields are the tables, such as `{dhcp: [...], firewall: [...]}`, and the next steps take `.dhcp` and `.firewall` out of it. `split_by` turns one stream of rows into such an object, one table per value of `tagf` (the value as a string names the table). This is how several tables reach a Splunk search command: a search appends them into one stream with a field saying which table each row belongs to. `keep` drops every table not named. `shape` gives each table's row count and sorted field names, for checking a step's output. From the jq command line a second table arrives with `--slurpfile`, from Python with `args=`; see Loading it. Two different tags that give the same table name as text, such as the number 1 and the string `"1"`, are an error.
 
 <!-- example: several_tables -->
 ```jq
@@ -642,7 +642,7 @@ Reading it: m1 holds from 0, renews at 60, and releases at 120. m2's hold at 200
 
 The second answer is what an as-of join gives on the same intervals: it names m1 at 130, ten seconds after m1 released, and m2 at 320, after m2 lapsed.
 
-**`merge_intervals(key; start; fin)`.** Per key, intervals that overlap or touch become one row `{key, start, end, merged}`; a null end is open-ended and absorbs everything of its key that starts after it. **`concurrency(start; fin)`.** How many intervals are open over time: one row `{t, open}` per moment the count changes; an interval counts from its start up to, not including, its end. (`end` is a jq keyword, so the parameter is `fin`.) An interval that ends before it starts is an error in both.
+**`merge_intervals(key; start; fin)`.** Per key, intervals that overlap or touch become one row `{key, start, end, merged}`; a null end is open-ended and absorbs everything of its key that starts after it. **`concurrency(start; fin)`.** How many intervals are open over time: one row `{t, open}` per moment the count changes; an interval counts from its start up to, not including, its end. (`end` is a jq keyword, so the parameter is `fin`.) An interval that ends before it starts is an error in both. An interval with no start is an error in `merge_intervals` and `concurrency`.
 
 <!-- example: intervals_ops -->
 ```jq
@@ -773,7 +773,7 @@ Converters between the forms data arrives in and the [shapes](#shapes-what-the-f
 ```
 <!-- /example -->
 
-**`rows_from_map($as)`.** An object keyed by id becomes rows, the key in field `$as`, sorted by key (gojq does not keep an object's key order, so sorted is the only order every engine agrees on). A value that is not an object becomes `{($as): key, value: v}`.
+**`rows_from_map($as)`.** An object keyed by id becomes rows, the key in field `$as`, sorted by key (gojq does not keep an object's key order, so sorted is the only order every engine agrees on). A value that is not an object becomes `{($as): key, value: v}`. A value that already has a field named `$as` is an error, since it would replace the key.
 
 **`to_map(key)`.** The reverse: rows become an object keyed by `key` as a string. A duplicate key is an error; jq's own `INDEX(key)` keeps the last row silently.
 
@@ -790,7 +790,7 @@ Converters between the forms data arrives in and the [shapes](#shapes-what-the-f
 ```
 <!-- /example -->
 
-**`fill_grid($keys; $time; $step; $fill)`.** Every combination of the `$keys` fields' values (in first appearance) at every time from the earliest to the latest in steps of `$step` seconds; a missing combination gets a row with the key fields, the time and `$fill`. Times are epoch seconds and must sit on the grid, else an error. Without the filled rows, `lag` or `moving_mean` steps over an empty period as if it were the next one.
+**`fill_grid($keys; $time; $step; $fill)`.** Every combination of the `$keys` fields' values (in first appearance) at every time from the earliest to the latest in steps of `$step` seconds; a missing combination gets a row with the key fields, the time and `$fill`. Times are epoch seconds and must sit on the grid, else an error. Without the filled rows, `lag` or `moving_mean` steps over an empty period as if it were the next one. A row with a null time is an error.
 
 <!-- example: shapes_grid -->
 ```jq
@@ -834,7 +834,7 @@ Converters between the forms data arrives in and the [shapes](#shapes-what-the-f
 
 Events of one entity, ordered by time, are read as a machine that is in one state at a time. The entity expression works as `group_agg`'s key does: an object key's fields are merged into each output row.
 
-**`state_blocks(entity; time; state)`.** Per entity, events sorted by time, consecutive events with the same state merged into one block: `{state, start, end, duration, events}`. `start` is the time of the block's first event, `end` the start of the next block (null for the entity's last, still-open block), `duration` their difference. A repeated state does not restart the clock: a change of assignee while a ticket stays Open belongs to the same Open block. This is the case SPL's `streamstats` splits into two rows.
+**`state_blocks(entity; time; state)`.** Per entity, events sorted by time, consecutive events with the same state merged into one block: `{state, start, end, duration, events}`. `start` is the time of the block's first event, `end` the start of the next block (null for the entity's last, still-open block), `duration` their difference. A repeated state does not restart the clock: a change of assignee while a ticket stays Open belongs to the same Open block. This is the case SPL's `streamstats` splits into two rows. An event with a null time is an error, here and in `transitions` and `sessions`.
 
 <!-- example: state_blocks -->
 ```jq
@@ -917,7 +917,7 @@ Checking by hand: a and b are first seen in January, c in February. Of the Janua
 
 A tree is a table of nodes, each naming its parent; a root's parent is null or `""`.
 
-**`tree_paths(id; parent)`.** Adds `ancestry` (the ids from the root down to the node) and `depth` (0 for a root). A parent that is not a node, or a cycle, is an error.
+**`tree_paths(id; parent)`.** Adds `ancestry` (the ids from the root down to the node) and `depth` (0 for a root). A parent that is not a node, or a cycle, is an error. An id that appears on two rows is an error.
 
 **`tree_rollup(id; parent; value)`.** `tree_paths` plus `subtree`: the node's own value plus the values of all its descendants at any depth. SPL sums one level per pass and silently undercounts deeper trees; SQL needs a recursive query.
 
@@ -1023,7 +1023,7 @@ The changes, each taking a context and returning one; pipe them to combine:
 | `without($dim)` | remove one filter | `ALL(column)`, `REMOVEFILTERS` |
 | `keep_only($dims)` | remove every filter except these; `keep_only([])` is the grand total | `ALLEXCEPT` |
 | `with_filter($at)` | add or replace filters; a value is equality, `{from, to}` a closed range | a filter argument of `CALCULATE` |
-| `shift($dim; $k)` | move to the k-th neighbouring value of that field present in the data; -1 is the previous one | none by itself; after `on_calendar`, `PREVIOUSMONTH` and `DATEADD` by whole periods |
+| `shift($dim; $k)` | move to the k-th neighbouring value of that field present in the data; -1 is the previous one; an error when the field is not a level of the report and `on_calendar` was not used | none by itself; after `on_calendar`, `PREVIOUSMONTH` and `DATEADD` by whole periods |
 | `to_date($dim)` | everything up to and including this value, other filters kept | a running total; `DATESYTD` only when every period has rows |
 | `on_calendar($dim; $values)` | make `shift` and `to_date` on that field step through `$values`, every period in order, instead of through the values present in the data | a marked date table |
 
@@ -1164,7 +1164,7 @@ A mean is not a sum: split it with its group's rows, or carry the sum and the co
 | `tests/make_incidents.py` | writes `tests/fixtures/made_up_incidents.json` from a fixed seed |
 | `tests/run_tests.py` | runs every case on each jq engine and the Python `jq` package and compares with DuckDB |
 | `tools/reference_examples.py` | runs every example in this README and writes its output here |
-| `tools/bench_rows.py`, `tools/bench_converters.py`, `tools/bench_intervals.py`, `tools/bench_event_paths.py`, `tools/bench_graphs.py`, `tools/bench_profiles.py`, `tools/bench_fuzzy.py`, `tools/bench_weighted_path.py` | time the library's questions and its converters at a given number of rows |
+| `tools/bench_rows.py`, `tools/bench_converters.py`, `tools/bench_intervals.py`, `tools/bench_event_paths.py`, `tools/bench_graphs.py`, `tools/bench_profiles.py`, `tools/bench_fuzzy.py`, `tools/bench_weighted_path.py`, `tools/bench_hardening.py` | time the library's questions and its converters at a given number of rows |
 | `tests/check_names.py` | fails when a public function has the name of an engine builtin; runs before the cases |
 | `docs/readout/` | how each definition is written: its code, an explanation of each clause and a small run, one page per family. Generated by `tools/readout.py` from the library and the notes in `docs/readout/notes/`; a note whose code has changed stops the build |
 | `docs/tutorial-outline.md` | the chapters of a tutorial, each with its question, data, functions and hand check |

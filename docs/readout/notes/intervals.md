@@ -105,15 +105,16 @@ Without `m`, step 3 would have to walk to the front of the key's intervals for e
 
 119 is ann's last moment and 120 is bo's first: the end is outside the interval. 250 falls in a gap. cy's interval has no end, so it holds every time from 400 on.
 ## _iv_order_check/3
-<!-- code: efe0e01f -->
+<!-- code: 17bb0b45 -->
 
 
-Passes its input through unchanged, or stops with an error when any interval has an end before its start. `$who` is the name of the calling function, for the message. A null end is allowed.
+Passes its input through unchanged, or stops with an error when any interval has no start, or an end before its start. `$who` is the name of the calling function, for the message. A null end is allowed.
 
-**Review finding 1.** A null start is not checked. `merge_intervals` sorts it first and treats it as the earliest start; `concurrency` emits a row with `t: null`. Neither is stated anywhere as intended behaviour. Proposed: both reject a null start by name, as `intervals_from_events` rejects a null time.
+**Review finding 1, fixed in 0.9.0.** Until 0.8.1 a null start was not checked: `merge_intervals` treated it as the earliest start and `concurrency` emitted a row with a null time. Both now raise `F: an interval has no start`.
 
 ```jq run
-[{s: 5, e: 3}] | try _iv_order_check(.s; .e; "merge_intervals") catch .
+([{s: 5, e: 3}] | try _iv_order_check(.s; .e; "merge_intervals") catch .),
+([{s: null, e: 3}] | try _iv_order_check(.s; .e; "concurrency") catch .)
 ```
 ## merge_intervals/3
 <!-- code: 5b3dafeb -->

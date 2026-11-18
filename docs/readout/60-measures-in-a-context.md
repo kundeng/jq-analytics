@@ -35,7 +35,7 @@ There are no February rows; that matters for `shift`.
 
 ## _where
 
-`_where/1`, lines 527 to 531:
+`_where/1`, lines 551 to 555:
 
 ```jq
 # rows matching $at by scan. {field: value} is equality; {field: {from, to}} is a closed range that
@@ -61,7 +61,7 @@ Rows matching a filter object, by scanning. `$at | to_entries | all(…)` requir
 
 ## _ctx_rows
 
-`_ctx_rows/0`, lines 536 to 547:
+`_ctx_rows/0`, lines 560 to 571:
 
 ```jq
 # the rows of the context given as input. A context whose fields are one of the report's levels is
@@ -113,7 +113,7 @@ At `E / 2026-01`, removing the month leaves the three E rows; adding "rev at lea
 
 ## rollup_levels
 
-`rollup_levels/2`, lines 555 to 569:
+`rollup_levels/2`, lines 579 to 593:
 
 ```jq
 # rollup_levels: one output row per group at each listed level. $levels is a list of field lists,
@@ -168,7 +168,7 @@ The median of all five rows is 20; it is not derivable from the regions' medians
 
 ## rollup
 
-`rollup/2`, line 573:
+`rollup/2`, line 597:
 
 ```jq
 # rollup: the hierarchy of $dims: every field, then one fewer from the right, down to the grand
@@ -198,14 +198,14 @@ The levels of a hierarchy: all the fields, then one fewer from the right, down t
 
 ## measure, calc, share
 
-`measure/1`, line 576:
+`measure/1`, line 600:
 
 ```jq
 # inside a cell: measure f on the cell's own rows
 def measure(f): .rows | f;
 ```
 
-`calc/2`, line 581:
+`calc/2`, line 605:
 
 ```jq
 # inside a cell: measure f on the rows of a changed context (DAX's CALCULATE). change is one or
@@ -214,7 +214,7 @@ def measure(f): .rows | f;
 def calc(f; change): (change) as $c | if $c.void then null else ($c | _ctx_rows | f) end;
 ```
 
-`share/2`, lines 584 to 585:
+`share/2`, lines 608 to 609:
 
 ```jq
 # inside a cell: measure f here divided by f in the changed context; null when that is null or 0
@@ -250,7 +250,7 @@ Hand check: E in January is 30 of E's 40 (0.75) and of the 100 in all (0.3).
 
 ## without, keep_only, with_filter
 
-`without/1`, line 590:
+`without/1`, line 614:
 
 ```jq
 # context changes. Each takes a context and returns one.
@@ -259,13 +259,13 @@ Hand check: E in January is 30 of E's 40 (0.75) and of the 100 in all (0.3).
 def without($dim): .at |= del(.[$dim]);
 ```
 
-`keep_only/1`, line 591:
+`keep_only/1`, line 615:
 
 ```jq
 def keep_only($dims): .at |= with_entries(select(.key as $k | $dims | any(. == $k)));   # ALLEXCEPT
 ```
 
-`with_filter/1`, line 592:
+`with_filter/1`, line 616:
 
 ```jq
 def with_filter($at): .at += $at;                     # add or replace filters; a value or {from, to}
@@ -291,15 +291,18 @@ Each edits `.at`, the filter object, and nothing else.
 
 ## shift
 
-`shift/2`, lines 602 to 608:
+`shift/2`, lines 627 to 635:
 
 ```jq
 # move to the $k-th neighbouring value of $dim (-1 is the previous one). Neighbours are the field's
 # distinct values over all rows, sorted, so "previous" is the previous value that has rows anywhere,
 # not the previous calendar period. No filter on $dim (a total row) or no such neighbour: no context.
+# A field that is not a level of the report has no list of values to step through: an error.
 def shift($dim; $k):
   .at[$dim] as $v
   | if (.at | has($dim) | not) or $v == null or ($v | type) == "object" then .void = true
+    elif .members[$dim] == null
+    then error("shift: \($dim | tojson) is not a level of this report; add it to a level or use on_calendar")
     else (.members[$dim] | index($v)) as $i
     | if $i == null or $i + $k < 0 or $i + $k >= (.members[$dim] | length) then .void = true
       else .at[$dim] = .members[$dim][$i + $k] end
@@ -309,16 +312,17 @@ def shift($dim; $k):
 Moves the filter on `$dim` to the value `$k` places along in `.members[$dim]`.
 
 - No filter on `$dim` (a total row), a null value, or a range: `.void = true`, since there is nothing to move from.
+- A field with no member list (not a level of the report, and no `on_calendar`) is an error naming the field.
 - `index($v)` finds the current value's position in the members. Not found, or the move would step off either end: void.
 - Otherwise the filter takes the neighbouring value.
 
 Members are the values present in the data unless `on_calendar` replaced them.
 
-**Review finding 12.** When `$dim` has no member list (it is not a field of any level of the report, and `on_calendar` was not used), `.members[$dim]` is null. jq 1.8.2 and gojq then return no context, and the cell quietly shows null; jaq stops with `cannot index null`. The engines disagree, and neither says what is wrong. Proposed: an error naming the field and saying it is not a level of the report.
+**Review finding 12, fixed in 0.9.0.** Until 0.8.1, `shift` on a field with no member list gave a null cell on jq and gojq and the error `cannot index null` on jaq. It is now one error on every engine: `shift: "m" is not a level of this report; add it to a level or use on_calendar`.
 
 ## on_calendar
 
-`on_calendar/2`, line 616:
+`on_calendar/2`, line 643:
 
 ```jq
 # on_calendar: make shift and to_date on $dim step through $values, in the order given, instead of
@@ -358,7 +362,7 @@ For March, the previous month that has rows is January (30 for E), while the pre
 
 ## to_date
 
-`to_date/1`, lines 620 to 623:
+`to_date/1`, lines 647 to 650:
 
 ```jq
 # everything up to and including this value of $dim, other filters kept (a running total, DATESYTD

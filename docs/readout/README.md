@@ -5,14 +5,14 @@ How each definition in `src/jq_analytics/analytics.jq` is written: the code as i
 | Page | Family | Definitions |
 |---|---|---|
 | [05](05-math.md) | math: arrays of numbers | 18 |
-| [10](10-types.md) | types | 2 |
+| [10](10-types.md) | types | 3 |
 | [15](15-time-zones-and-calendar.md) | time zones and calendar | 4 |
 | [20](20-grouping.md) | grouping | 2 |
 | [25](25-several-tables-at-once.md) | several tables at once | 3 |
 | [30](30-joins.md) | joins | 13 |
 | [35](35-windows.md) | windows | 7 |
 | [40](40-reshape.md) | reshape | 2 |
-| [45](45-state-machines-over-time.md) | state machines over time | 5 |
+| [45](45-state-machines-over-time.md) | state machines over time | 6 |
 | [50](50-hierarchies.md) | hierarchies | 2 |
 | [55](55-graphs.md) | graphs | 8 |
 | [60](60-measures-in-a-context.md) | measures in a context | 13 |

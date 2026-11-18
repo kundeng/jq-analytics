@@ -35,15 +35,19 @@ The first row is day 2 of site N: second in its partition, running sum 3 + 5, pr
 ```
 
 ## rank_by/1
-<!-- code: cf17659e -->
+<!-- code: 0a1d9370 -->
 
-SQL's `RANK`: tied values share a rank and the next rank skips. For row `$i`, the rank is one more than the number of earlier rows whose `f` differs from this row's. That is right when the partition is sorted by `f`, which is the caller's job (`over(…; .x; …; rank_by(.x))`).
+SQL's `RANK`: tied values share a rank and the next rank skips. A row's rank is its position plus one, minus the number of earlier rows that share its value. That is right when the partition is sorted by `f`, which is the caller's job (`over(…; .x; …; rank_by(.x))`).
+
+- `to_entries | group_by(.value | f)` gathers the rows of each value, each still carrying its position in `.key`, in input order.
+- Inside a group, `to_entries[]` numbers its members 0, 1, 2, …; that number is how many earlier rows share the value. So the rank is `position + 1 - that number`.
+- `sort_by(.i) | map(.r)` puts the ranks back in row order.
 
 ```jq run
 [{x: 10}, {x: 20}, {x: 20}, {x: 30}] | rank_by(.x)
 ```
 
-**Review finding 7.** `rank_by` looks back over all earlier rows for every row, so its time grows with the square of the partition: one partition of 2,000 rows took 0.75 s, 4,000 took 2.7 s and 8,000 took 11.4 s (jq 1.8.2). A single pass that remembers the previous value and its rank would be linear.
+**Review finding 7, fixed in 0.9.0.** Until 0.8.1 `rank_by` counted, for every row, the earlier rows with a different value, which took time with the square of the partition. Grouping once gives every row its count. In the Python `jq` package, one partition of 8,000 rows took 37.4 s before and 0.22 s after; the answers are the same for every input, sorted or not.
 
 ## lag/2, lead/2
 <!-- code: 3538b087 -->

@@ -18,7 +18,7 @@ flowchart LR
 
 ## _distinct_in_order
 
-`_distinct_in_order/0`, lines 633 to 634:
+`_distinct_in_order/0`, lines 660 to 661:
 
 ```jq
 # the distinct values of an array in order of first appearance (jq's unique sorts them)
@@ -44,7 +44,7 @@ The number 1 and the string `"1"` stay distinct because their JSON texts differ.
 
 ## _unnest_arr, unnest, unnest_outer
 
-`_unnest_arr/2`, lines 640 to 643:
+`_unnest_arr/2`, lines 667 to 670:
 
 ```jq
 # unnest: one row per element of the array at f, the element in field $as. A row whose array is
@@ -57,14 +57,14 @@ def _unnest_arr(f; $i):
     else error("unnest: row \($i) holds a \($a | type), not an array") end;
 ```
 
-`unnest/2`, lines 644 to 645:
+`unnest/2`, lines 671 to 672:
 
 ```jq
 def unnest(f; $as):
   [to_entries[] | .key as $i | .value as $r | ($r | _unnest_arr(f; $i))[] as $x | $r + {($as): $x}];
 ```
 
-`unnest_outer/2`, lines 646 to 648:
+`unnest_outer/2`, lines 673 to 675:
 
 ```jq
 def unnest_outer(f; $as):
@@ -93,7 +93,7 @@ The original array field stays on every output row; drop it afterwards with `del
 
 ## _flat, flatten_fields
 
-`_flat/2`, lines 654 to 657:
+`_flat/2`, lines 681 to 684:
 
 ```jq
 # flatten_fields: nested objects become columns named by their path joined with $sep
@@ -106,7 +106,7 @@ def _flat($p; $sep):
   else {key: $p, value: .} end;
 ```
 
-`flatten_fields/1`, lines 658 to 664:
+`flatten_fields/1`, lines 685 to 691:
 
 ```jq
 def flatten_fields($sep):
@@ -135,7 +135,7 @@ Nested objects become columns named by their path.
 
 ## _nodes, nodes_from_nested
 
-`_nodes/3`, lines 669 to 670:
+`_nodes/3`, lines 696 to 697:
 
 ```jq
 # nodes_from_nested: a nested tree (each node holding its children in an array at `children`)
@@ -145,7 +145,7 @@ def _nodes(id; children; $p): . as $n
   | ($n | del(children) + {parent: $p}), ((($n | children) // [])[] | _nodes(id; children; ($n | id)));
 ```
 
-`nodes_from_nested/2`, line 671:
+`nodes_from_nested/2`, line 698:
 
 ```jq
 def nodes_from_nested(id; children): [(if type == "array" then .[] else . end) | _nodes(id; children; null)];
@@ -170,35 +170,38 @@ A nested tree to node rows.
 
 ## rows_from_map
 
-`rows_from_map/1`, lines 676 to 677:
+`rows_from_map/1`, lines 704 to 709:
 
 ```jq
 # rows_from_map: an object keyed by id becomes rows, the key in field $as, sorted by key. A value
 # that is not an object becomes {($as): key, value: v}. Sorted because gojq does not keep an
 # object's key order, so the order the keys were written in cannot be the same on every engine.
+# A value that already has a field named $as is an error: it would replace the key.
 def rows_from_map($as):
-  to_entries | sort_by(.key) | map({($as): .key} + (if (.value | type) == "object" then .value else {value: .value} end));
+  to_entries | sort_by(.key) | map(. as $e
+    | if ($e.value | type) != "object" then {($as): $e.key, value: $e.value}
+      elif ($e.value | has($as))
+      then error("rows_from_map: the value of key \($e.key | tojson) already has a field \($as | tojson)")
+      else {($as): $e.key} + $e.value end);
 ```
 
-An object keyed by id to rows, the key in field `$as`. `sort_by(.key)` because gojq does not keep the order keys were written in, so sorted order is the only order every engine can agree on. An object value contributes its fields; any other value goes in a field called `value`.
+An object keyed by id to rows, the key in field `$as`. `sort_by(.key)` because gojq does not keep the order keys were written in, so sorted order is the only order every engine can agree on. An object value contributes its fields; any other value goes in a field called `value`. An object value that already has a field named `$as` is an error, because it would replace the key.
 
 ```jq
-{web01: {ram: 16}, db01: {ram: 64}, note: "spare"} | rows_from_map("host")
+{web01: {ram: 16}, db01: {ram: 64}, note: "spare"} | rows_from_map("host"),
+(try ({a: {id: "zzz"}} | rows_from_map("id")) catch .)
 ```
 
 ```json
-[
-  {"host": "db01", "ram": 64},
-  {"host": "note", "value": "spare"},
-  {"host": "web01", "ram": 16}
-]
+[{"host":"db01","ram":64},{"host":"note","value":"spare"},{"host":"web01","ram":16}]
+"rows_from_map: the value of key \"a\" already has a field \"id\""
 ```
 
-**Review finding 13.** The row is built as `{($as): key} + value`, so a value that already has a field named `$as` overwrites the key: `{"a": {"id": "zzz"}} | rows_from_map("id")` gives `[{"id": "zzz"}]` and the key `a` is gone. Proposed: an error when the value has that field, as joins raise one on a clashing field.
+**Review finding 13, fixed in 0.9.0.** Until 0.8.1 the row was built as the key field plus the value, so a value with a field of that name replaced the key and the key was lost. It is now the error shown above.
 
 ## fill_grid
 
-`fill_grid/4`, lines 685 to 695:
+`fill_grid/4`, lines 717 to 728:
 
 ```jq
 # fill_grid: every combination of the $keys fields' values (in first appearance) at every time from
@@ -208,7 +211,8 @@ An object keyed by id to rows, the key in field `$as`. `sort_by(.key)` because g
 # error. Without the filled rows a lag or a moving mean steps over an empty period as if it were
 # the next one.
 def fill_grid($keys; $time; $step; $fill):
-  if length == 0 then [] else
+  if length == 0 then []
+  elif any(.[]; .[$time] == null) then error("fill_grid: a row has no time") else
   (map(.[$time]) | min) as $t0 | (map(.[$time]) | max) as $t1
   | (map(select(((.[$time] - $t0) % $step) != 0)) | if length > 0
        then error("fill_grid: \(.[0][$time]) is not on the \($step)-second grid from \($t0)") else . end) as $_
@@ -222,6 +226,7 @@ def fill_grid($keys; $time; $step; $fill):
 
 Every combination of the key fields at every time step, with made-up rows where the data has none.
 
+- A row with a null time is an error.
 - `$t0`, `$t1`: the earliest and latest time. A row whose time is not a whole number of steps from `$t0` is an error.
 - `$ix`: the rows by `[key values…, time]`.
 - `$combos`: the distinct key combinations, in order of first appearance.
@@ -239,11 +244,11 @@ Without the filler rows, `lag` or `moving_mean` would treat the row after a gap 
 "fill_grid: 90 is not on the 60-second grid from 0"
 ```
 
-**Review finding 14.** A null time is not checked: `fill_grid` then stops with jq's own `null (null) and null (null) cannot be subtracted`. This is the same gap as review finding 9.
+**Review finding 14, fixed in 0.9.0.** Until 0.8.1 a null time ended in jq's own subtraction error. It is now `fill_grid: a row has no time`.
 
 ## to_map
 
-`to_map/1`, lines 699 to 701:
+`to_map/1`, lines 732 to 734:
 
 ```jq
 # to_map: rows become an object keyed by `key` (as a string). A duplicate key is an error; jq's
@@ -267,7 +272,7 @@ Rows to an object keyed by `key` as text. Unlike jq's `INDEX`, which keeps the l
 
 ## _nest, nested_from_nodes
 
-`_nest/3`, line 706:
+`_nest/3`, line 739:
 
 ```jq
 # nested_from_nodes: node rows (id, parent) become a nested tree, each node's children in an array
@@ -276,19 +281,19 @@ Rows to an object keyed by `key` as text. Unlike jq's `INDEX`, which keeps the l
 def _nest($by; id; $as): . as $n | $n + {($as): [($by[$n | id | tojson] // [])[] | _nest($by; id; $as)]};
 ```
 
-`nested_from_nodes/3`, lines 707 to 710:
+`nested_from_nodes/3`, lines 740 to 743:
 
 ```jq
 def nested_from_nodes(id; parent; $as):
   (tree_paths(id; parent) | length) as $_
-  | (reduce .[] as $r ({}; .[$r | parent | tojson] += [$r])) as $by
+  | (group_by(parent) | map({key: (.[0] | parent | tojson), value: .}) | from_entries) as $by
   | [.[] | select((parent) == null or (parent) == "") | _nest($by; id; $as)];
 ```
 
 Node rows to a nested tree.
 
 - `(tree_paths(id; parent) | length) as $_` runs `tree_paths` only for its checks: a missing parent or a cycle stops here with that function's error.
-- `$by`: the rows grouped under their parent's id.
+- `$by`: the rows grouped under their parent's id, by `group_by(parent)`, which keeps the children in input order.
 - The roots (parent null or `""`) are each expanded by `_nest`, which adds field `$as` holding the node's children, each expanded the same way.
 
 ```jq
@@ -302,11 +307,11 @@ Node rows to a nested tree.
 ]
 ```
 
-**Review finding 15.** `$by` is built by appending each row to its parent's array inside a `reduce`, so the time grows with the square of the number of children of one parent: a root with 20,000 children took 0.9 s, 40,000 took 2.9 s and 80,000 took 11.4 s (jq 1.8.2). A tree where every node has three children is fine (80,000 nodes: 1.4 s). `group_by(parent)` would remove it, as `_adj` does for graphs.
+**Review finding 15, fixed in 0.9.0.** Until 0.8.1 `$by` was built by appending each row to its parent's array inside a `reduce`, which took time with the square of one parent's children. In the Python `jq` package, 80,000 nodes under one root took 44.2 s before and 3.67 s after.
 
 ## node_link
 
-`node_link/2`, lines 714 to 716:
+`node_link/2`, lines 747 to 749:
 
 ```jq
 # node_link: edge rows become the node-link form graph tools read (networkx, d3, Cytoscape):
@@ -331,7 +336,7 @@ Edge rows to the `{nodes, links}` form that networkx, d3 and Cytoscape read. The
 
 ## to_csv
 
-`to_csv/1`, line 721:
+`to_csv/1`, line 754:
 
 ```jq
 # to_csv: a header line, then one CSV line per row, columns in the order of $cols; a stream of

@@ -58,8 +58,7 @@ def stddev_pop: var_pop | if . == null then null else sqrt end;
 
 # Quantiles over non-null values, p in [0, 1]; null when none.
 # quantile_disc: nearest rank, an element of the data: the value at 1-based rank ceil(n * p) of the
-#   sorted values, at least rank 1. DuckDB's quantile_disc gives the same (checked by the tests),
-#   and so did the sibling slug's lib.jq pctl.
+#   sorted values, at least rank 1. DuckDB's quantile_disc gives the same (checked by the tests).
 # quantile_cont: linear interpolation at h = (n - 1) * p between the neighbours of h, the rule of
 #   DuckDB's quantile_cont and median, Excel PERCENTILE.INC and Power Query PercentileMode.ExcelInc.
 def quantile_disc($p): nonnull | sort as $x | length as $n
@@ -83,20 +82,26 @@ def round_to($d): if . == null then null else pow(10; $d) as $m | (. * $m | roun
 # a timestamp string to UTC epoch seconds (fractions kept). Accepts "YYYY-MM-DD HH:MM:SS" or "T",
 # optional fraction, optional "Z" or +HH:MM / +HHMM offset. No offset means UTC (as ServiceNow
 # and Splunk's _time strings store it). null and "" give null; anything else is an error, never
-# a silent empty. Unlike strptime("%z"), the offset is applied.
+# a silent empty: that includes a date or time that does not exist, such as 30 February.
+# Unlike strptime("%z"), the offset is applied.
 # Fast path: the common 19-character form ("2026-08-12 13:05:00") skips the regex, which was most of
 # the cost (at 500,000 rows in the Python jq package, 24.7 s with the regex, 7.5 s without); its
 # dashes, colons and digits are still checked, by fromdateiso8601's own format, and a bad one is the
 # same error.
+# "YYYY-MM-DDTHH:MM:SSZ" to epoch seconds, refusing a date or time that does not exist. Some engines
+# accept 2026-02-30 and carry it over to 2 March; printing the result back and comparing catches
+# that on every engine. $s is the caller's original text, for the message.
+def _ts_exact($s):
+  . as $iso | (try ($iso | fromdateiso8601) catch null) as $e
+  | if $e == null or ($e | todate) != $iso then error("parse_ts: not a timestamp: \($s | tojson)") else $e end;
 def parse_ts:
   if . == null or . == "" then null
   elif length == 19 and (.[10:11] | . == " " or . == "T")
-  then . as $s | (.[0:10] + "T" + .[11:19] + "Z")
-    | try fromdateiso8601 catch error("parse_ts: not a timestamp: \($s | tojson)")
+  then . as $s | (.[0:10] + "T" + .[11:19] + "Z") | _ts_exact($s)
   else . as $s
     | (capture("^(?<d>[0-9]{4}-[0-9]{2}-[0-9]{2})[T ](?<t>[0-9]{2}:[0-9]{2}:[0-9]{2})(?<f>[.][0-9]+)?(?<z>Z|[+-][0-9]{2}:?[0-9]{2})?$")
        // error("parse_ts: not a timestamp: \($s | tojson)")) as $m
-    | ("\($m.d)T\($m.t)Z" | fromdateiso8601)
+    | ("\($m.d)T\($m.t)Z" | _ts_exact($s))
       + (if $m.f == null then 0 else ("0" + $m.f | tonumber) end)
       - (if $m.z == null or $m.z == "Z" then 0
          else ($m.z | sub(":"; "")) as $z
@@ -108,6 +113,7 @@ def parse_ts:
 # "" and null become null. A value that does not parse is an error naming the column and value
 # (Power Query's rule), never a null. Numbers must look like JSON numbers: jq 1.7.1's tonumber
 # accepts " 12" and jq 1.8's refuses it, so the pattern decides instead of the version.
+# A schema column that a row lacks is added to it as null, so every row comes out with the same columns.
 def cast($schema):
   map(reduce ($schema | to_entries[]) as $c (.;
     .[$c.key] |= (
@@ -153,10 +159,6 @@ def hours_between(a; b): (a) as $a | (b) as $b
 
 # ---------------------------------------------------------------- grouping
 
-# group rows by keyf and aggregate each group with aggf (applied to the group's array of rows).
-# Output: one row per group, in order of first appearance (group_by sorts by key instead).
-# A key that is an object is merged into the output row; any other key goes in field "key".
-# aggf must return an object. Null keys form one group, as in SQL GROUP BY.
 # rows grouped by f: an array of groups in order of first appearance, each group in input order.
 # Built on the builtin group_by (a stable sort), then put back in first-appearance order by each
 # group's first input position. Appending rows to groups inside a reduce is avoided everywhere in
@@ -164,6 +166,10 @@ def hours_between(a; b): (a) as $a | (b) as $b
 # the rows), and an object's key order differs between engines (gojq sorts keys).
 def _groups(f): to_entries | group_by(.value | f) | sort_by(.[0].key) | map(map(.value));
 
+# group rows by keyf and aggregate each group with aggf (applied to the group's array of rows).
+# Output: one row per group, in order of first appearance (group_by sorts by key instead).
+# A key that is an object is merged into the output row; any other key goes in field "key".
+# aggf must return an object. Null keys form one group, as in SQL GROUP BY.
 def group_agg(keyf; aggf):
   _groups(keyf) | map((.[0] | keyf | if type == "object" then . else {key: .} end) + aggf);
 
@@ -176,7 +182,14 @@ def group_agg(keyf; aggf):
 # split a stream of rows into an object of tables by a tag: rows with the same tagf value form one table,
 # named by that value as a string (a null tag gives the table "null"). A host that can pass only one
 # stream hands over several tables this way: one stream, with a field saying which table each row belongs to.
-def split_by(tagf): _groups(tagf) | map({key: (.[0] | tagf | tostring), value: .}) | from_entries;
+# Two different tags with the same name as text (1 and "1", or null and "null") are an error: one
+# table would otherwise replace the other.
+def split_by(tagf):
+  [_groups(tagf)[] | {key: (.[0] | tagf | tostring), tag: (.[0] | tagf), value: .}]
+  | (group_by(.key) | map(select(length > 1))[0]) as $dup
+  | if $dup != null
+    then error("split_by: tags \($dup[0].tag | tojson) and \($dup[1].tag | tojson) give the same table name \($dup[0].key | tojson)")
+    else map({key, value}) | from_entries end;
 
 # keep only the named tables (drop the rest before a heavy step or before output)
 def keep($names): with_entries(select(.key as $k | $names | any(. == $k)));
@@ -293,8 +306,11 @@ def over(part; ord; $col; wf):
 # window value functions: input is one sorted partition (array of rows)
 def row_number: [range(1; length + 1)];
 # rank with gaps (SQL RANK) by f over the partition's order: tied f values share a rank
-def rank_by(f): . as $a | [range(length) as $i | ($a[$i] | f) as $v
-  | ([$a[:$i][] | select((f) != $v)] | length) + 1];
+# (a row's rank is its position plus one, minus the earlier rows that share its value; grouping
+# once gives that count for every row, where counting per row took the square of the partition)
+def rank_by(f):
+  [to_entries | group_by(.value | f)[] | to_entries[] | {i: .value.key, r: (.value.key + 1 - .key)}]
+  | sort_by(.i) | map(.r);
 def lag(f; $k): . as $a | [range(length) as $i | if $i - $k >= 0 then ($a[$i - $k] | f) else null end];
 def lead(f; $k): . as $a | length as $n | [range($n) as $i | if $i + $k < $n then ($a[$i + $k] | f) else null end];
 # running sum of f, ROWS frame from the partition start: nulls skipped; null until the first non-null
@@ -316,20 +332,17 @@ def unpivot($keep; $name; $value):
 # pivotValues), holding agg applied to the array of valf values whose colf (as a string) is that
 # name. A name with no matching rows gives null; colf values not in $cols are dropped.
 def pivot($cols; rowkey; colf; valf; agg):
-  group_agg(rowkey; (reduce .[] as $r ({}; .[$r | colf | tostring] += [$r | valf])) as $cells
+  group_agg(rowkey; (group_by(colf | tostring) | map({key: (.[0] | colf | tostring), value: map(valf)}) | from_entries) as $cells
     | reduce $cols[] as $c ({}; .[$c] = ($cells[$c] | if . == null then null else agg end)));
 
 # ---------------------------------------------------------------- state machines over time
 
 # Events of one entity, ordered by time, are read as a machine that is in one state at a time.
 
-# state_blocks: per entity, events sorted by time (stable), consecutive events with the same state
-# merged into one block: {entity key..., state, start (time of its first event), end (time of the
-# next block's first event, null for the entity's last block), duration (end - start, null when
-# open), events (how many events it merged)}. A repeated state does not restart the clock: an
-# assignee change while the status stays Open is still the same Open block. The entity key is
-# merged in as group_agg does (an object key's fields, or field "key"). Order: entities by first
-# appearance, blocks by time.
+# an event with a null time cannot be placed in time: an error naming the calling function
+def _time_check(time; $who): if any(.[]; (time) == null) then error("\($who): an event has no time") else . end;
+
+# the blocks of one entity's events, already sorted by time
 def _blocks(time; state):
   # positions where a new block starts, then each block from its start to the next start
   . as $a | length as $n
@@ -340,13 +353,22 @@ def _blocks(time; state):
      | {state: ($a[$i] | state), start: $t0, end: $t1,
         duration: (if $t1 == null then null else $t1 - $t0 end),
         events: ((if $nx == null then $n else $nx end) - $i)}];
+# state_blocks: per entity, events sorted by time (stable), consecutive events with the same state
+# merged into one block: {entity key..., state, start (time of its first event), end (time of the
+# next block's first event, null for the entity's last block), duration (end - start, null when
+# open), events (how many events it merged)}. A repeated state does not restart the clock: an
+# assignee change while the status stays Open is still the same Open block. The entity key is
+# merged in as group_agg does (an object key's fields, or field "key"). Order: entities by first
+# appearance, blocks by time. An event with a null time is an error.
 def state_blocks(entity; time; state):
-  group_agg(entity; {blocks: (sort_by(time) | _blocks(time; state))})
+  _time_check(time; "state_blocks")
+  | group_agg(entity; {blocks: (sort_by(time) | _blocks(time; state))})
   | [.[] | del(.blocks) as $k | .blocks[] | $k + .];
 
 # transitions: one row per change of state: {entity key..., from, to, at (time of the change)}
 def transitions(entity; time; state):
-  group_agg(entity; {blocks: (sort_by(time) | _blocks(time; state))})
+  _time_check(time; "transitions")
+  | group_agg(entity; {blocks: (sort_by(time) | _blocks(time; state))})
   | [.[] | del(.blocks) as $k | .blocks as $b | range(1; $b | length) as $i
      | $k + {from: $b[$i - 1].state, to: $b[$i].state, at: $b[$i].start}];
 
@@ -354,7 +376,8 @@ def transitions(entity; time; state):
 # event is greater than $gap. Rows: {entity key..., session (1, 2, ... within the entity), start,
 # end (time of its last event), events}.
 def sessions(entity; time; $gap):
-  group_agg(entity; {sessions: (sort_by(time) | . as $a | length as $n
+  _time_check(time; "sessions")
+  | group_agg(entity; {sessions: (sort_by(time) | . as $a | length as $n
       | [range($n) | select(. == 0 or (($a[.] | time) - ($a[. - 1] | time)) > $gap)] as $st
       | [range($st | length) as $j | $st[$j] as $i
          | (if $j + 1 < ($st | length) then $st[$j + 1] else $n end) as $nx
@@ -374,12 +397,13 @@ def runs(f):
 # A tree is a table of nodes, each naming its parent; a root's parent is null or "".
 
 # tree_paths: adds to every node `ancestry` (the ids from its root down to itself) and `depth`
-# (0 for a root). A parent id that is not a node, or a cycle, is an error.
+# (0 for a root). A parent id that is not a node, a cycle, or an id on two rows is an error.
 # Each node's ancestry is built once: a walk up stops at the first ancestor already done and the
 # ancestries are then filled in from there down, so the cost follows the size of the output, not
 # the square of the depth.
 def tree_paths(id; parent):
-  (reduce .[] as $n ({}; .[$n | id | tojson] = [($n | parent)])) as $par
+  (reduce .[] as $n ({}; ($n | id | tojson) as $k
+     | if has($k) then error("tree_paths: id \($k) appears twice") else .[$k] = [($n | parent)] end)) as $par
   | (reduce .[] as $n ({m: {}};
        ($n | id) as $i
        | if .m[$i | tojson] != null then .
@@ -599,9 +623,12 @@ def with_filter($at): .at += $at;                     # add or replace filters; 
 # move to the $k-th neighbouring value of $dim (-1 is the previous one). Neighbours are the field's
 # distinct values over all rows, sorted, so "previous" is the previous value that has rows anywhere,
 # not the previous calendar period. No filter on $dim (a total row) or no such neighbour: no context.
+# A field that is not a level of the report has no list of values to step through: an error.
 def shift($dim; $k):
   .at[$dim] as $v
   | if (.at | has($dim) | not) or $v == null or ($v | type) == "object" then .void = true
+    elif .members[$dim] == null
+    then error("shift: \($dim | tojson) is not a level of this report; add it to a level or use on_calendar")
     else (.members[$dim] | index($v)) as $i
     | if $i == null or $i + $k < 0 or $i + $k >= (.members[$dim] | length) then .void = true
       else .at[$dim] = .members[$dim][$i + $k] end
@@ -673,8 +700,13 @@ def nodes_from_nested(id; children): [(if type == "array" then .[] else . end) |
 # rows_from_map: an object keyed by id becomes rows, the key in field $as, sorted by key. A value
 # that is not an object becomes {($as): key, value: v}. Sorted because gojq does not keep an
 # object's key order, so the order the keys were written in cannot be the same on every engine.
+# A value that already has a field named $as is an error: it would replace the key.
 def rows_from_map($as):
-  to_entries | sort_by(.key) | map({($as): .key} + (if (.value | type) == "object" then .value else {value: .value} end));
+  to_entries | sort_by(.key) | map(. as $e
+    | if ($e.value | type) != "object" then {($as): $e.key, value: $e.value}
+      elif ($e.value | has($as))
+      then error("rows_from_map: the value of key \($e.key | tojson) already has a field \($as | tojson)")
+      else {($as): $e.key} + $e.value end);
 
 # fill_grid: every combination of the $keys fields' values (in first appearance) at every time from
 # the earliest to the latest in steps of $step seconds; a missing combination gets a row with the
@@ -683,7 +715,8 @@ def rows_from_map($as):
 # error. Without the filled rows a lag or a moving mean steps over an empty period as if it were
 # the next one.
 def fill_grid($keys; $time; $step; $fill):
-  if length == 0 then [] else
+  if length == 0 then []
+  elif any(.[]; .[$time] == null) then error("fill_grid: a row has no time") else
   (map(.[$time]) | min) as $t0 | (map(.[$time]) | max) as $t1
   | (map(select(((.[$time] - $t0) % $step) != 0)) | if length > 0
        then error("fill_grid: \(.[0][$time]) is not on the \($step)-second grid from \($t0)") else . end) as $_
@@ -706,7 +739,7 @@ def to_map(key):
 def _nest($by; id; $as): . as $n | $n + {($as): [($by[$n | id | tojson] // [])[] | _nest($by; id; $as)]};
 def nested_from_nodes(id; parent; $as):
   (tree_paths(id; parent) | length) as $_
-  | (reduce .[] as $r ({}; .[$r | parent | tojson] += [$r])) as $by
+  | (group_by(parent) | map({key: (.[0] | parent | tojson), value: .}) | from_entries) as $by
   | [.[] | select((parent) == null or (parent) == "") | _nest($by; id; $as)];
 
 # node_link: edge rows become the node-link form graph tools read (networkx, d3, Cytoscape):
@@ -724,6 +757,15 @@ def to_csv($cols): ($cols | @csv), (.[] | [.[$cols[]]] | @csv);
 
 # Intervals are rows with a key, a start and an end, [start, end): closed at the start, open at
 # the end, as join_overlap reads them. A null end means still open.
+
+# an event's kind must be one of the three and, when it has a kind, it needs a time
+def _iv_check(time; kind):
+  to_entries[] | .key as $i | .value | (kind) as $k
+  | if $k == null then empty
+    elif $k != "open" and $k != "hold" and $k != "release"
+    then error("intervals_from_events: event \($i) has kind \($k | tojson); expected \"open\", \"hold\", \"release\" or null")
+    elif (time) == null then error("intervals_from_events: event \($i) has a kind but no time")
+    else empty end;
 
 # intervals_from_events: validity intervals built from an event log. A resource (an address, a
 # seat, a session id) has at most one holder at a time. For each event, `kind` gives "open" or
@@ -745,13 +787,6 @@ def to_csv($cols): ($cols | @csv), (.[] | [.[$cols[]]] | @csv);
 # One row per interval: {resource, holder, start, end, last, events, start_seen, ended_by}; resources in
 # order of first appearance, intervals in time order. Intervals of one resource never overlap.
 # A kind other than the three, or a null time on an event with a kind, is an error naming the event.
-def _iv_check(time; kind):
-  to_entries[] | .key as $i | .value | (kind) as $k
-  | if $k == null then empty
-    elif $k != "open" and $k != "hold" and $k != "release"
-    then error("intervals_from_events: event \($i) has kind \($k | tojson); expected \"open\", \"hold\", \"release\" or null")
-    elif (time) == null then error("intervals_from_events: event \($i) has a kind but no time")
-    else empty end;
 def intervals_from_events(resource; holder; time; kind; ttl):
   ([_iv_check(time; kind)] | length) as $_
   | [map(select((kind) != null)) | _groups(resource)[]
@@ -809,8 +844,10 @@ def join_within($intervals; lkey; rkey; ltime; rstart; rend):
        | if $c >= 0 and $g.e[$c] > $t then _merge($l; $g.rows[$c]) else $l end
        end];
 
+# an interval needs a start, and an end that is not before it
 def _iv_order_check(start; fin; $who):
-  if any(.[]; (fin) != null and (fin) < (start)) then error("\($who): an interval ends before it starts") else . end;
+  if any(.[]; (start) == null) then error("\($who): an interval has no start")
+  elif any(.[]; (fin) != null and (fin) < (start)) then error("\($who): an interval ends before it starts") else . end;
 
 # merge_intervals: per key, intervals that overlap or touch become one row
 # {key..., start, end, merged (how many went in)}; keys in order of first appearance, intervals in
@@ -969,7 +1006,8 @@ def retention(entity; period; $periods):
   ($periods | _period_pos) as $pos
   | [_groups(entity)[] | map(_period_idx(period; $pos; "retention")) | {c: min, a: unique}] as $e
   | ($periods | length) as $np
-  | [range(0; $np) as $c | ($e | map(select(.c == $c))) as $m | select(($m | length) > 0)
+  | ($e | group_by(.c) | map({key: (.[0].c | tostring), value: .}) | from_entries) as $byc
+  | [range(0; $np) as $c | ($byc[$c | tostring] // []) as $m | select(($m | length) > 0)
      | ($m | [.[].a[]] | group_by(.) | map({key: (.[0] | tostring), value: length}) | from_entries) as $cnt
      | range($c; $np) as $p | ($cnt[$p | tostring] // 0) as $n
      | {cohort: $periods[$c], period: $periods[$p], offset: ($p - $c), entities: $n,

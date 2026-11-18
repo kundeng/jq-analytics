@@ -23,29 +23,10 @@ The obvious alternative, `reduce` appending each finished interval to a result a
 
 ## _iv_check
 
-`_iv_check/2`, lines 748 to 754:
+`_iv_check/2`, lines 762 to 768:
 
 ```jq
-# intervals_from_events: validity intervals built from an event log. A resource (an address, a
-# seat, a session id) has at most one holder at a time. For each event, `kind` gives "open" or
-# "hold" (evidence that `holder` has `resource` at `time`: a grant, a renewal, a start, a
-# keep-alive), "release" (the holder gives it up), or null (ignored). `ttl` gives how many seconds
-# a hold stays valid without another one, or null when holds do not expire.
-#   - A hold opens an interval, or extends the open one when it is from the same holder: its end
-#     becomes the later of its end and time + ttl (null when this hold's ttl is null).
-#   - An interval ends in exactly one way, in `ended_by`: "released" (a release from its holder, at
-#     that time), "taken_over" (a hold from another holder while it is still valid, at that time),
-#     "lapsed" (its end passed before the next event on the resource), or "open" (still open at the
-#     end of the data; its end is the last hold + ttl, or null).
-#   - At the same time on one resource, events apply in the order open, hold, release. A release from someone
-#     who does not hold the resource, or when nothing is held, is ignored.
-#   - `start_seen` is true when the interval's first event was "open": a "hold" may be a renewal of
-#     something that began before the data does.
-# `last` is the time of the interval's last hold: the last evidence, which is what there is to go
-# on when an open interval has no end.
-# One row per interval: {resource, holder, start, end, last, events, start_seen, ended_by}; resources in
-# order of first appearance, intervals in time order. Intervals of one resource never overlap.
-# A kind other than the three, or a null time on an event with a kind, is an error naming the event.
+# an event's kind must be one of the three and, when it has a kind, it needs a time
 def _iv_check(time; kind):
   to_entries[] | .key as $i | .value | (kind) as $k
   | if $k == null then empty
@@ -73,9 +54,29 @@ Input: the event rows. Emits nothing; it exists to raise an error before any wor
 
 ## intervals_from_events
 
-`intervals_from_events/5`, lines 755 to 784:
+`intervals_from_events/5`, lines 790 to 819:
 
 ```jq
+# intervals_from_events: validity intervals built from an event log. A resource (an address, a
+# seat, a session id) has at most one holder at a time. For each event, `kind` gives "open" or
+# "hold" (evidence that `holder` has `resource` at `time`: a grant, a renewal, a start, a
+# keep-alive), "release" (the holder gives it up), or null (ignored). `ttl` gives how many seconds
+# a hold stays valid without another one, or null when holds do not expire.
+#   - A hold opens an interval, or extends the open one when it is from the same holder: its end
+#     becomes the later of its end and time + ttl (null when this hold's ttl is null).
+#   - An interval ends in exactly one way, in `ended_by`: "released" (a release from its holder, at
+#     that time), "taken_over" (a hold from another holder while it is still valid, at that time),
+#     "lapsed" (its end passed before the next event on the resource), or "open" (still open at the
+#     end of the data; its end is the last hold + ttl, or null).
+#   - At the same time on one resource, events apply in the order open, hold, release. A release from someone
+#     who does not hold the resource, or when nothing is held, is ignored.
+#   - `start_seen` is true when the interval's first event was "open": a "hold" may be a renewal of
+#     something that began before the data does.
+# `last` is the time of the interval's last hold: the last evidence, which is what there is to go
+# on when an open interval has no end.
+# One row per interval: {resource, holder, start, end, last, events, start_seen, ended_by}; resources in
+# order of first appearance, intervals in time order. Intervals of one resource never overlap.
+# A kind other than the three, or a null time on an event with a kind, is an error naming the event.
 def intervals_from_events(resource; holder; time; kind; ttl):
   ([_iv_check(time; kind)] | length) as $_
   | [map(select((kind) != null)) | _groups(resource)[]
@@ -159,7 +160,7 @@ One resource, traced. `ttl` is 100 on every event except the last two, where it 
 
 ## join_within
 
-`join_within/6`, lines 791 to 810:
+`join_within/6`, lines 826 to 845:
 
 ```jq
 # join_within (left outer): each left row with the interval of the same key whose [rstart, rend)
@@ -228,28 +229,32 @@ Without `m`, step 3 would have to walk to the front of the key's intervals for e
 
 ## _iv_order_check
 
-`_iv_order_check/3`, lines 812 to 813:
+`_iv_order_check/3`, lines 848 to 850:
 
 ```jq
+# an interval needs a start, and an end that is not before it
 def _iv_order_check(start; fin; $who):
-  if any(.[]; (fin) != null and (fin) < (start)) then error("\($who): an interval ends before it starts") else . end;
+  if any(.[]; (start) == null) then error("\($who): an interval has no start")
+  elif any(.[]; (fin) != null and (fin) < (start)) then error("\($who): an interval ends before it starts") else . end;
 ```
 
-Passes its input through unchanged, or stops with an error when any interval has an end before its start. `$who` is the name of the calling function, for the message. A null end is allowed.
+Passes its input through unchanged, or stops with an error when any interval has no start, or an end before its start. `$who` is the name of the calling function, for the message. A null end is allowed.
 
-**Review finding 1.** A null start is not checked. `merge_intervals` sorts it first and treats it as the earliest start; `concurrency` emits a row with `t: null`. Neither is stated anywhere as intended behaviour. Proposed: both reject a null start by name, as `intervals_from_events` rejects a null time.
+**Review finding 1, fixed in 0.9.0.** Until 0.8.1 a null start was not checked: `merge_intervals` treated it as the earliest start and `concurrency` emitted a row with a null time. Both now raise `F: an interval has no start`.
 
 ```jq
-[{s: 5, e: 3}] | try _iv_order_check(.s; .e; "merge_intervals") catch .
+([{s: 5, e: 3}] | try _iv_order_check(.s; .e; "merge_intervals") catch .),
+([{s: null, e: 3}] | try _iv_order_check(.s; .e; "concurrency") catch .)
 ```
 
 ```json
 "merge_intervals: an interval ends before it starts"
+"concurrency: an interval has no start"
 ```
 
 ## merge_intervals
 
-`merge_intervals/3`, lines 818 to 834:
+`merge_intervals/3`, lines 855 to 871:
 
 ```jq
 # merge_intervals: per key, intervals that overlap or touch become one row
@@ -296,7 +301,7 @@ Per key, intervals that overlap or touch become one.
 
 ## concurrency
 
-`concurrency/2`, lines 839 to 845:
+`concurrency/2`, lines 876 to 882:
 
 ```jq
 # concurrency: how many intervals are open over time: one row {t, open} per moment the count
