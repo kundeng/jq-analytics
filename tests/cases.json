@@ -1114,5 +1114,138 @@
     "input": "tests/fixtures/visits.json",
     "expect_error": "is not in the period list",
     "jq": "retention(.u; .m; [\"2026-01\", \"2026-02\"])"
+  },
+  {
+    "name": "topo_order_walkthrough",
+    "input": "tests/fixtures/build_steps.json",
+    "expect_value": [
+      {
+        "node": "docs",
+        "level": 0
+      },
+      {
+        "node": "fetch",
+        "level": 0
+      },
+      {
+        "node": "compile",
+        "level": 1
+      },
+      {
+        "node": "lint",
+        "level": 1
+      },
+      {
+        "node": "test",
+        "level": 2
+      },
+      {
+        "node": "package",
+        "level": 3
+      }
+    ],
+    "jq": "topo_order(.from; .to)"
+  },
+  {
+    "name": "hops_walkthrough",
+    "input": "tests/fixtures/build_steps.json",
+    "expect_value": [
+      {
+        "node": "fetch",
+        "hops": 0
+      },
+      {
+        "node": "compile",
+        "hops": 1
+      },
+      {
+        "node": "lint",
+        "hops": 1
+      },
+      {
+        "node": "test",
+        "hops": 2
+      },
+      {
+        "node": "package",
+        "hops": 2
+      }
+    ],
+    "jq": "hops(.from; .to; \"fetch\")"
+  },
+  {
+    "name": "shortest_path_walkthrough",
+    "input": "tests/fixtures/build_steps.json",
+    "expect_value": {
+      "by_hops": {
+        "path": [
+          "fetch",
+          "lint",
+          "package"
+        ],
+        "cost": 2
+      },
+      "by_minutes": {
+        "path": [
+          "fetch",
+          "compile",
+          "test",
+          "package"
+        ],
+        "cost": 3
+      },
+      "same": {
+        "path": [
+          "docs"
+        ],
+        "cost": 0
+      },
+      "none": null,
+      "none_weighted": null
+    },
+    "jq": "{by_hops: shortest_path(.from; .to; \"fetch\"; \"package\"), by_minutes: shortest_path(.from; .to; .minutes; \"fetch\"; \"package\"), same: shortest_path(.from; .to; \"docs\"; \"docs\"), none: shortest_path(.from; .to; \"package\"; \"fetch\"), none_weighted: shortest_path(.from; .to; .minutes; \"docs\"; \"test\")}"
+  },
+  {
+    "name": "hops",
+    "input": "tests/fixtures/edges.json",
+    "sql": "hops.sql",
+    "jq": "hops(.a; .b; 1) | sort_by(.node)"
+  },
+  {
+    "name": "dag_paths",
+    "input": "tests/fixtures/dag.json",
+    "sql": "dag_paths.sql",
+    "jq": ". as $e | ([.[] | .a, .b] | unique) as $nodes | {costs: [$nodes[] as $g | {node: $g, cost: ($e | shortest_path(.a; .b; .w; 0; $g) | .cost), hops: ($e | shortest_path(.a; .b; 0; $g) | .cost)}], levels: (topo_order(.a; .b) | sort_by(.node))}"
+  },
+  {
+    "name": "shortest_path_is_a_path",
+    "input": "tests/fixtures/dag.json",
+    "expect_value": true,
+    "jq": ". as $e | ([.[] | .a, .b] | unique) as $nodes | [$nodes[] as $g | ($e | shortest_path(.a; .b; .w; 0; $g)) | select(. != null) | . as $p | ([range(1; $p.path | length) as $i | [$e[] | select(.a == $p.path[$i - 1] and .b == $p.path[$i]) | .w] | min] | add // 0) == $p.cost] | all"
+  },
+  {
+    "name": "topo_order_cycle_error",
+    "input": "tests/fixtures/cycle_downstream.json",
+    "expect_error": "topo_order: cycle through 6",
+    "jq": "topo_order(.a; .b)"
+  },
+  {
+    "name": "shortest_path_weight_error",
+    "input": "tests/fixtures/dag_negative.json",
+    "expect_error": "weights must be numbers >= 0",
+    "jq": "shortest_path(.a; .b; .w; 1; 3)"
+  },
+  {
+    "name": "tree_paths_deep_chain",
+    "input": "tests/fixtures/nums.json",
+    "expect_value": {
+      "deepest": 2999,
+      "last_ancestry_ends": [
+        2998,
+        2999
+      ],
+      "n": 3000
+    },
+    "jq": "[range(0; 3000) | {id: ., parent: (if . == 0 then null else . - 1 end)}] | tree_paths(.id; .parent) | {deepest: (map(.depth) | max), last_ancestry_ends: (.[-1].ancestry[-2:]), n: length}"
   }
 ]

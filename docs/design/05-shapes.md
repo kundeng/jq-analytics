@@ -53,7 +53,7 @@ flowchart LR
 | several tables | not a row: one object whose fields are tables | `{"dhcp": [...], "firewall": [...]}` | `split_by` makes it; `keep`, `shape` |
 | intervals | one span of one key, from a start to an end | `{"ip": "10.0.0.5", "mac": "m1", "start": 1731900000, "end": 1731943200}` | `join_within`, `join_overlap`, `merge_intervals`, `concurrency`; made by `intervals_from_events`, `state_blocks`, `sessions` |
 | tree | one node, pointing at its parent | `{"id": "ops", "parent": "ceo"}` | `tree_paths`, `tree_rollup`, `nested_from_nodes` |
-| graph | one edge | `{"from": "web01", "to": "db01"}` | `reachable`, `components`, `node_link` |
+| graph | one edge | `{"from": "web01", "to": "db01"}` | `reachable`, `hops`, `shortest_path`, `topo_order`, `components`, `node_link` |
 | star | a fact table plus dimension tables; the library builds a measure context from it | fact `{"day": "2026-03-02", "site_id": "s1", "amount": 40}`, dimension `{"id": "s1", "region": "east"}` | `lookup`; `rollup`, `measure`, `calc`, `share` and the context changes |
 
 Three rules hold for every shape:
@@ -86,6 +86,7 @@ A source is a form data arrives in. It has to become a shape before a function c
 | which hosts talked to which? | a graph | one edge row per pair, then `components` |
 | how far do users get through view, cart, pay? | a table of one row per entity, then one per step | `funnel_steps`, `funnel` |
 | of the users first seen in January, how many came back? | a table of one row per cohort and period | `cohorts`, `retention` |
+| in what order can these steps run? | a graph | one edge row per "must come before", then `topo_order` |
 | requests per site per month, with subtotals? | a star | `lookup` to attach dimensions, then `rollup` |
 
 ## One case through three shapes

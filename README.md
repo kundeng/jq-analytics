@@ -1,6 +1,6 @@
 # analytics.jq: tables and statistics for jq
 
-`analytics.jq` is a jq module of 86 functions that let a jq program answer the questions people usually send to SQL, pandas or a graph library: hold several named tables at once, join them by key, condition and time, group and aggregate, percentiles, running and lagged values over ordered partitions, time series read as state machines, roll-ups over trees, reachability in graphs, validity intervals built from events, a calendar table, funnels and retention, measures evaluated at several levels of a report, and local time in a named time zone. Each function states its rule in a comment beside it (how it treats nulls, ties, order and rounding), and each rule is pinned by a test whose expected answer DuckDB computes. Its time-zone tables, generated from the IANA time-zone database, are a block inside the same file.
+`analytics.jq` is a jq module of 89 functions that let a jq program answer the questions people usually send to SQL, pandas or a graph library: hold several named tables at once, join them by key, condition and time, group and aggregate, percentiles, running and lagged values over ordered partitions, time series read as state machines, roll-ups over trees, reachability, shortest paths and dependency order in graphs, validity intervals built from events, a calendar table, funnels and retention, measures evaluated at several levels of a report, and local time in a named time zone. Each function states its rule in a comment beside it (how it treats nulls, ties, order and rounding), and each rule is pinned by a test whose expected answer DuckDB computes. Its time-zone tables, generated from the IANA time-zone database, are a block inside the same file.
 
 It exists because plain jq leaves those rules to whoever writes the program. In one analysis of service requests, four shared jq helpers each decided a number without saying how: one dropped unresolved tickets, one used a different percentile rule, one hardcoded a single year's daylight-saving switch, one rounded before comparing with a threshold and miscounted by one. This library is one place where those rules are written down, tested against DuckDB, and the same for every analysis that loads it.
 
@@ -44,7 +44,7 @@ Every function takes rows, an array of objects. What differs is which fields a r
 | several tables | not a row: one object whose fields are tables | `{"dhcp": [...], "firewall": [...]}` | `split_by` makes it; `keep`, `shape` |
 | intervals | one span of one key, from a start to an end | `{"ip": "10.0.0.5", "mac": "m1", "start": 1731900000, "end": 1731943200}` | `join_within`, `join_overlap`, `merge_intervals`, `concurrency`; made by `intervals_from_events`, `state_blocks`, `sessions` |
 | tree | one node, pointing at its parent | `{"id": "ops", "parent": "ceo"}` | `tree_paths`, `tree_rollup`; `nodes_from_nested` makes it |
-| graph | one edge | `{"from": "web01", "to": "db01"}` | `reachable`, `components`; `node_link` exports it |
+| graph | one edge | `{"from": "web01", "to": "db01"}` | `reachable`, `hops`, `shortest_path`, `topo_order`, `components`; `node_link` exports it |
 | star | a fact table plus dimension tables | fact `{"site_id": "s1", "amount": 40}`, dimension `{"id": "s1", "region": "east"}` | `lookup`; `rollup`, `measure`, `calc`, `share` |
 
 An event log is not a shape: its rows are a table, and the question decides whether it becomes intervals, a tree, a graph or a star. Nested documents, objects keyed by id and YAML are sources that have to become rows first: see [Shapes in and out](#shapes-in-and-out). [docs/design/05-shapes.md](docs/design/05-shapes.md) defines each shape and source, draws the conversions between them, and traces one nested export through three shapes.
@@ -75,7 +75,7 @@ The library is one file, `analytics.jq`, in a directory `<dir>` below. Its time-
 | Python `jq` package | `jq.compile('include "analytics" {search: "<dir>"}; ' + program).input_value(rows).first()`; the package has no `-L` and an empty default search list, so the path goes in the program |
 | Python package `jq_analytics` | `jq_analytics.include()` returns the `include` line with this package's directory filled in |
 
-Tested on jq 1.7.1 (Apple's build), jq 1.8.2, gojq 0.12.20, jaq 3.1.2 and the `jq` Python package 1.13.0, which builds jq 1.8.2: all pass the same 106 test cases (`tests/run_tests.py`). The library uses no builtin that is missing from any of them, and it parenthesises `reduce … as` inside function arguments, which jq 1.7.1's grammar requires.
+Tested on jq 1.7.1 (Apple's build), jq 1.8.2, gojq 0.12.20, jaq 3.1.2 and the `jq` Python package 1.13.0, which builds jq 1.8.2: all pass the same 115 test cases (`tests/run_tests.py`). The library uses no builtin that is missing from any of them, and it parenthesises `reduce … as` inside function arguments, which jq 1.7.1's grammar requires.
 
 ## Rules that hold everywhere
 
@@ -866,6 +866,29 @@ A graph is a table of edges; two expressions give each edge's ends.
 ```
 <!-- /example -->
 
+**`hops(from; to; $start)`.** One row per node that can be reached from `$start`, the start itself at 0: `{node, hops}`, the number of edges on the shortest route; nearest first.
+
+**`shortest_path(from; to; $start; $goal)`** and **`shortest_path(from; to; weight; $start; $goal)`.** The route with the fewest edges, or with the lowest total weight when a weight expression is given: `{path, cost}`, the nodes from start to goal and the number of edges or the total weight; null when there is no route; `{path: [$start], cost: 0}` when start and goal are the same. Among equally good routes it returns the one found first, following edges in input order. Weights must be numbers of 0 or more; anything else is an error. The weighted form settles the nearest open node by scanning them all, with no priority queue: fine for a few thousand nodes.
+
+**`topo_order(from; to)`.** A dependency order: one row per node, `{node, level}`, sorted by level then node. Level 0 is a node nothing points to; otherwise one more than the highest level among the nodes that point to it. Every edge goes from a lower level to a higher one, and the nodes of one level do not depend on each other, so they can run side by side. A cycle is an error naming a node on it.
+
+<!-- example: graph_paths -->
+```jq
+[{from: "fetch", to: "compile", minutes: 1}, {from: "compile", to: "test", minutes: 1}, {from: "test", to: "package", minutes: 1}, {from: "fetch", to: "lint", minutes: 5}, {from: "lint", to: "package", minutes: 5}, {from: "docs", to: "package", minutes: 2}] | {order: topo_order(.from; .to), hops_from_fetch: hops(.from; .to; "fetch"), fewest_steps: shortest_path(.from; .to; "fetch"; "package"), fewest_minutes: shortest_path(.from; .to; .minutes; "fetch"; "package")}
+```
+
+```json
+{
+  "order": [{"node": "docs", "level": 0}, {"node": "fetch", "level": 0}, {"node": "compile", "level": 1}, {"node": "lint", "level": 1}, {"node": "test", "level": 2}, {"node": "package", "level": 3}],
+  "hops_from_fetch": [{"node": "fetch", "hops": 0}, {"node": "compile", "hops": 1}, {"node": "lint", "hops": 1}, {"node": "test", "hops": 2}, {"node": "package", "hops": 2}],
+  "fewest_steps": {"path": ["fetch", "lint", "package"], "cost": 2},
+  "fewest_minutes": {"path": ["fetch", "compile", "test", "package"], "cost": 3}
+}
+```
+<!-- /example -->
+
+Reading it: `package` waits for `test` (level 2), `lint` (1) and `docs` (0), so it is level 3. The fewest steps from `fetch` to `package` go through `lint` (2 edges); the fewest minutes go through `compile` and `test` (3 minutes against 10).
+
 ### Measures in a context
 
 A report asks one measure at several levels at once, and each cell also needs numbers from outside its own rows: its share of the parent, the same measure in the previous period, a running total. DAX calls this a measure evaluated in a filter context, changed with `CALCULATE`. Here it is three plain jq ideas.
@@ -1028,9 +1051,8 @@ A mean is not a sum: split it with its group's rows, or carry the sum and the co
 - **Intervals.** At 200,000 lease events over about 4,000 addresses in the Python `jq` package, parsing included: `intervals_from_events` 8.4 s (180,000 intervals), `join_within` 4.0 s for 50,000 lookups, `merge_intervals` 5.1 s, `concurrency` 4.7 s.
 - **Funnels and retention.** At 200,000 events over about 25,000 entities in the Python `jq` package, parsing included: `funnel` 5.7 s, `retention` over 12 periods 3.0 s, `cohorts` 2.2 s.
 - **Converters.** At 200,000 rows in the Python `jq` package, parsing included: `unnest` 2.1 s, `to_map` 0.9 s, `rows_from_map` 2.1 s, `to_csv` 0.8 s, `node_link` 2.6 s, `flatten_fields` 12.6 s (it walks every field of every row).
-- **Trees.** `tree_paths` walks each node's ancestry, so its cost grows with depth: 4,000 nodes took 0.5 s in a shallow tree and 16 s in one dozens of levels deep; 200,000 nodes in a shallow tree took 39 s. `tree_rollup` and `nested_from_nodes` call it and cost the same. Org charts and category trees are shallow.
-- **Graphs.** `reachable` and `components` are tested for correctness, not yet measured on large graphs.
-- **Not included yet.** Relationships between tables in the DAX sense (join or `lookup` first), shortest path and topological order, fuzzy matching, approximate quantiles, mode, histograms, correlation, fill-down, top-n per group, fiscal calendars and holidays.
+- **Trees and graphs.** Time grows in step with the input. In the Python `jq` package, parsing included, 200,000 edges or nodes take: `reachable` 6.9 s, `hops` 7.1 s, `components` 11.6 s, `topo_order` 8.1 s, `tree_paths` 7.7 s in a shallow tree and 20.1 s in one thousands of levels deep (its output, every node's full ancestry, is what grows). `tree_rollup` and `nested_from_nodes` call `tree_paths`. The weighted `shortest_path` scans for the nearest node at each step and is meant for a few thousand nodes.
+- **Not included yet.** Relationships between tables in the DAX sense (join or `lookup` first), fuzzy matching, approximate quantiles, mode, histograms, correlation, fill-down, top-n per group, fiscal calendars and holidays.
 
 ## Files and tests
 
@@ -1045,7 +1067,7 @@ A mean is not a sum: split it with its group's rows, or carry the sum and the co
 | `tests/make_incidents.py` | writes `tests/fixtures/made_up_incidents.json` from a fixed seed |
 | `tests/run_tests.py` | runs every case on each jq engine and the Python `jq` package and compares with DuckDB |
 | `tools/reference_examples.py` | runs every example in this README and writes its output here |
-| `tools/bench_rows.py`, `tools/bench_converters.py`, `tools/bench_intervals.py`, `tools/bench_event_paths.py` | time the library's questions and its converters at a given number of rows |
+| `tools/bench_rows.py`, `tools/bench_converters.py`, `tools/bench_intervals.py`, `tools/bench_event_paths.py`, `tools/bench_graphs.py` | time the library's questions and its converters at a given number of rows |
 | `tests/check_names.py` | fails when a public function has the name of an engine builtin; runs before the cases |
 | `docs/design/`, `docs/specs/` | the shapes design, the feature matrix, and one spec per sprint |
 

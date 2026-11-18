@@ -1,0 +1,1 @@
+[{"from": "fetch", "to": "compile", "minutes": 1}, {"from": "compile", "to": "test", "minutes": 1}, {"from": "test", "to": "package", "minutes": 1}, {"from": "fetch", "to": "lint", "minutes": 5}, {"from": "lint", "to": "package", "minutes": 5}, {"from": "docs", "to": "package", "minutes": 2}]

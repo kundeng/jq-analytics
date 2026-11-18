@@ -115,6 +115,13 @@ PATH_EXAMPLES: dict[str, tuple[str, bool, bool]] = {
 }
 EXAMPLES.update(PATH_EXAMPLES)
 
+BUILD = ('[{from: "fetch", to: "compile", minutes: 1}, {from: "compile", to: "test", minutes: 1}, {from: "test", to: "package", minutes: 1}, '
+         '{from: "fetch", to: "lint", minutes: 5}, {from: "lint", to: "package", minutes: 5}, {from: "docs", to: "package", minutes: 2}]')
+GRAPH_EXAMPLES: dict[str, tuple[str, bool, bool]] = {
+    "graph_paths": (BUILD + ' | {order: topo_order(.from; .to), hops_from_fetch: hops(.from; .to; "fetch"), fewest_steps: shortest_path(.from; .to; "fetch"; "package"), fewest_minutes: shortest_path(.from; .to; .minutes; "fetch"; "package")}', False, True),
+}
+EXAMPLES.update(GRAPH_EXAMPLES)
+
 CONTEXT_EXAMPLES: dict[str, tuple[str, bool, bool]] = {
     "context_rollup": (REVENUE + SALES + ' | rollup(["region", "product"]; {revenue: measure(revenue), share_of_region: share(revenue; without("product")), share_of_all: share(revenue; keep_only([]))})', False, True),
     "context_time": (REVENUE + SALES + ' | rollup(["month"]; {revenue: measure(revenue), prior: calc(revenue; shift("month"; -1)), to_date: calc(revenue; to_date("month")), east_only: calc(revenue; with_filter({region: "east"}))})', False, True),

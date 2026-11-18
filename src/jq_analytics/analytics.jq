@@ -375,17 +375,25 @@ def runs(f):
 
 # tree_paths: adds to every node `ancestry` (the ids from its root down to itself) and `depth`
 # (0 for a root). A parent id that is not a node, or a cycle, is an error.
+# Each node's ancestry is built once: a walk up stops at the first ancestor already done and the
+# ancestries are then filled in from there down, so the cost follows the size of the output, not
+# the square of the depth.
 def tree_paths(id; parent):
-  (reduce .[] as $n ({}; .[$n | id | tojson] = $n)) as $ix
-  | map(. as $n
-      | ({path: [$n | id], cur: $n}
-         | until((.cur | parent) as $p | $p == null or $p == "";
-             (.cur | parent) as $p
-             | ($ix[$p | tojson] // error("tree_paths: parent \($p | tojson) is not a node")) as $pn
-             | if (.path | any(. == $p)) then error("tree_paths: cycle through \($p | tojson)")
-               else {path: ([$p] + .path), cur: $pn} end)
-         | .path) as $a
-      | $n + {ancestry: $a, depth: (($a | length) - 1)});
+  (reduce .[] as $n ({}; .[$n | id | tojson] = [($n | parent)])) as $par
+  | (reduce .[] as $n ({m: {}};
+       ($n | id) as $i
+       | if .m[$i | tojson] != null then .
+         else .chain = [$i] | .on = {($i | tojson): true} | .cur = $i
+           | until($par[.cur | tojson][0] as $p | $p == null or $p == "" or .m[$p | tojson] != null;
+               $par[.cur | tojson][0] as $p
+               | if $par[$p | tojson] == null then error("tree_paths: parent \($p | tojson) is not a node")
+                 elif .on[$p | tojson] then error("tree_paths: cycle through \($p | tojson)")
+                 else .chain += [$p] | .on[$p | tojson] = true | .cur = $p end)
+           | $par[.cur | tojson][0] as $top
+           | .a = (if $top == null or $top == "" then [] else .m[$top | tojson] end)
+           | reduce (.chain | reverse)[] as $c (.; .a += [$c] | .m[$c | tojson] = .a)
+         end) | .m) as $anc
+  | map(. + ($anc[id | tojson] | {ancestry: ., depth: (length - 1)}));
 
 # tree_rollup: tree_paths, plus `subtree`: the node's own value plus the values of all its
 # descendants, at any depth. A null value counts as 0.
@@ -399,30 +407,111 @@ def tree_rollup(id; parent; value):
 
 # A graph is a table of edges; from and to (or a and b) are expressions giving each edge's two ends.
 
-# nodes reached from $start by following edges, nearest first (breadth first), each once
-def _bfs($adj; $start):
-  {seen: {($start | tojson): true}, frontier: [$start], order: []}
+# node (as JSON text) -> the nodes its edges lead to, in input order
+def _adj(from; to): group_by(from) | map({key: (.[0] | from | tojson), value: map(to)}) | from_entries;
+
+# breadth-first search from $start: the nodes reached, the start first, in the order met, as
+# [{node, hops, via (the node it was reached from; null for the start)}]. New nodes are recorded
+# under their position in objects and sorted once at the end: an array growing by one inside the
+# loop is copied each time, which made the search slow with the square of the graph.
+def _search($adj; $start):
+  {seen: {($start | tojson): [0, $start, 0, null]}, n: 1, frontier: [$start], level: 0}
   | until((.frontier | length) == 0;
-      .frontier as $f
-      | reduce ($f[] | $adj[tojson][]?) as $n (.frontier = [];
-          if .seen[$n | tojson] then . else .seen[$n | tojson] = true | .frontier += [$n] | .order += [$n] end))
-  | .order;
+      .frontier as $f | .level += 1 | .next = {}
+      | reduce ($f[] as $u | $adj[$u | tojson][]? | [$u, .]) as $e (.;
+          ($e[1] | tojson) as $k
+          | if .seen[$k] != null then .
+            else .seen[$k] = [.n, $e[1], .level, $e[0]] | .next[.n | tostring] = $e[1] | .n += 1 end)
+      | .frontier = (.next | to_entries | sort_by(.key | tonumber) | map(.value)))
+  | [.seen[]] | sort_by(.[0]) | map({node: .[1], hops: .[2], via: .[3]});
 
 # reachable: every node that can be reached from $start along directed edges from -> to, at any
 # number of hops, nearest first. $start itself is never listed, even when a cycle leads back to it:
 # each node appears once and the start counts as already seen. Cycles are safe.
-def reachable(from; to; $start):
-  (reduce .[] as $e ({}; .[$e | from | tojson] += [$e | to])) as $adj | _bfs($adj; $start);
+def reachable(from; to; $start): _adj(from; to) as $adj | _search($adj; $start) | .[1:] | map(.node);
+
+# hops: one row per node that can be reached from $start along directed edges, the start itself
+# included at 0: {node, hops}, where hops is the number of edges on the shortest route; nearest
+# first, and within one distance in the order the search meets them.
+def hops(from; to; $start): _adj(from; to) as $adj | _search($adj; $start) | map({node, hops});
+
+# shortest_path, four arguments: the route from $start to $goal with the fewest edges, as
+# {path: [the nodes from start to goal], cost: the number of edges}; null when there is none;
+# {path: [$start], cost: 0} when they are the same node. Among routes of equal length, the one a
+# breadth-first search following edges in input order finds first.
+def shortest_path(from; to; $start; $goal):
+  _adj(from; to) as $adj
+  | (reduce _search($adj; $start)[] as $r ({}; .[$r.node | tojson] = $r)) as $ix
+  | if $ix[$goal | tojson] == null then null
+    else {path: ([$goal | recurse($ix[tojson].via | select(. != null))] | reverse), cost: $ix[$goal | tojson].hops}
+    end;
+
+# shortest_path, five arguments: the route with the lowest total weight (weights are numbers >= 0;
+# anything else is an error), same output with cost the total. Among routes of equal cost, the one
+# found first. It settles the nearest open node by scanning them all, with no priority queue: fine
+# for a few thousand nodes, slow beyond.
+def shortest_path(from; to; weight; $start; $goal):
+  (first(.[] | (weight) | select(type != "number" or . < 0) | [.]) // null) as $bad
+  | if $bad != null then error("shortest_path: an edge has weight \($bad[0] | tojson); weights must be numbers >= 0")
+    else
+    (group_by(from) | map({key: (.[0] | from | tojson), value: map([(to), (weight)])}) | from_entries) as $adj
+    # d and open: node -> [cost, order found, node, via]
+    | {d: {($start | tojson): [0, 0, $start, null]}, open: {($start | tojson): [0, 0, $start, null]}, done: {}, n: 1, stop: false}
+    | until(.stop;
+        (.open | [.[]] | if length == 0 then null else min_by([.[0], .[1]]) end) as $u
+        | if $u == null or $u[2] == $goal then .stop = true
+          else ($u[2] | tojson) as $uk
+            | .open |= del(.[$uk]) | .done[$uk] = true
+            | reduce $adj[$uk][]? as $e (.;
+                ($e[0] | tojson) as $vk | ($u[0] + $e[1]) as $nd
+                | if .done[$vk] then .
+                  elif .d[$vk] == null then .d[$vk] = [$nd, .n, $e[0], $u[2]] | .open[$vk] = .d[$vk] | .n += 1
+                  elif $nd < .d[$vk][0] then .d[$vk] = [$nd, .d[$vk][1], $e[0], $u[2]] | .open[$vk] = .d[$vk]
+                  else . end)
+          end)
+    | .d as $d
+    | if $d[$goal | tojson] == null then null
+      else {path: ([$goal | recurse($d[tojson][3] | select(. != null))] | reverse), cost: $d[$goal | tojson][0]}
+      end
+    end;
+
+# topo_order: a dependency order of the nodes of a directed graph. One row per node: {node, level},
+# sorted by level then node: level 0 for a node nothing points to, otherwise one more than the
+# highest level among the nodes that point to it, so every edge goes from a lower level to a higher
+# one and the nodes of one level do not depend on each other. A cycle is an error naming a node on it.
+def topo_order(from; to):
+  ([.[] | (from), (to)] | unique) as $nodes
+  | _adj(from; to) as $adj
+  | (reduce .[] as $e (reduce $nodes[] as $n ({}; .[$n | tojson] = 0); .[$e | to | tojson] += 1)) as $deg0
+  | . as $edges
+  | {deg: $deg0, level: 0, frontier: [$nodes[] | select($deg0[tojson] == 0)], out: {}, k: 0, left: ($nodes | length)}
+  | until((.frontier | length) == 0;
+      .frontier as $f | .level as $lv
+      | .out[.k | tostring] = ($f | map({node: ., level: $lv})) | .k += 1 | .left -= ($f | length) | .next = {}
+      | reduce ($f[] | $adj[tojson][]?) as $v (.;
+          ($v | tojson) as $vk | .deg[$vk] -= 1 | if .deg[$vk] == 0 then .next[$vk] = $v else . end)
+      | .frontier = ([.next[]] | sort) | .level += 1)
+  | if .left > 0
+    then .deg as $deg
+      # every node left has a node left pointing to it: walk back until one repeats; it is on a cycle
+      | ($edges | map(select($deg[to | tojson] > 0 and $deg[from | tojson] > 0)) | _adj(to; from)) as $pred
+      | ({cur: ([$nodes[] | select($deg[tojson] > 0)][0]), on: {}}
+         | until(.on[.cur | tojson]; .on[.cur | tojson] = true | .cur = ($pred[.cur | tojson] | sort | .[0])) | .cur) as $c
+      | error("topo_order: cycle through \($c | tojson)")
+    else [.out[][]] | sort_by([.level, .node]) end;
 
 # components: connected groups, edges read as undirected. One row per node: {node, component},
 # where component is the smallest node of its group in jq's sort order. Rows sorted by node.
 def components(a; b):
-  (reduce .[] as $e ({}; ($e | a) as $x | ($e | b) as $y | .[$x | tojson] += [$y] | .[$y | tojson] += [$x])) as $adj
+  ([.[] | [(a), (b)], [(b), (a)]] | group_by(.[0]) | map({key: (.[0][0] | tojson), value: map(.[1])}) | from_entries) as $adj
   | ([.[] | (a), (b)] | unique) as $nodes
-  | reduce $nodes[] as $n ({seen: {}, out: []};
+  | reduce $nodes[] as $n ({seen: {}, parts: {}, k: 0};
       if .seen[$n | tojson] then .
-      else reduce ([$n] + _bfs($adj; $n))[] as $m (.; .seen[$m | tojson] = true | .out += [{node: $m, component: $n}]) end)
-  | .out | sort_by(.node);
+      else (_search($adj; $n) | map(.node)) as $c
+        | reduce $c[] as $m (.; .seen[$m | tojson] = true)
+        | .parts[.k | tostring] = ($c | map({node: ., component: $n})) | .k += 1
+      end)
+  | [.parts[][]] | sort_by(.node);
 
 # ---------------------------------------------------------------- measures in a context
 
