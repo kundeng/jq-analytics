@@ -1,0 +1,12 @@
+[
+ {"region": "east", "product": "A", "month": "2026-01", "qty": 3, "price": 10},
+ {"region": "east", "product": "A", "month": "2026-02", "qty": 5, "price": 10},
+ {"region": "east", "product": "A", "month": "2026-03", "qty": 4, "price": 10},
+ {"region": "east", "product": "B", "month": "2026-01", "qty": 2, "price": 25},
+ {"region": "east", "product": "B", "month": "2026-03", "qty": 1, "price": 25},
+ {"region": "east", "product": "B", "month": "2026-03", "qty": 3, "price": 25},
+ {"region": "west", "product": "A", "month": "2026-03", "qty": 6, "price": 10},
+ {"region": "west", "product": "B", "month": "2026-01", "qty": 4, "price": 25},
+ {"region": "west", "product": "C", "month": "2026-01", "qty": 1, "price": 40},
+ {"region": "west", "product": "C", "month": "2026-03", "qty": 2, "price": 40}
+]

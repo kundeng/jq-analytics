@@ -1,0 +1,2 @@
+[{"id":1,"region":"east","amount":5,"gid":"g1"},{"id":2,"region":"east","amount":10,"gid":"g2"},{"id":3,"region":"east","amount":250,"gid":"g9"},
+ {"id":4,"region":"west","amount":10,"gid":null},{"id":5,"region":null,"amount":7,"gid":"g1"},{"id":6,"region":"north","amount":7,"gid":"g2"},{"id":7,"region":"east","amount":99,"gid":"g1"}]

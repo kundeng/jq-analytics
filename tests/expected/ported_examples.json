@@ -1,0 +1,123 @@
+{
+ "05-asof-join": [
+  {
+   "_time": 200,
+   "ip": "10.1.1.55",
+   "user": "bsmith"
+  },
+  {
+   "_time": 250,
+   "ip": "10.1.1.77",
+   "user": "alice"
+  },
+  {
+   "_time": 400,
+   "ip": "10.1.1.55",
+   "user": "jdoe"
+  },
+  {
+   "_time": 500,
+   "ip": "10.1.1.55",
+   "user": "karla"
+  },
+  {
+   "_time": 1000,
+   "ip": "10.1.1.99",
+   "user": null
+  }
+ ],
+ "10-state-dwell": [
+  {
+   "ticket_id": "T1",
+   "state": "New",
+   "duration_seconds": 600
+  },
+  {
+   "ticket_id": "T2",
+   "state": "New",
+   "duration_seconds": 660
+  },
+  {
+   "ticket_id": "T2",
+   "state": "Open",
+   "duration_seconds": 3600
+  },
+  {
+   "ticket_id": "T1",
+   "state": "Open",
+   "duration_seconds": 5400
+  },
+  {
+   "ticket_id": "T2",
+   "state": "Pending",
+   "duration_seconds": 3600
+  },
+  {
+   "ticket_id": "T1",
+   "state": "InReview",
+   "duration_seconds": 3600
+  }
+ ],
+ "21-hierarchy-rollup": [
+  {
+   "node_id": "1",
+   "parent_id": "",
+   "name": "CEO",
+   "cost": "100",
+   "depth": 0,
+   "path": "CEO",
+   "own_cost": 100.0,
+   "subtree_cost": 250.0
+  },
+  {
+   "node_id": "2",
+   "parent_id": "1",
+   "name": "Engineering",
+   "cost": "50",
+   "depth": 1,
+   "path": "CEO / Engineering",
+   "own_cost": 50.0,
+   "subtree_cost": 110.0
+  },
+  {
+   "node_id": "3",
+   "parent_id": "1",
+   "name": "Sales",
+   "cost": "40",
+   "depth": 1,
+   "path": "CEO / Sales",
+   "own_cost": 40.0,
+   "subtree_cost": 40.0
+  },
+  {
+   "node_id": "4",
+   "parent_id": "2",
+   "name": "Backend",
+   "cost": "30",
+   "depth": 2,
+   "path": "CEO / Engineering / Backend",
+   "own_cost": 30.0,
+   "subtree_cost": 40.0
+  },
+  {
+   "node_id": "5",
+   "parent_id": "2",
+   "name": "Frontend",
+   "cost": "20",
+   "depth": 2,
+   "path": "CEO / Engineering / Frontend",
+   "own_cost": 20.0,
+   "subtree_cost": 20.0
+  },
+  {
+   "node_id": "6",
+   "parent_id": "4",
+   "name": "Platform",
+   "cost": "10",
+   "depth": 3,
+   "path": "CEO / Engineering / Backend / Platform",
+   "own_cost": 10.0,
+   "subtree_cost": 10.0
+  }
+ ]
+}

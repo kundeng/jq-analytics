@@ -1,0 +1,11 @@
+[
+ {"ticket_id": "T1", "status": "New", "assignee": "alice", "_time": "1717851600"},
+ {"ticket_id": "T2", "status": "New", "assignee": "carol", "_time": "1717851660"},
+ {"ticket_id": "T1", "status": "Open", "assignee": "alice", "_time": "1717852200"},
+ {"ticket_id": "T2", "status": "Open", "assignee": "carol", "_time": "1717852320"},
+ {"ticket_id": "T1", "status": "Open", "assignee": "bob", "_time": "1717855800"},
+ {"ticket_id": "T2", "status": "Pending", "assignee": "carol", "_time": "1717855920"},
+ {"ticket_id": "T1", "status": "InReview", "assignee": "bob", "_time": "1717857600"},
+ {"ticket_id": "T2", "status": "Closed", "assignee": "carol", "_time": "1717859520"},
+ {"ticket_id": "T1", "status": "Closed", "assignee": "alice", "_time": "1717861200"}
+]

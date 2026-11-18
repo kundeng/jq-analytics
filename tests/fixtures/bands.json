@@ -1,0 +1,2 @@
+[{"bi":1,"region":"east","lo":0,"hi":10,"band":"small"},{"bi":2,"region":"east","lo":10,"hi":100,"band":"medium"},{"bi":3,"region":"east","lo":50,"hi":100,"band":"upper"},
+ {"bi":4,"region":"west","lo":0,"hi":10,"band":"small"},{"bi":5,"region":"south","lo":0,"hi":10,"band":"small"},{"bi":6,"region":null,"lo":0,"hi":1000,"band":"any"}]

@@ -1,0 +1,12 @@
+[
+ {"_time": "100", "ip_address": "10.1.1.55", "user": "bsmith", "src_ip": "", "event_type": "dhcp"},
+ {"_time": "300", "ip_address": "10.1.1.55", "user": "jdoe", "src_ip": "", "event_type": "dhcp"},
+ {"_time": "100", "ip_address": "10.1.1.77", "user": "alice", "src_ip": "", "event_type": "dhcp"},
+ {"_time": "10", "ip_address": "10.1.1.99", "user": "olduser", "src_ip": "", "event_type": "dhcp"},
+ {"_time": "500", "ip_address": "10.1.1.55", "user": "karla", "src_ip": "", "event_type": "dhcp"},
+ {"_time": "200", "ip_address": "", "user": "", "src_ip": "10.1.1.55", "event_type": "firewall"},
+ {"_time": "400", "ip_address": "", "user": "", "src_ip": "10.1.1.55", "event_type": "firewall"},
+ {"_time": "250", "ip_address": "", "user": "", "src_ip": "10.1.1.77", "event_type": "firewall"},
+ {"_time": "1000", "ip_address": "", "user": "", "src_ip": "10.1.1.99", "event_type": "firewall"},
+ {"_time": "500", "ip_address": "", "user": "", "src_ip": "10.1.1.55", "event_type": "firewall"}
+]

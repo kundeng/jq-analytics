@@ -1,0 +1,8 @@
+[
+ {"node_id": "1", "parent_id": "", "name": "CEO", "cost": "100"},
+ {"node_id": "2", "parent_id": "1", "name": "Engineering", "cost": "50"},
+ {"node_id": "3", "parent_id": "1", "name": "Sales", "cost": "40"},
+ {"node_id": "4", "parent_id": "2", "name": "Backend", "cost": "30"},
+ {"node_id": "5", "parent_id": "2", "name": "Frontend", "cost": "20"},
+ {"node_id": "6", "parent_id": "4", "name": "Platform", "cost": "10"}
+]

@@ -1,0 +1,407 @@
+[
+  {
+    "name": "stats_by_group",
+    "input": "tests/fixtures/nums.json",
+    "sql": "stats_by_group.sql",
+    "jq": "group_agg({g}; map(.x) | {n: count_nonnull, sum: sum_nonnull, mean: mean, var_samp: var_samp, var_pop: var_pop, sd_samp: stddev_samp, sd_pop: stddev_pop, qd: quantiles_disc([0, 0.1, 0.25, 0.3, 0.5, 0.7, 0.9, 1]), qc: quantiles_cont([0, 0.1, 0.25, 0.3, 0.5, 0.7, 0.9, 1]), median: median})"
+  },
+  {
+    "name": "round_to",
+    "input": "tests/fixtures/round.json",
+    "sql": "round_to.sql",
+    "jq": "map({i, r2: (.x | round_to(2)), r0: (.x | round_to(0))})"
+  },
+  {
+    "name": "parse_and_local",
+    "input": "tests/fixtures/ts.json",
+    "sql": "parse_and_local.sql",
+    "jq": "map(.i as $i | (.s | parse_ts) as $e | {i: $i, epoch: $e, det: ($e | local_time(\"America/Detroit\") | {date, hour, minute, weekday, offset_s}), lon: ($e | local_time(\"Europe/London\") | {date, hour, weekday, offset_s})})"
+  },
+  {
+    "name": "join_inner",
+    "input": "tests/fixtures/left.json",
+    "vars": {
+      "right": "tests/fixtures/right.json"
+    },
+    "sql": "join_inner.sql",
+    "jq": "($right | map({ri, rk: .k, rv})) as $r | join_inner($r; .k; .rk) | map({id, lk: .k, lv, ri, rv})"
+  },
+  {
+    "name": "join_left",
+    "input": "tests/fixtures/left.json",
+    "vars": {
+      "right": "tests/fixtures/right.json"
+    },
+    "sql": "join_left.sql",
+    "jq": "($right | map({ri, rk: .k, rv})) as $r | join_left($r; .k; .rk) | map({id, lk: .k, lv, ri, rv})"
+  },
+  {
+    "name": "join_full",
+    "input": "tests/fixtures/left.json",
+    "vars": {
+      "right": "tests/fixtures/right.json"
+    },
+    "sql": "join_full.sql",
+    "jq": "($right | map({ri, rk: .k, rv})) as $r | join_full($r; .k; .rk) | map({id, lk: .k, lv, ri, rv})"
+  },
+  {
+    "name": "join_semi_anti",
+    "input": "tests/fixtures/left.json",
+    "vars": {
+      "right": "tests/fixtures/right.json"
+    },
+    "sql": "join_semi_anti.sql",
+    "jq": "{semi: (join_semi($right; .k; .k) | map(.id)), anti: (join_anti($right; .k; .k) | map(.id))}"
+  },
+  {
+    "name": "join_asof",
+    "input": "tests/fixtures/trades.json",
+    "vars": {
+      "right": "tests/fixtures/quotes.json"
+    },
+    "sql": "join_asof.sql",
+    "jq": "($right | map({qi, k, qt: .t, q})) as $q | join_asof($q; .k; .k; .t; .qt) | map({id, qi, q})"
+  },
+  {
+    "name": "windows",
+    "input": "tests/fixtures/window.json",
+    "sql": "windows.sql",
+    "jq": "over(.g; .t; \"rn\"; row_number) | over(.g; .t; \"lag1\"; lag(.v; 1)) | over(.g; .t; \"rs\"; running_sum(.v)) | over(.g; .t; \"rk\"; rank_by(.t)) | over(.g; .t; \"mm\"; moving_mean(.v; 2)) | map({i, rn, lag1, rs, rk, mm})"
+  },
+  {
+    "name": "unpivot",
+    "input": "tests/fixtures/wide.json",
+    "sql": "unpivot.sql",
+    "jq": "unpivot([\"id\"]; \"col\"; \"val\")"
+  },
+  {
+    "name": "pivot",
+    "input": "tests/fixtures/long.json",
+    "sql": "pivot.sql",
+    "jq": "pivot([\"a\", \"b\", \"c\"]; {id}; .col; .v; add)"
+  },
+  {
+    "name": "group_order",
+    "input": "tests/fixtures/order.json",
+    "sql": "group_order.sql",
+    "jq": "group_agg({g}; {n: length, total: (map(.x) | sum_nonnull)})"
+  },
+  {
+    "name": "unpivot_field_order",
+    "input": "tests/fixtures/wide_unsorted.json",
+    "sql": "unpivot_field_order.sql",
+    "jq": "unpivot([\"id\"]; \"col\"; \"val\")"
+  },
+  {
+    "name": "cast",
+    "input": "tests/fixtures/raw_strings.json",
+    "sql": "cast.sql",
+    "jq": "cast({n: \"number\", t: \"timestamp\", b: \"boolean\"}) | map({i, n, t, b})"
+  },
+  {
+    "name": "cast_error",
+    "input": "tests/fixtures/bad_number.json",
+    "expect_error": "is not a number",
+    "jq": "cast({n: \"number\"})"
+  },
+  {
+    "name": "split_by_shape",
+    "input": "tests/fixtures/example_05_asof_join.json",
+    "sql": "split_by_shape.sql",
+    "jq": "split_by(.event_type) | shape | map_values(.rows)"
+  },
+  {
+    "name": "keep_tables",
+    "input": "tests/fixtures/example_05_asof_join.json",
+    "expect_value": {
+      "firewall": [
+        "_time",
+        "event_type",
+        "ip_address",
+        "src_ip",
+        "user"
+      ]
+    },
+    "jq": "split_by(.event_type) | keep([\"firewall\"]) | shape | map_values(.fields)"
+  },
+  {
+    "name": "join_on_range_left",
+    "input": "tests/fixtures/orders.json",
+    "vars": {
+      "right": "tests/fixtures/bands.json"
+    },
+    "sql": "join_on_range_left.sql",
+    "jq": "join_on($right; .region; .region; .l.amount >= .r.lo and .l.amount < .r.hi; \"left\") | map({id, bi, band})"
+  },
+  {
+    "name": "join_on_no_key",
+    "input": "tests/fixtures/orders.json",
+    "vars": {
+      "right": "tests/fixtures/bands.json"
+    },
+    "sql": "join_on_no_key.sql",
+    "jq": "join_on($right | map({bi, lo, hi}); true; true; .l.amount >= .r.lo and .l.amount < .r.hi; \"inner\") | map({id, bi})"
+  },
+  {
+    "name": "join_on_full_cond",
+    "input": "tests/fixtures/orders.json",
+    "vars": {
+      "right": "tests/fixtures/bands.json"
+    },
+    "sql": "join_on_full_cond.sql",
+    "jq": "join_on($right | map({bi, rregion: .region, lo, hi}); .region; .rregion; .l.amount >= .r.lo and .l.amount < .r.hi; \"full\") | map({id, bi})"
+  },
+  {
+    "name": "join_on_semi_anti_cond",
+    "input": "tests/fixtures/orders.json",
+    "vars": {
+      "right": "tests/fixtures/bands.json"
+    },
+    "sql": "join_on_semi_anti_cond.sql",
+    "jq": "{semi: (join_on($right; .region; .region; .l.amount >= .r.lo and .l.amount < .r.hi; \"semi\") | map(.id)), anti: (join_on($right; .region; .region; .l.amount >= .r.lo and .l.amount < .r.hi; \"anti\") | map(.id))}"
+  },
+  {
+    "name": "join_nest",
+    "input": "tests/fixtures/orders.json",
+    "vars": {
+      "right": "tests/fixtures/bands.json"
+    },
+    "sql": "join_nest.sql",
+    "jq": "join_nest($right; .region; .region; .l.amount >= .r.lo and .l.amount < .r.hi; \"bands\") | map({id, bands: (.bands | map(.band))})"
+  },
+  {
+    "name": "lookup",
+    "input": "tests/fixtures/orders.json",
+    "vars": {
+      "right": "tests/fixtures/groups.json"
+    },
+    "sql": "lookup.sql",
+    "jq": "lookup($right; .gid; .gid; \"g\") | map({id, gname: .g.gname})"
+  },
+  {
+    "name": "lookup_duplicate_error",
+    "input": "tests/fixtures/orders.json",
+    "vars": {
+      "right": "tests/fixtures/groups_dup.json"
+    },
+    "expect_error": "appears more than once",
+    "jq": "lookup($right; .gid; .gid; \"g\")"
+  },
+  {
+    "name": "join_clash_error",
+    "input": "tests/fixtures/trades.json",
+    "vars": {
+      "right": "tests/fixtures/quotes.json"
+    },
+    "expect_error": "differs between left",
+    "jq": "join_inner($right; .k; .k)"
+  },
+  {
+    "name": "join_overlap",
+    "input": "tests/fixtures/shifts.json",
+    "vars": {
+      "right": "tests/fixtures/outages.json"
+    },
+    "sql": "join_overlap.sql",
+    "jq": "join_overlap($right; .host; .host; .start; .end; .ostart; .oend) | map({sid, oid})"
+  },
+  {
+    "name": "join_asof_max_age",
+    "input": "tests/fixtures/trades.json",
+    "vars": {
+      "right": "tests/fixtures/quotes.json"
+    },
+    "sql": "join_asof_max_age.sql",
+    "jq": "($right | map({qi, k, qt: .t, q})) as $q | join_asof($q; .k; .k; .t; .qt; 3) | map({id, qi, q})"
+  },
+  {
+    "name": "state_blocks",
+    "input": "tests/fixtures/events.json",
+    "sql": "state_blocks.sql",
+    "jq": "state_blocks({u}; .t; .s)"
+  },
+  {
+    "name": "transitions",
+    "input": "tests/fixtures/events.json",
+    "sql": "transitions.sql",
+    "jq": "transitions({u}; .t; .s)"
+  },
+  {
+    "name": "sessions",
+    "input": "tests/fixtures/events.json",
+    "sql": "sessions.sql",
+    "jq": "sessions({u}; .t; 10)"
+  },
+  {
+    "name": "runs",
+    "input": "tests/fixtures/events.json",
+    "sql": "runs.sql",
+    "jq": "runs(.s)"
+  },
+  {
+    "name": "tree_cycle_error",
+    "input": "tests/fixtures/tree_cycle.json",
+    "expect_error": "cycle through",
+    "jq": "tree_paths(.id; .parent)"
+  },
+  {
+    "name": "tree_orphan_error",
+    "input": "tests/fixtures/tree_orphan.json",
+    "expect_error": "is not a node",
+    "jq": "tree_paths(.id; .parent)"
+  },
+  {
+    "name": "reachable",
+    "input": "tests/fixtures/edges.json",
+    "sql": "reachable.sql",
+    "jq": "{from_1: (reachable(.a; .b; 1) | sort), from_7: (reachable(.a; .b; 7) | sort)}"
+  },
+  {
+    "name": "components",
+    "input": "tests/fixtures/edges.json",
+    "sql": "components.sql",
+    "jq": "components(.a; .b)"
+  },
+  {
+    "name": "example_05_asof_join",
+    "input": "tests/fixtures/example_05_asof_join.json",
+    "expect_file": "tests/expected/ported_examples.json",
+    "expect_jq": ".[\"05-asof-join\"]",
+    "jq": "split_by(.event_type) | .leases = (.dhcp | map({ip: .ip_address, user, lease_t: (._time | tonumber)})) | .hits = (.firewall | map({ip: .src_ip, t: (._time | tonumber)})) | .joined = (.leases as $leases | .hits | join_asof($leases; .ip; .ip; .t; .lease_t; 300)) | .joined | map({_time: .t, ip, user}) | sort_by(._time)"
+  },
+  {
+    "name": "example_10_state_dwell",
+    "input": "tests/fixtures/example_10_state_dwell.json",
+    "expect_file": "tests/expected/ported_examples.json",
+    "expect_jq": ".[\"10-state-dwell\"] | sort_by(.ticket_id, .state)",
+    "jq": "map(.t = (._time | tonumber)) | state_blocks({ticket_id}; .t; .status) | map(select(.end != null) | {ticket_id, state, duration_seconds: .duration}) | sort_by(.ticket_id, .state)"
+  },
+  {
+    "name": "example_21_hierarchy_rollup",
+    "input": "tests/fixtures/example_21_hierarchy_rollup.json",
+    "expect_file": "tests/expected/ported_examples.json",
+    "expect_jq": ".[\"21-hierarchy-rollup\"]",
+    "jq": "map(.own_cost = (.cost | tonumber)) | (map({key: .node_id, value: .name}) | from_entries) as $name | tree_rollup(.node_id; .parent_id; .own_cost) | map({node_id, parent_id, name, cost, depth, path: (.ancestry | map($name[.]) | join(\" / \")), own_cost, subtree_cost: .subtree})"
+  },
+  {
+    "name": "context_sales_levels",
+    "input": "tests/fixtures/sales.json",
+    "sql": "context_sales_levels.sql",
+    "jq": "def revenue: map(.qty * .price) | add; rollup_levels([[\"region\", \"product\"], [\"region\"], [\"product\"], []]; {revenue: measure(revenue), share_of_region: (share(revenue; without(\"product\")) | round_to(4)), share_of_all: (share(revenue; keep_only([])) | round_to(4)), a_revenue: calc(revenue; with_filter({product: \"A\"}))}) | map(del(.level) | {region: null, product: null} + .)"
+  },
+  {
+    "name": "context_sales_time",
+    "input": "tests/fixtures/sales.json",
+    "sql": "context_sales_time.sql",
+    "jq": "def revenue: map(.qty * .price) | add; rollup([\"region\", \"month\"]; {revenue: measure(revenue), prior: calc(revenue; shift(\"month\"; -1)), to_date: calc(revenue; to_date(\"month\"))}) | map(del(.level) | {region: null, month: null} + .)"
+  },
+  {
+    "name": "context_scan_fallback",
+    "input": "tests/fixtures/sales.json",
+    "sql": "context_scan_fallback.sql",
+    "jq": "def revenue: map(.qty * .price) | add; rollup_levels([[\"region\", \"product\"]]; {share_of_region: (share(revenue; without(\"product\")) | round_to(4)), months_to_feb: calc(length; with_filter({month: {from: \"2026-01\", to: \"2026-02\"}}))}) | map(del(.level))"
+  },
+  {
+    "name": "context_empty_input",
+    "input": "tests/fixtures/nums.json",
+    "expect_value": [],
+    "jq": "[] | rollup([\"a\"]; {n: measure(length)})"
+  },
+  {
+    "name": "context_missing_level_field",
+    "input": "tests/fixtures/nums.json",
+    "expect_value": [
+      {
+        "g": null,
+        "level": "g",
+        "n": 1,
+        "all": 3,
+        "next": null,
+        "upto": null
+      },
+      {
+        "g": "a",
+        "level": "g",
+        "n": 2,
+        "all": 3,
+        "next": null,
+        "upto": 2
+      },
+      {
+        "level": "all",
+        "n": 3,
+        "all": 3,
+        "next": null,
+        "upto": 3
+      }
+    ],
+    "jq": "[{g: \"a\", x: 1}, {x: 2}, {g: \"a\", x: 3}] | rollup([\"g\"]; {n: measure(length), all: calc(length; without(\"g\")), next: calc(length; shift(\"g\"; 1)), upto: calc(length; to_date(\"g\"))})"
+  },
+  {
+    "name": "made_up_resolved_summary",
+    "input": "tests/fixtures/made_up_incidents.json",
+    "view": "made_up_incidents.sql",
+    "sql": "resolved_summary.sql",
+    "jq": "map(.opened = (.opened_at | parse_ts) | .resolved = (.resolved_at | parse_ts) | .hours = hours_between(.opened; .resolved)) | map(.hours) as $h | {incidents: length, unresolved: (map(select(.resolved == null)) | length), resolved: ($h | count_nonnull), mean: ($h | mean | round_to(2)), p25: ($h | quantile_disc(0.25) | round_to(2)), p50: ($h | quantile_disc(0.5) | round_to(2)), p75: ($h | quantile_disc(0.75) | round_to(2)), p90: ($h | quantile_disc(0.9) | round_to(2)), max: ($h | nonnull | max | round_to(2)), within_1h: ($h | map(select(. != null and . <= 1)) | length), within_1d: ($h | map(select(. != null and . <= 24)) | length), within_7d: ($h | map(select(. != null and . <= 168)) | length)}"
+  },
+  {
+    "name": "made_up_office_hours",
+    "input": "tests/fixtures/made_up_incidents.json",
+    "view": "made_up_incidents.sql",
+    "sql": "office_hours.sql",
+    "jq": "tz(\"America/Detroit\") as $det | map(.opened = (.opened_at | parse_ts) | .resolved = (.resolved_at | parse_ts) | .hours = hours_between(.opened; .resolved)) | map(select(.resolved != null) | (.opened | local_time($det)) as $o | .in_hours = ($o.weekday >= 1 and $o.weekday <= 5 and $o.hour >= 8 and $o.hour <= 16) | .rhour = (.resolved | local_time($det) | .hour)) | {inside: (map(select(.in_hours) | .hours) | {n: length, median: (quantile_disc(0.5) | round_to(2)), p90: (quantile_disc(0.9) | round_to(2))}), outside: (map(select(.in_hours | not) | .hours) | {n: length, median: (quantile_disc(0.5) | round_to(2)), p90: (quantile_disc(0.9) | round_to(2))}), by_resolved_hour: (group_agg({hour: .rhour}; {n: length}) | sort_by(.hour))}"
+  },
+  {
+    "name": "made_up_top_days",
+    "input": "tests/fixtures/made_up_incidents.json",
+    "view": "made_up_incidents.sql",
+    "sql": "top_days.sql",
+    "jq": "tz(\"America/Detroit\") as $det | map({day: (.opened_at | parse_ts | local_time($det) | .date)}) | group_agg({day}; {n: length}) | sort_by([-.n, .day]) | .[:5]"
+  },
+  {
+    "name": "made_up_lag_within_day",
+    "input": "tests/fixtures/made_up_incidents.json",
+    "view": "made_up_incidents.sql",
+    "sql": "lag_within_day.sql",
+    "jq": "tz(\"America/Detroit\") as $det | map(.opened = (.opened_at | parse_ts) | .day = (.opened | local_time($det) | .date)) | over(.day; .opened; \"prev\"; lag(.opened; 1)) | over(.day; .opened; \"rn\"; row_number) | map(if .prev == null then null else (.opened - .prev) / 3600 end) as $g | {days: (map(.day) | unique | length), gaps: ($g | count_nonnull), median: ($g | quantile_cont(0.5) | round_to(4)), p90: ($g | quantile_disc(0.9) | round_to(4)), max_rn: (map(.rn) | max)}"
+  },
+  {
+    "name": "made_up_asof_last_resolution",
+    "input": "tests/fixtures/made_up_incidents.json",
+    "view": "made_up_incidents.sql",
+    "sql": "asof_last_resolution.sql",
+    "jq": "map(.opened = (.opened_at | parse_ts) | .resolved = (.resolved_at | parse_ts)) as $rows | ($rows | map(select(.resolved != null) | {ag: .assignment_group, rt: .resolved})) as $res | $rows | join_asof($res; .assignment_group; .ag; .opened; .rt) | map(if .rt == null then null else (.opened - .rt) / 3600 end) as $g | {incidents: length, matched: ($g | count_nonnull), median: ($g | quantile_disc(0.5) | round_to(4)), p90: ($g | quantile_disc(0.9) | round_to(4))}"
+  },
+  {
+    "name": "made_up_day_volume_join",
+    "input": "tests/fixtures/made_up_incidents.json",
+    "view": "made_up_incidents.sql",
+    "sql": "day_volume_join.sql",
+    "jq": "tz(\"America/Detroit\") as $det | map(.opened = (.opened_at | parse_ts) | .resolved = (.resolved_at | parse_ts) | .hours = hours_between(.opened; .resolved) | .day = (.opened | local_time($det) | .date)) | (group_agg({day}; {n: length}) | map({vday: .day, n})) as $v | join_inner($v; .day; .vday) | {busy: (map(select(.n >= 100)) | {n: length, mean: (map(.hours) | mean | round_to(4))}), quiet: (map(select(.n < 100)) | {n: length, mean: (map(.hours) | mean | round_to(4))})}"
+  },
+  {
+    "name": "made_up_context_months",
+    "input": "tests/fixtures/made_up_incidents.json",
+    "view": "made_up_incidents.sql",
+    "sql": "context_months.sql",
+    "jq": "def requests: length; def share_within_day: if length == 0 then null else (map(select(.hours != null and .hours <= 24)) | length) / length end; def open_at($d): map(select(.day <= $d and (.resolved_day == null or .resolved_day > $d))) | length; map(. + {month: .opened_at[0:7], day: .opened_at[0:10], resolved_day: (if .resolved_at == \"\" then null else .resolved_at[0:10] end), hours: hours_between(.opened_at | parse_ts; .resolved_at | parse_ts)}) | rollup([\"month\"]; {requests: measure(requests), share_of_all: (share(requests; without(\"month\")) | round_to(4)), within_day: (measure(share_within_day) | round_to(4)), prior_within_day: (calc(share_within_day; shift(\"month\"; -1)) | round_to(4)), median_hours: (measure(map(.hours) | median) | round_to(2)), requests_to_date: calc(requests; to_date(\"month\")), open_at_end: ((.rows | map(.day) | max) as $d | .all | open_at($d))}) | map(del(.level) | {month: null} + .)"
+  },
+  {
+    "name": "made_up_context_two_levels",
+    "input": "tests/fixtures/made_up_incidents.json",
+    "sql": "made_up_two_levels.sql",
+    "jq": "map(. + {month: .opened_at[0:7]}) | rollup([\"month\", \"state\"]; {requests: measure(length), share_of_month: (if .at | has(\"month\") then share(length; without(\"state\")) | round_to(4) else null end)}) | map(del(.level) | {month: null, state: null} + .) | sort_by(.month == null, .month, .state == null, .state)"
+  },
+  {
+    "name": "malloy_nest",
+    "input": "tests/fixtures/sales.json",
+    "sql": "malloy_nest.sql",
+    "jq": "def rev: map(.qty * .price) | add; rollup([\"region\"]; {revenue: measure(rev), top_products: measure(group_agg({product}; {rev: rev}) | sort_by(-.rev, .product) | .[0:2])}) | map(select(.level == \"region\") | {region, revenue, top_products})"
+  },
+  {
+    "name": "malloy_all_exclude",
+    "input": "tests/fixtures/sales.json",
+    "sql": "malloy_all_exclude.sql",
+    "jq": "def rev: map(.qty * .price) | add; rollup_levels([[\"region\", \"product\"]]; {revenue: measure(rev), total: calc(rev; keep_only([])), region_total: calc(rev; keep_only([\"region\"])), product_total: calc(rev; without(\"region\"))}) | map(del(.level))"
+  }
+]
