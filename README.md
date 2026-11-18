@@ -86,6 +86,23 @@ These are the rules a reader can rely on without reading each function; a functi
 3. **Order.** Group output comes in order of first appearance on every engine (jq's `group_by` sorts by key instead; gojq keeps object keys sorted, so the library records each group's first position rather than relying on an object's order). Join output follows the left table, then the right table's order among matches. Sorting is stable: ties keep input order.
 4. **Errors are loud.** A timestamp that does not parse or names a date that does not exist, a value that is not a number where a number is asked for, an unknown time zone, an event with no time, an interval with no start, a key or id that appears twice where one is expected: each raises an error naming the function and the value. Nothing is silently dropped, replaced or turned into null except `""`, which means missing.
 5. **No hidden state.** No function reads the process time zone (`TZ`), the locale or the clock.
+6. **One value in.** jq runs a filter once for each value it receives; a filter never sees "the stream". A function here expects the whole table as that one value: an array of rows. `$rows | group_agg(...)` is right. `$rows[] | group_agg(...)` hands over one row at a time and is wrong. A file with one JSON object per line is many values: collect it first, with `jq --slurp` or `[inputs]`. Inside `map(...)`, or inside the second argument of `group_agg`, the value is one row or one group again.
+
+The functions whose input is not a table:
+
+| The one input value is | Functions |
+|---|---|
+| a table: an array of rows | every function not listed below |
+| a list of values: an array of numbers, strings or nulls | `mean`, `median`, `quantile_disc`, `quantile_cont`, `quantiles_disc`, `quantiles_cont`, `var_samp`, `var_pop`, `stddev_samp`, `stddev_pop`, `sum_nonnull`, `count_nonnull`, `min_nonnull`, `max_nonnull`, `nonnull`, `mode`, `value_counts`, `histogram` |
+| one sorted partition, inside `over` | `row_number`, `rank_by`, `lag`, `lead`, `running_sum`, `moving_mean` |
+| a single value | `parse_ts` (a string), `round_to` (a number), `tz_offset` and `local_time` (epoch seconds) |
+| anything: the function reads only its arguments | `hours_between`, `similarity`, `tz`, `calendar`, `bin_edges`, `tzdata_version` |
+| an object whose fields are tables | `keep`, `shape` (`split_by` makes that object) |
+| an object keyed by id | `rows_from_map` |
+| a nested tree: one root object or an array of roots | `nodes_from_nested` |
+| a measure context, inside a cell of `rollup` or `rollup_levels` | `measure`, `calc`, `share`, `without`, `keep_only`, `with_filter`, `shift`, `on_calendar`, `to_date` |
+
+What happens when the rule is broken (as of 0.9.2; the library does not check its input's type yet). Given one row where a table is expected, most functions stop, but with jq's own message, which names neither the function nor the cause: `group_agg`, the joins, `over`, `state_blocks`, `tree_paths`, `rollup` and `to_map` say `Cannot index string with string "g"`; `profile` and `unpivot` say `string ("b") has no keys`. Three do not stop: `mode`, `value_counts` and `count_nonnull` treat the row's field values as the list and answer about them. `[{"g":"b","x":1}][] | count_nonnull` is 2, the number of fields, not the number of rows.
 
 ## Tracing the question
 

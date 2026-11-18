@@ -2,7 +2,7 @@
 
 The library takes JSON or YAML as it arrives and does everyday analytic work on it: joins, groups, statistics, time, state over time, trees, graphs and measures at several levels, short of fitting a model. It also reshapes data into what the next tool reads once the work outgrows jq.
 
-Every function takes **rows**: an array of objects. What differs between functions is which fields a row must carry. That requirement is a function's **shape**. This document defines the shapes, the sources that are not shapes yet, and the conversions between them.
+Every function takes **rows**: an array of objects. The array is one value: jq runs a filter once per value it receives, so the whole table goes in at once (`$rows | f`), never row by row (`$rows[] | f`). The README's rule 6, "One value in", lists the functions whose input is something else and says what happens when a row is passed where a table is expected. What differs between functions is which fields a row must carry. That requirement is a function's **shape**. This document defines the shapes, the sources that are not shapes yet, and the conversions between them.
 
 ## The picture
 

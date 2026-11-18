@@ -60,12 +60,13 @@ Two rules for the writing:
 ## What each chapter must not skip
 
 - The first run of any function shows its output on the chapter's rows, not a description of it.
+- **What the one input value is.** jq runs a filter once per value; the library's functions take the whole table as that value. Chapter 1 opens on this, before any library function: the same six requests as one array and as six separate values, `length` and `to_entries` run on both, and `.[]`, `[ ... ]` and `--slurp` as the ways between them. Every later chapter says, at a function's first use, what its input value is (a table, a list of values, one group, one row), and shows once what the function does when handed a row instead of a table.
 - Every rule that could have gone another way is stated where it first matters: nulls skipped, ties broken, an interval's end excluded, the engine a result was checked on.
 - Costs are given with the size they were measured at, and the chapter says what to do past that size.
 
 ## Not in the tutorial
 
-Installing jq; jq's own syntax beyond a one-page reminder; fitting models; anything past about 200,000 rows, which the last chapter hands to a database with the query to use.
+Installing jq; jq's own syntax beyond a one-page reminder and chapter 1's opening on values and arrays; fitting models; anything past about 200,000 rows, which the last chapter hands to a database with the query to use.
 
 ## Left to the reference
 
