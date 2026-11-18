@@ -9,6 +9,9 @@ numbers, the note, and the output of each `jq run` block. Stops, writing nothing
 with no note, a note naming no definition, a stale stamp, a comment that sits above another
 function than the one it describes, or a run whose output differs between the engines. --all also stops when a family has no notes file. --stamp writes missing stamps into
 the notes first. --list prints each family's definitions and whether a note covers them.
+--family=<slug> (repeatable) limits the build to those families. --check builds and runs every
+example and writes nothing. A note may hold the line <!-- definition --> where its code is to
+appear; without it the code comes first.
 """
 import hashlib
 import json
@@ -27,6 +30,7 @@ SECTION = re.compile(r"^# -{20,} (.+)$")
 DEF = re.compile(r"^def ([A-Za-z_][A-Za-z0-9_]*)(\(([^)]*)\))?:")
 HEADING = re.compile(r"^## (.+)$")
 STAMP = re.compile(r"^<!-- code: ([0-9a-f]{8}) -->$")
+PLACE = "<!-- definition -->"   # a line of a note: the definition's code goes here instead of first
 
 
 def slug(name: str) -> str:
@@ -159,7 +163,8 @@ def tidy(lines: list[str]) -> str:
 
 
 def main() -> None:
-    flags = {a for a in sys.argv[1:] if a.startswith("--")}
+    flags = {a for a in sys.argv[1:] if a.startswith("--") and not a.startswith("--family=")}
+    only = {a.split("=", 1)[1] for a in sys.argv[1:] if a.startswith("--family=")}
     engines = [a for a in sys.argv[1:] if not a.startswith("--")]
     families = parse(SOURCE.read_text())
     problems: list[str] = []
@@ -176,6 +181,8 @@ def main() -> None:
                 problems.append(f"{family['slug']}: the comment above {d['key']} describes {opens.group(1)}; move it above that function")
     for n, family in enumerate(families):
         number = f"{(n + 1) * 5:02d}"
+        if only and family["slug"] not in only:
+            continue
         path = NOTES / (family["slug"] + ".md")
         by_key = {d["key"]: d for d in family["defs"]}
         if not path.exists():
@@ -218,10 +225,17 @@ def main() -> None:
             defs = [by_key[k] for k in note["keys"]]
             names = ", ".join("`" + k.split("/")[0] + "`" for k in dict.fromkeys(note["keys"]))
             page += ["## " + ", ".join(dict.fromkeys(k.split("/")[0] for k in note["keys"])), ""]
+            code: list[str] = []
             for d in defs:
-                where = f"lines {d['first']} to {d['last']}" if d["last"] > d["first"] else f"line {d['first']}"
-                page += [f"`{d['key']}`, {where}:", "", "```jq"] + d["comment"] + d["code"] + ["```", ""]
-            page += render_body(note["body"], engines)
+                first = d["first"] - len(d["comment"])
+                where = f"lines {first} to {d['last']}" if d["last"] > first else f"line {first}"
+                code += [f"`{d['key']}`, {where}:", "", "```jq"] + d["comment"] + d["code"] + ["```", ""]
+            body = render_body(note["body"], engines)
+            if PLACE in [line.strip() for line in body]:   # the note says where its code goes
+                at = [line.strip() for line in body].index(PLACE)
+                page += body[:at] + code + body[at + 1:]
+            else:
+                page += code + body
         pages.append((OUT / f"{number}-{family['slug']}.md", tidy(page)))
         index.append(f"| [{number}]({number}-{family['slug']}.md) | {family['name']} | {len(by_key)} |")
     if "--list" in flags:
@@ -229,9 +243,13 @@ def main() -> None:
         return
     if problems:
         raise SystemExit("read-out not built:\n" + "\n".join(problems))
+    if "--check" in flags:   # build everything, run every example, write nothing
+        print(json.dumps({"checked": [path.name for path, _ in pages]}))
+        return
     for path, text in pages:
         path.write_text(text)
-    (OUT / "README.md").write_text("\n".join(index) + "\n")
+    if not only:
+        (OUT / "README.md").write_text("\n".join(index) + "\n")
     print(json.dumps({"pages": len(pages), "families": len(families),
                       "definitions": sum(v["definitions"] for v in listing.values()),
                       "noted": sum(v["noted"] for v in listing.values())}))

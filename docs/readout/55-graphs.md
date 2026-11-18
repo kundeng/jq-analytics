@@ -2,17 +2,17 @@
 
 Generated from `src/jq_analytics/analytics.jq` and `docs/readout/notes/graphs.md`. Do not edit.
 
-Eight definitions. A graph is a table of edges; `from` and `to` are expressions giving each edge's two ends. Four functions share one breadth-first search, `_search`.
+Eight definitions. A graph is a table of edges: one row per edge. The arguments `from` and `to` are filters that give each edge's two ends, so `reachable(.a; .b; "fetch")` reads an edge row's start from its `a` field and its end from its `b` field. In jq a `;` separates arguments, a bare parameter such as `from` is a filter run on each row, and a `$name` parameter such as `$start` is a value. Four functions share one breadth-first search, `_search`.
 
 ```mermaid
-flowchart LR
+flowchart TD
   A[_adj: node to its neighbours] --> S[_search: breadth first, records position, hops and where each node was reached from]
   S --> R[reachable] & H[hops] & P[shortest_path by hops] & C[components]
   W[shortest_path by weight: settle the nearest open node, relax its edges]
   T[topo_order: peel off the nodes nothing points to, level by level]
 ```
 
-The examples use one made-up graph of build steps, an edge meaning "must come before":
+The examples use one made-up graph of build steps. An edge means "must come before".
 
 ```text
 fetch -> compile -> test -> package
@@ -20,16 +20,22 @@ fetch -> lint    -> package
 docs  -> package
 ```
 
+As a table of edges, in the order every example lists them:
+
+| a | b |
+|---|---|
+| fetch | compile |
+| compile | test |
+| test | package |
+| fetch | lint |
+| lint | package |
+| docs | package |
+
 ## _adj
 
-`_adj/2`, line 436:
+A lookup from a node to the list of nodes its edges lead to. Every search below reads a node's neighbours from it with one lookup.
 
-```jq
-# node (as JSON text) -> the nodes its edges lead to, in input order
-def _adj(from; to): group_by(from) | map({key: (.[0] | from | tojson), value: map(to)}) | from_entries;
-```
-
-A lookup from a node (as JSON text) to the list of nodes its edges lead to. `group_by(from)` gathers each node's edges, keeping their input order inside the group; one `from_entries` builds the object. Nothing is appended edge by edge.
+### The example
 
 ```jq
 [["fetch", "compile"], ["compile", "test"], ["test", "package"], ["fetch", "lint"], ["lint", "package"], ["docs", "package"]]
@@ -46,9 +52,120 @@ A lookup from a node (as JSON text) to the list of nodes its edges lead to. `gro
 }
 ```
 
+One object. Each key is a node written as JSON text, which is why `fetch` appears as `"\"fetch\""`: an object key has to be a string, and `tojson` turns any node (a number, an array) into one. `fetch` has two neighbours, in the order its edges appear in the input. `package` has no key because no edge starts there.
+
+### What happens inside, on the example
+
+Step 1, `group_by(.a)`: one array of five groups, one per starting node. The builtin sorts the groups by the node, and inside a group the edges keep their input order.
+
+```jq
+[["fetch", "compile"], ["compile", "test"], ["test", "package"], ["fetch", "lint"], ["lint", "package"], ["docs", "package"]]
+| map({a: .[0], b: .[1]}) | group_by(.a)
+```
+
+```json
+[
+  [{"a": "compile", "b": "test"}],
+  [{"a": "docs", "b": "package"}],
+  [{"a": "fetch", "b": "compile"}, {"a": "fetch", "b": "lint"}],
+  [{"a": "lint", "b": "package"}],
+  [{"a": "test", "b": "package"}]
+]
+```
+
+Step 2, `map({key: ..., value: map(to)})`: each group becomes one key and value pair. The key is the group's node as JSON text; the value is the far ends of its edges.
+
+```jq
+[["fetch", "compile"], ["compile", "test"], ["test", "package"], ["fetch", "lint"], ["lint", "package"], ["docs", "package"]]
+| map({a: .[0], b: .[1]}) | group_by(.a) | map({key: (.[0] | .a | tojson), value: map(.b)})
+```
+
+```json
+[
+  {"key": "\"compile\"", "value": ["test"]},
+  {"key": "\"docs\"", "value": ["package"]},
+  {"key": "\"fetch\"", "value": ["compile", "lint"]},
+  {"key": "\"lint\"", "value": ["package"]},
+  {"key": "\"test\"", "value": ["package"]}
+]
+```
+
+Step 3, `from_entries`: the pairs become one object, the result at the top.
+
+### The definition
+
+`_adj/2`, lines 435 to 436:
+
+```jq
+# node (as JSON text) -> the nodes its edges lead to, in input order
+def _adj(from; to): group_by(from) | map({key: (.[0] | from | tojson), value: map(to)}) | from_entries;
+```
+
+- `group_by(from)` gathers each node's edges. Nothing is appended edge by edge.
+- `.[0] | from | tojson` takes the node from the group's first edge; every edge of a group starts at the same node.
+- `map(to)` runs `to` on each edge of the group.
+- `from_entries` builds the object in one step.
+
 ## _search
 
-`_search/2`, lines 442 to 451:
+Breadth-first search from `$start`: every node that can be reached, the start first, in the order met. Each row says how many edges away the node is (`hops`) and which node it was reached from (`via`). `$adj` is the lookup that `_adj` makes.
+
+### The example
+
+```jq
+[["fetch", "compile"], ["compile", "test"], ["test", "package"], ["fetch", "lint"], ["lint", "package"], ["docs", "package"]]
+| map({a: .[0], b: .[1]}) | _adj(.a; .b) as $adj | _search($adj; "fetch")
+```
+
+```json
+[
+  {"node": "fetch", "hops": 0, "via": null},
+  {"node": "compile", "hops": 1, "via": "fetch"},
+  {"node": "lint", "hops": 1, "via": "fetch"},
+  {"node": "test", "hops": 2, "via": "compile"},
+  {"node": "package", "hops": 2, "via": "lint"}
+]
+```
+
+`compile` and `lint` are one edge from `fetch`. `test` and `package` are two edges away. `package` was reached from `lint`, not from `test`, because the search met it at distance 2 through `lint` before it looked at `test`'s edges. `docs` is missing: no edge leads to it from `fetch`.
+
+### What happens inside, on the example
+
+The search keeps a state object and changes it once per round:
+
+- `seen`: node (as JSON text) to `[position, node, hops, via]`. Position counts the nodes in the order they were first met.
+- `frontier`: the nodes met in the previous round. `next`: the nodes met in this round, stored under their position.
+- `level`: the round number, which is the distance of the nodes this round finds.
+
+Each round takes every edge out of the frontier, frontier nodes in order and each node's edges in input order, and records the far end if it is not in `seen`. Then `next`, sorted by position, becomes the frontier. The loop body cannot be run by itself, so this table is a hand trace of the rounds on the example:
+
+| Round | Frontier at the start | Edges looked at | New in `seen` | Frontier at the end |
+|---|---|---|---|---|
+| start | | | fetch: position 0, hops 0, via null | fetch |
+| 1 | fetch | fetch to compile, fetch to lint | compile: position 1, hops 1, via fetch. lint: position 2, hops 1, via fetch | compile, lint |
+| 2 | compile, lint | compile to test, lint to package | test: position 3, hops 2, via compile. package: position 4, hops 2, via lint | test, package |
+| 3 | test, package | test to package | nothing: package is already seen | empty, so the loop stops |
+
+The frontiers of the trace can be read back from the result by grouping its rows on `hops`:
+
+```jq
+[["fetch", "compile"], ["compile", "test"], ["test", "package"], ["fetch", "lint"], ["lint", "package"], ["docs", "package"]]
+| map({a: .[0], b: .[1]}) | _adj(.a; .b) as $adj | _search($adj; "fetch") | group_by(.hops) | map(map(.node))
+```
+
+```json
+[
+  ["fetch"],
+  ["compile", "lint"],
+  ["test", "package"]
+]
+```
+
+After the loop, `[.seen[]] | sort_by(.[0])` puts the five records in position order, and `map({node: .[1], hops: .[2], via: .[3]})` names their parts. That is the result at the top.
+
+### The definition
+
+`_search/2`, lines 438 to 451:
 
 ```jq
 # breadth-first search from $start: the nodes reached, the start first, in the order met, as
@@ -67,35 +184,45 @@ def _search($adj; $start):
   | [.seen[]] | sort_by(.[0]) | map({node: .[1], hops: .[2], via: .[3]});
 ```
 
-Breadth-first search from `$start`. The state:
-
-- `seen`: node (as text) to `[position, node, hops, via]`. Position is the order in which nodes were first met; `via` is the node it was reached from.
-- `frontier`: the nodes met at the current distance; `next`: those met while expanding them, stored under their position as a key.
-
-Each round takes the frontier, and for every edge out of it, in input order, records the far end if it is new. Then `next`, sorted by position, becomes the frontier. At the end `seen` is sorted by position once.
-
-`next` and `seen` are objects written to by key. The first version of this search appended each new node to an array inside the loop; jq copies the array on each append, and the search slowed with the square of the graph.
-
-```jq
-[["fetch", "compile"], ["compile", "test"], ["test", "package"], ["fetch", "lint"], ["lint", "package"], ["docs", "package"]]
-| map({a: .[0], b: .[1]}) | _adj(.a; .b) as $adj | _search($adj; "fetch")
-```
-
-```json
-[
-  {"node": "fetch", "hops": 0, "via": null},
-  {"node": "compile", "hops": 1, "via": "fetch"},
-  {"node": "lint", "hops": 1, "via": "fetch"},
-  {"node": "test", "hops": 2, "via": "compile"},
-  {"node": "package", "hops": 2, "via": "lint"}
-]
-```
-
-`compile` and `lint` are at distance 1. Expanding them in that order meets `test` (from `compile`) and then `package` (from `lint`), both at distance 2. `docs` is not reachable from `fetch`.
+- The first line is the starting state: the start is seen at position 0 with 0 hops and no `via`.
+- `until((.frontier | length) == 0; ...)` repeats the round until a round finds nothing new.
+- `$f[] as $u | $adj[$u | tojson][]? | [$u, .]` emits one `[from, to]` pair per edge out of the frontier. The `?` covers a node with no key in `$adj`, such as `package`.
+- `if .seen[$k] != null then .` skips a node met before. This is what makes a cycle safe: a node is recorded once.
+- `.next[.n | tostring] = $e[1]` stores the new node under its position, and `sort_by(.key | tonumber)` reads them back in that order. `next` and `seen` are objects written by key because appending to an array inside a loop copies the array each time, and the cost then grows with the square of the graph.
 
 ## reachable, hops
 
-`reachable/3`, line 456:
+`reachable` lists every node that can be reached from `$start` along the edges, nearest first. `hops` gives the same nodes with their distance in edges, the start included at 0. In SQL both need a recursive query.
+
+### The example
+
+```jq
+[["fetch", "compile"], ["compile", "test"], ["test", "package"], ["fetch", "lint"], ["lint", "package"], ["docs", "package"]]
+| map({a: .[0], b: .[1]})
+| reachable(.a; .b; "compile"), hops(.a; .b; "fetch")
+```
+
+```json
+["test","package"]
+[{"node":"fetch","hops":0},{"node":"compile","hops":1},{"node":"lint","hops":1},{"node":"test","hops":2},{"node":"package","hops":2}]
+```
+
+Two values. From `compile` the build can go on to `test` and then `package`. From `fetch`, the hop counts are the ones `_search` found above.
+
+`reachable` never lists the start, even when a cycle leads back to it. With one more edge from `package` back to `fetch`:
+
+```jq
+[["fetch", "compile"], ["compile", "test"], ["test", "package"], ["fetch", "lint"], ["lint", "package"], ["docs", "package"], ["package", "fetch"]]
+| map({a: .[0], b: .[1]}) | reachable(.a; .b; "fetch")
+```
+
+```json
+["compile","lint","test","package"]
+```
+
+### The definition
+
+`reachable/3`, lines 453 to 456:
 
 ```jq
 # reachable: every node that can be reached from $start along directed edges from -> to, at any
@@ -104,7 +231,7 @@ Each round takes the frontier, and for every edge out of it, in input order, rec
 def reachable(from; to; $start): _adj(from; to) as $adj | _search($adj; $start) | .[1:] | map(.node);
 ```
 
-`hops/3`, line 461:
+`hops/3`, lines 458 to 461:
 
 ```jq
 # hops: one row per node that can be reached from $start along directed edges, the start itself
@@ -113,24 +240,71 @@ def reachable(from; to; $start): _adj(from; to) as $adj | _search($adj; $start) 
 def hops(from; to; $start): _adj(from; to) as $adj | _search($adj; $start) | map({node, hops});
 ```
 
-Both are `_search` with a different cut of its output: `reachable` drops the start (`.[1:]`) and keeps the node names; `hops` keeps `{node, hops}` and includes the start at 0.
+Both run `_adj` and then `_search`, and differ in what they keep of the search result:
+
+- `reachable`: `.[1:]` drops the first row, which is always the start, and `map(.node)` keeps the names.
+- `hops`: `map({node, hops})` keeps two of the three fields. `{node, hops}` is short for `{node: .node, hops: .hops}`.
+
+## shortest_path
+
+The route from `$start` to `$goal` with the fewest edges, as `{path, cost}`, where `cost` is the number of edges.
+
+### The example
+
+Three calls: a goal that can be reached, one that cannot, and the start itself.
 
 ```jq
 [["fetch", "compile"], ["compile", "test"], ["test", "package"], ["fetch", "lint"], ["lint", "package"], ["docs", "package"]]
 | map({a: .[0], b: .[1]})
-| {reachable_from_compile: reachable(.a; .b; "compile"), hops_from_fetch: (hops(.a; .b; "fetch") | map([.node, .hops]))}
+| shortest_path(.a; .b; "fetch"; "package"), shortest_path(.a; .b; "fetch"; "docs"), shortest_path(.a; .b; "fetch"; "fetch")
+```
+
+```json
+{"path":["fetch","lint","package"],"cost":2}
+null
+{"path":["fetch"],"cost":0}
+```
+
+Through `lint` takes two edges; through `compile` and `test` takes three. No route gives null. The start to itself is a path of one node and cost 0.
+
+### What happens inside, on the example
+
+Step 1: the search result, indexed by node. `$ix` is one object from each node (as JSON text) to its search row.
+
+```jq
+[["fetch", "compile"], ["compile", "test"], ["test", "package"], ["fetch", "lint"], ["lint", "package"], ["docs", "package"]]
+| map({a: .[0], b: .[1]}) | _adj(.a; .b) as $adj
+| reduce _search($adj; "fetch")[] as $r ({}; .[$r.node | tojson] = $r)
 ```
 
 ```json
 {
-  "reachable_from_compile": ["test", "package"],
-  "hops_from_fetch": [["fetch", 0], ["compile", 1], ["lint", 1], ["test", 2], ["package", 2]]
+  "\"fetch\"": {"node": "fetch", "hops": 0, "via": null},
+  "\"compile\"": {"node": "compile", "hops": 1, "via": "fetch"},
+  "\"lint\"": {"node": "lint", "hops": 1, "via": "fetch"},
+  "\"test\"": {"node": "test", "hops": 2, "via": "compile"},
+  "\"package\"": {"node": "package", "hops": 2, "via": "lint"}
 }
 ```
 
-## shortest_path
+Step 2: start at the goal and follow `via` back. `package` was reached from `lint`, and `lint` from `fetch`, whose `via` is null, so the walk stops there.
 
-`shortest_path/4`, lines 467 to 472:
+```jq
+[["fetch", "compile"], ["compile", "test"], ["test", "package"], ["fetch", "lint"], ["lint", "package"], ["docs", "package"]]
+| map({a: .[0], b: .[1]}) | _adj(.a; .b) as $adj
+| (reduce _search($adj; "fetch")[] as $r ({}; .[$r.node | tojson] = $r)) as $ix
+| ["package" | recurse($ix[tojson].via | select(. != null))]
+```
+
+```json
+["package","lint","fetch"]
+```
+
+Step 3: `reverse` turns goal to start into start to goal, and the goal's `hops` is the cost. That is the first result at the top.
+
+### The definition
+
+`shortest_path/4`, lines 463 to 472:
 
 ```jq
 # shortest_path, four arguments: the route from $start to $goal with the fewest edges, as
@@ -145,21 +319,97 @@ def shortest_path(from; to; $start; $goal):
     end;
 ```
 
-The fewest edges. `$ix` indexes the search result by node. `[$goal | recurse($ix[tojson].via | select(. != null))]` starts at the goal and follows `via` back until it reaches the start, whose `via` is null; `reverse` turns that into start to goal. `cost` is the goal's hop count. A goal the search never met gives null.
-
-```jq
-[["fetch", "compile"], ["compile", "test"], ["test", "package"], ["fetch", "lint"], ["lint", "package"], ["docs", "package"]]
-| map({a: .[0], b: .[1]})
-| [shortest_path(.a; .b; "fetch"; "package"), shortest_path(.a; .b; "fetch"; "docs"), shortest_path(.a; .b; "fetch"; "fetch")]
-```
-
-```json
-[{"path":["fetch","lint","package"],"cost":2},null,{"path":["fetch"],"cost":0}]
-```
+- `reduce _search(...)[] as $r ({}; ...)` builds `$ix`, one entry per node the search met.
+- `if $ix[$goal | tojson] == null then null`: a goal the search never met has no route.
+- `recurse(f)` emits its input, then `f` of it, then `f` of that, until `f` emits nothing. Here `f` looks up the node's `via`, and `select(. != null)` ends the walk at the start.
+- Among routes with the same number of edges, the result is the one the breadth-first search finds first, following edges in input order.
 
 ## shortest_path
 
-`shortest_path/5`, lines 478 to 501:
+The route with the lowest total weight, where `weight` is a filter giving each edge's weight. The output is the same `{path, cost}`, with `cost` the total weight. This is Dijkstra's algorithm.
+
+### The example
+
+Each edge carries a duration in minutes:
+
+| a | b | min |
+|---|---|---|
+| fetch | compile | 1 |
+| compile | test | 1 |
+| test | package | 1 |
+| fetch | lint | 5 |
+| lint | package | 5 |
+| docs | package | 2 |
+
+```jq
+[["fetch", "compile", 1], ["compile", "test", 1], ["test", "package", 1], ["fetch", "lint", 5], ["lint", "package", 5], ["docs", "package", 2]]
+| map({a: .[0], b: .[1], min: .[2]})
+| shortest_path(.a; .b; .min; "fetch"; "package")
+```
+
+```json
+{"path":["fetch","compile","test","package"],"cost":3}
+```
+
+The route through `compile` and `test` has three edges and costs 1 + 1 + 1 = 3. The route through `lint` has two edges and costs 5 + 5 = 10. The four-argument form picked the second; this one picks the first.
+
+### Reading the call
+
+| Argument | In the example | Runs on | Meaning |
+|---|---|---|---|
+| `from` | `.a` | one edge row | the node the edge starts at |
+| `to` | `.b` | one edge row | the node the edge ends at |
+| `weight` | `.min` | one edge row | the edge's weight, a number at or above 0 |
+| `$start` | `"fetch"` | nothing: a value | where the route begins |
+| `$goal` | `"package"` | nothing: a value | where it ends |
+
+### What happens inside, on the example
+
+Step 1: the weights are checked. A weight that is not a number, or is below 0, stops the call with an error that names it.
+
+```jq
+[["fetch", "compile", 1], ["compile", "test", 1]] | map({a: .[0], b: .[1], min: -1})
+| try shortest_path(.a; .b; .min; "fetch"; "test") catch .
+```
+
+```json
+"shortest_path: an edge has weight -1; weights must be numbers >= 0"
+```
+
+Step 2: the neighbour lookup. It is built like `_adj`, with each neighbour as a `[node, weight]` pair.
+
+```jq
+[["fetch", "compile", 1], ["compile", "test", 1], ["test", "package", 1], ["fetch", "lint", 5], ["lint", "package", 5], ["docs", "package", 2]]
+| map({a: .[0], b: .[1], min: .[2]})
+| group_by(.a) | map({key: (.[0] | .a | tojson), value: map([(.b), (.min)])}) | from_entries
+```
+
+```json
+{
+  "\"compile\"": [["test", 1]],
+  "\"docs\"": [["package", 2]],
+  "\"fetch\"": [["compile", 1], ["lint", 5]],
+  "\"lint\"": [["package", 5]],
+  "\"test\"": [["package", 1]]
+}
+```
+
+Step 3: the rounds. The state holds `d`, the best known cost and `via` for each node met; `open`, the nodes with a known cost that are not final yet; and `done`, the nodes whose cost is final. Each round picks the open node with the lowest cost (`$u`), makes it final, and tries each of its edges. The loop body cannot be run by itself, so this is a hand trace:
+
+| Round | Open at the start | `$u`, the lowest | Edges tried | Open at the end |
+|---|---|---|---|---|
+| 1 | fetch 0 | fetch | to compile: 0 + 1 = 1, new. To lint: 0 + 5 = 5, new | compile 1, lint 5 |
+| 2 | compile 1, lint 5 | compile | to test: 1 + 1 = 2, new | lint 5, test 2 |
+| 3 | lint 5, test 2 | test | to package: 2 + 1 = 3, new | lint 5, package 3 |
+| 4 | lint 5, package 3 | package | none: it is the goal, so the loop stops | |
+
+`lint` is never made final: the goal is reached at cost 3 before any node at cost 5 is picked.
+
+Step 4: the path is read from `d` as in the four-argument form, following each node's `via` back from the goal (`package`, `test`, `compile`, `fetch`) and reversing. The goal's cost in `d` is the result's `cost`.
+
+### The definition
+
+`shortest_path/5`, lines 474 to 501:
 
 ```jq
 # shortest_path, five arguments: the route with the lowest total weight (weights are numbers >= 0;
@@ -192,33 +442,80 @@ def shortest_path(from; to; weight; $start; $goal):
     end;
 ```
 
-The lowest total weight: Dijkstra's algorithm without a priority queue.
-
-- **Check first.** `first(… | select(type != "number" or . < 0) | [.])` finds a weight that is not a non-negative number; the error names it.
-- **`$adj`** here holds `[neighbour, weight]` pairs.
-- **State.** `d`: the best known `[cost, order found, node, via]` per node. `open`: the nodes with a known cost that are not settled yet. `done`: the settled ones.
-- **Each round.** `$u` is the open node with the lowest cost, the earliest found on a tie (`min_by([.[0], .[1]])`). If there is none, or it is the goal, stop: a settled node's cost is final. Otherwise `$u` moves from `open` to `done`, and each of its edges is tried: a neighbour not seen before gets a cost; one seen at a higher cost gets the lower one and its `via` changed; a settled one is left alone.
-- **Path.** As in the four-argument form, following `via` back from the goal.
-
-The scan for the lowest open node looks at every open node each round, so the time grows with nodes times open nodes. The comment says so; the measurement is in the spec's log.
-
-Weights in minutes: fetch to compile 1, compile to test 1, test to package 1, fetch to lint 5, lint to package 5, docs to package 2. Through compile and test costs 3 with three edges; through lint costs 10 with two.
-
-```jq
-[["fetch", "compile", 1], ["compile", "test", 1], ["test", "package", 1], ["fetch", "lint", 5], ["lint", "package", 5], ["docs", "package", 2]]
-| map({a: .[0], b: .[1], min: .[2]})
-| shortest_path(.a; .b; .min; "fetch"; "package"),
-  (try (map(.min = -1) | shortest_path(.a; .b; .min; "fetch"; "package")) catch .)
-```
-
-```json
-{"path":["fetch","compile","test","package"],"cost":3}
-"shortest_path: an edge has weight -1; weights must be numbers >= 0"
-```
+- `first(.[] | (weight) | select(type != "number" or . < 0) | [.]) // null` finds the first bad weight. It is wrapped in an array so that a weight of `null` or `false` is still found.
+- Each entry of `d` and `open` is `[cost, order found, node, via]`.
+- `min_by([.[0], .[1]])` picks the lowest cost, and on a tie the node found earliest. So among routes of equal cost the result is the one found first.
+- `if $u == null or $u[2] == $goal then .stop = true`: stop when nothing is open (the goal cannot be reached) or when the goal is the lowest open node. With weights at or above 0, no later route can be cheaper than the lowest open cost, so that cost is final.
+- Inside the `reduce`, `$nd` is the cost of reaching the neighbour through `$u`. A neighbour already final is left alone. One not met before gets `$nd`. One met at a higher cost gets `$nd` and `$u` as its new `via`, and keeps its order found.
+- The lowest open node is found by looking at every open node each round, with no priority queue. The work grows with the nodes made final times the nodes open, which suits a few thousand nodes.
 
 ## topo_order
 
-`topo_order/2`, lines 507 to 526:
+A dependency order: one row per node with a `level`, such that every edge goes from a lower level to a higher one. Nodes on the same level do not depend on each other, so a build could run them at the same time.
+
+### The example
+
+```jq
+[["fetch", "compile"], ["compile", "test"], ["test", "package"], ["fetch", "lint"], ["lint", "package"], ["docs", "package"]]
+| map({a: .[0], b: .[1]}) | topo_order(.a; .b)
+```
+
+```json
+[
+  {"node": "docs", "level": 0},
+  {"node": "fetch", "level": 0},
+  {"node": "compile", "level": 1},
+  {"node": "lint", "level": 1},
+  {"node": "test", "level": 2},
+  {"node": "package", "level": 3}
+]
+```
+
+Nothing points to `docs` or `fetch`, so they are at level 0. `package` is at level 3: one more than `test` (2), the highest among the three nodes that point to it, `test`, `lint` (1) and `docs` (0). Rows are sorted by level, then by node.
+
+A graph with a cycle has no such order. The error names a node on the cycle:
+
+```jq
+[["fetch", "compile"], ["compile", "test"], ["test", "package"], ["fetch", "lint"], ["lint", "package"], ["docs", "package"], ["package", "compile"]]
+| map({a: .[0], b: .[1]}) | try topo_order(.a; .b) catch .
+```
+
+```json
+"topo_order: cycle through \"compile\""
+```
+
+### What happens inside, on the example
+
+Step 1: `$nodes`, every node named at either end of an edge, sorted, and `$deg0`, for each node the number of edges that point to it. The run prints the two values.
+
+```jq
+[["fetch", "compile"], ["compile", "test"], ["test", "package"], ["fetch", "lint"], ["lint", "package"], ["docs", "package"]]
+| map({a: .[0], b: .[1]})
+| ([.[] | (.a), (.b)] | unique) as $nodes
+| $nodes, (reduce .[] as $e (reduce $nodes[] as $n ({}; .[$n | tojson] = 0); .[$e | .b | tojson] += 1))
+```
+
+```json
+["compile","docs","fetch","lint","package","test"]
+{"\"compile\"":1,"\"docs\"":0,"\"fetch\"":0,"\"lint\"":1,"\"package\"":3,"\"test\"":1}
+```
+
+Step 2: the rounds. The frontier is the nodes whose count is 0. They get the current level. Each edge out of them lowers its target's count by one, and a target that reaches 0 joins the next frontier. This is a hand trace:
+
+| Round | Level | Frontier | Counts lowered | Next frontier |
+|---|---|---|---|---|
+| 1 | 0 | docs, fetch | package 3 to 2 (from docs), compile 1 to 0, lint 1 to 0 | compile, lint |
+| 2 | 1 | compile, lint | test 1 to 0, package 2 to 1 | test |
+| 3 | 2 | test | package 1 to 0 | package |
+| 4 | 3 | package | none | empty, so the loop stops |
+
+A node joins the frontier in the round after the last node pointing to it was handled. That is why its level is one more than the highest level among them.
+
+Step 3: all six nodes were given a level, so there is no cycle, and the rows are sorted by level and node. In the cycle example, `compile`, `test` and `package` never reach a count of 0, the frontier runs empty with three nodes left, and the error branch runs.
+
+### The definition
+
+`topo_order/2`, lines 503 to 526:
 
 ```jq
 # topo_order: a dependency order of the nodes of a directed graph. One row per node: {node, level},
@@ -247,30 +544,73 @@ def topo_order(from; to):
     else [.out[][]] | sort_by([.level, .node]) end;
 ```
 
-A dependency order with levels.
-
-- `$nodes`: every node named at either end of an edge, sorted. `$deg0`: for each, how many edges point to it.
-- **Each round**: the frontier is the nodes with nothing left pointing to them. They get the current level and go into `out`; each edge out of them lowers its target's count by one, and a target that reaches zero joins `next`. `[.next[]] | sort` is the next frontier.
-- A node therefore gets its level in the round after the last of its predecessors got theirs: one more than the highest level among them.
-- **Cycle.** If nodes are left when the frontier runs empty, each of them has another left node pointing to it. `$pred` is the reversed graph among those nodes; walking back along it from any left node must come round to a node already visited, and that node is on a cycle. The walk always takes the smallest predecessor, so the node named is the same on every run.
-
-```jq
-[["fetch", "compile"], ["compile", "test"], ["test", "package"], ["fetch", "lint"], ["lint", "package"], ["docs", "package"]]
-| map({a: .[0], b: .[1]})
-| (topo_order(.a; .b) | map([.node, .level])),
-  (try (. + [{a: "package", b: "compile"}] | topo_order(.a; .b)) catch .)
-```
-
-```json
-[["docs",0],["fetch",0],["compile",1],["lint",1],["test",2],["package",3]]
-"topo_order: cycle through \"compile\""
-```
-
-`package` is at level 3: one more than `test` (2), the highest of `test`, `lint` (1) and `docs` (0).
+- `[.[] | (from), (to)] | unique` is `$nodes`. `$deg0` starts every node at 0 and adds one per edge to the edge's target.
+- `left` counts the nodes with no level yet. `out` collects each round's rows under the round number, for the same reason `_search` writes to objects.
+- `.frontier = ([.next[]] | sort)`: the next frontier in sorted order, so the result does not depend on the order of the input edges.
+- `if .left > 0`: nodes are left when the frontier runs empty. Each of them still has a count above 0, so each has another left node pointing to it.
+- `$pred` is the reversed graph among the left nodes. The walk starts at the first left node and steps to its smallest predecessor until it lands on a node it has visited. That node is on a cycle. Taking the smallest predecessor makes the node named the same on every run.
 
 ## components
 
-`components/2`, lines 530 to 539:
+Connected groups, with the edges read as undirected: one row per node, `{node, component}`, where `component` is the smallest node of the node's group.
+
+### The example
+
+Three edges. `lint` points to `fetch`, against the direction of the other `fetch` edge; `x` and `y` touch nothing else.
+
+```jq
+[["fetch", "compile"], ["lint", "fetch"], ["x", "y"]] | map({a: .[0], b: .[1]}) | components(.a; .b)
+```
+
+```json
+[
+  {"node": "compile", "component": "compile"},
+  {"node": "fetch", "component": "compile"},
+  {"node": "lint", "component": "compile"},
+  {"node": "x", "component": "x"},
+  {"node": "y", "component": "x"}
+]
+```
+
+Two groups. `compile`, `fetch` and `lint` are joined through `fetch`, and the group is named `compile`, its smallest node in jq's sort order. `x` and `y` form the group `x`.
+
+### What happens inside, on the example
+
+Step 1: the neighbour lookup holds every edge in both directions, so the search can walk an edge either way.
+
+```jq
+[["fetch", "compile"], ["lint", "fetch"], ["x", "y"]] | map({a: .[0], b: .[1]})
+| [.[] | [(.a), (.b)], [(.b), (.a)]] | group_by(.[0]) | map({key: (.[0][0] | tojson), value: map(.[1])}) | from_entries
+```
+
+```json
+{
+  "\"compile\"": ["fetch"],
+  "\"fetch\"": ["compile", "lint"],
+  "\"lint\"": ["fetch"],
+  "\"x\"": ["y"],
+  "\"y\"": ["x"]
+}
+```
+
+Step 2: the nodes are taken in sorted order: `compile`, `fetch`, `lint`, `x`, `y`. A node not yet in a group starts a search, and everything the search meets is its group. `compile` is first; then `fetch` and `lint` are already seen and skipped; `x` starts the second search; `y` is skipped. The run prints the two searches.
+
+```jq
+[["fetch", "compile"], ["lint", "fetch"], ["x", "y"]] | map({a: .[0], b: .[1]})
+| ([.[] | [(.a), (.b)], [(.b), (.a)]] | group_by(.[0]) | map({key: (.[0][0] | tojson), value: map(.[1])}) | from_entries) as $adj
+| (_search($adj; "compile") | map(.node)), (_search($adj; "x") | map(.node))
+```
+
+```json
+["compile","fetch","lint"]
+["x","y"]
+```
+
+Step 3: each member is labelled with the node that started its search, and the rows are sorted by node. That is the result at the top.
+
+### The definition
+
+`components/2`, lines 528 to 539:
 
 ```jq
 # components: connected groups, edges read as undirected. One row per node: {node, component},
@@ -287,18 +627,7 @@ def components(a; b):
   | [.parts[][]] | sort_by(.node);
 ```
 
-Edges read as undirected. `$adj` therefore holds every edge in both directions (`[(a), (b)], [(b), (a)]`). Then, for each node in sorted order that is not yet in a group, `_search` finds its whole group; every member is marked seen and labelled with that node. Since nodes are taken in sorted order, the label is the smallest node of the group.
-
-```jq
-[["fetch", "compile"], ["lint", "fetch"], ["x", "y"]] | map({a: .[0], b: .[1]}) | components(.a; .b)
-```
-
-```json
-[
-  {"node": "compile", "component": "compile"},
-  {"node": "fetch", "component": "compile"},
-  {"node": "lint", "component": "compile"},
-  {"node": "x", "component": "x"},
-  {"node": "y", "component": "x"}
-]
-```
+- `[.[] | [(a), (b)], [(b), (a)]]` emits each edge twice, once per direction, before grouping.
+- `reduce $nodes[] as $n (...)` visits the nodes in sorted order. `if .seen[$n | tojson] then .` skips a node that an earlier search met.
+- Because nodes are visited in sorted order, the node that starts a group's search is the group's smallest, so the label is the smallest node.
+- `.parts[.k | tostring] = ...` stores each group under a counter, and `[.parts[][]] | sort_by(.node)` flattens the groups into rows.
