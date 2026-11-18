@@ -72,6 +72,15 @@ SALES = ('[{region: "east", product: "A", month: "2026-01", amount: 30}, {region
          '{region: "east", product: "B", month: "2026-01", amount: 20}, {region: "west", product: "A", month: "2026-02", amount: 60}, '
          '{region: "west", product: "B", month: "2026-01", amount: 40}]')
 REVENUE = "def revenue: map(.amount) | add; "
+SHAPE_EXAMPLES: dict[str, tuple[str, bool, bool]] = {
+    "shapes_nested": ('[{id: "REQ1", user: {name: "Avery", dept: {code: "RAD"}}, tags: ["vpn", "laptop"]}, {id: "REQ2", user: {name: "Bo", dept: {code: "LAB"}}, tags: []}] | flatten_fields(".") | {inner: (unnest(.tags; "tag") | map(del(.tags))), outer: (unnest_outer(.tags; "tag") | map({id, tag}))}', False, True),
+    "shapes_tree": ('{id: "ceo", children: [{id: "ops", children: [{id: "desk"}]}, {id: "fin"}]} | nodes_from_nested(.id; .children) as $nodes | {nodes: $nodes, depths: ($nodes | tree_paths(.id; .parent) | map({id, depth})), nested_again: ($nodes | nested_from_nodes(.id; .parent; "children") | .[0].children | map(.id))}', False, True),
+    "shapes_map": ('{web01: {site: "North"}, db01: {site: "South"}} | rows_from_map("host") as $rows | {rows: $rows, map_again: ($rows | to_map(.host) | keys)}', False, True),
+    "shapes_grid": ('[{site: "North", hour: 0, requests: 3}, {site: "North", hour: 7200, requests: 1}, {site: "South", hour: 3600, requests: 2}] | fill_grid(["site"]; "hour"; 3600; {requests: 0})', False, True),
+    "shapes_out": ('[{from: "web01", to: "db01", port: 5432}, {from: "web01", to: "cache01", port: 6379}] | node_link(.from; .to), ([{id: "REQ1", site: "South, annex", hours: null}] | to_csv(["id", "site", "hours"]))', False, True),
+}
+EXAMPLES.update(SHAPE_EXAMPLES)
+
 CONTEXT_EXAMPLES: dict[str, tuple[str, bool, bool]] = {
     "context_rollup": (REVENUE + SALES + ' | rollup(["region", "product"]; {revenue: measure(revenue), share_of_region: share(revenue; without("product")), share_of_all: share(revenue; keep_only([]))})', False, True),
     "context_time": (REVENUE + SALES + ' | rollup(["month"]; {revenue: measure(revenue), prior: calc(revenue; shift("month"; -1)), to_date: calc(revenue; to_date("month")), east_only: calc(revenue; with_filter({region: "east"}))})', False, True),

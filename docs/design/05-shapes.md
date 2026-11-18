@@ -33,18 +33,18 @@ flowchart LR
     W[wide table]
   end
   Y -- "yq, gojq --yaml-input" --> N
-  N -- "unnest, flatten_fields (planned)" --> T
-  K -- "rows_from_map (planned)" --> T
-  X -- "nodes_from_nested (planned)" --> TR
+  N -- "unnest, flatten_fields" --> T
+  K -- "rows_from_map" --> T
+  X -- "nodes_from_nested" --> TR
   E -- "cast, parse_ts" --> T
   E -- "split_by" --> S
   T -- "state_blocks, sessions, interval builder (planned)" --> I
   T -- "lookup" --> ST
-  T -- "to_csv (planned)" --> CSV
-  T -- "to_map (planned)" --> MAP
+  T -- "to_csv" --> CSV
+  T -- "to_map" --> MAP
   T -- "pivot" --> W
-  TR -- "nested_from_nodes (planned)" --> NT
-  G -- "node_link (planned)" --> NL
+  TR -- "nested_from_nodes" --> NT
+  G -- "node_link" --> NL
 ```
 
 ## The shapes
@@ -54,8 +54,8 @@ flowchart LR
 | table | one record | `{"id": "REQ1", "site": "North", "hours": "4.5"}` | math over a list, types and time, grouping and windows, joins |
 | several tables | not a row: one object whose fields are tables | `{"dhcp": [...], "firewall": [...]}` | `split_by` makes it; `keep`, `shape` |
 | intervals | one span of one key, from a start to an end | `{"ip": "10.0.0.5", "mac": "m1", "start": 1731900000, "end": 1731943200}` | `join_overlap`; made by `state_blocks`, `sessions` |
-| tree | one node, pointing at its parent | `{"id": "ops", "parent": "ceo"}` | `tree_paths`, `tree_rollup` |
-| graph | one edge | `{"from": "web01", "to": "db01"}` | `reachable`, `components` |
+| tree | one node, pointing at its parent | `{"id": "ops", "parent": "ceo"}` | `tree_paths`, `tree_rollup`, `nested_from_nodes` |
+| graph | one edge | `{"from": "web01", "to": "db01"}` | `reachable`, `components`, `node_link` |
 | star | a fact table plus dimension tables; the library builds a measure context from it | fact `{"day": "2026-03-02", "site_id": "s1", "amount": 40}`, dimension `{"id": "s1", "region": "east"}` | `lookup`; `rollup`, `measure`, `calc`, `share` and the context changes |
 
 Three rules hold for every shape:
@@ -70,9 +70,9 @@ A source is a form data arrives in. It has to become a shape before a function c
 
 | Source | Looks like | Becomes | Through |
 |---|---|---|---|
-| nested document | a row holding arrays and objects | a table: one row per array element, nested objects as columns | `unnest`, `flatten_fields` *(planned)* |
-| object keyed by id | `{"web01": {...}, "db01": {...}}` | a table, sorted by key | `rows_from_map` *(planned)* |
-| nested tree | each node holding a `children` array | tree: node rows | `nodes_from_nested` *(planned)* |
+| nested document | a row holding arrays and objects | a table: one row per array element, nested objects as columns | `unnest`, `flatten_fields` |
+| object keyed by id | `{"web01": {...}, "db01": {...}}` | a table, sorted by key | `rows_from_map` |
+| nested tree | each node holding a `children` array | tree: node rows | `nodes_from_nested` |
 | YAML | any of the above, in YAML | JSON first | `yq -o=json`, or `gojq --yaml-input` |
 | event log | rows with an entity, a time and what happened | see below | |
 
@@ -103,7 +103,7 @@ A made-up export of service requests, as an API returns it:
 
 The question: hours spent open, by region.
 
-1. **Nested document to tables.** Two tables come out of the export: the requests, and one row per event (`unnest` and `flatten_fields`, planned, will do this in one call each; plain jq does it today):
+1. **Nested document to tables.** Two tables come out of the export: the requests, and one row per event (plain jq here; `flatten_fields` and `unnest` do the same on wider exports):
 
    ```jq
    map({id, region: .site.region}) as $requests

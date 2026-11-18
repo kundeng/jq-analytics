@@ -409,5 +409,265 @@
     "input": "tests/fixtures/sales.json",
     "sql": "malloy_all_exclude.sql",
     "jq": "def rev: map(.qty * .price) | add; rollup_levels([[\"region\", \"product\"]]; {revenue: measure(rev), total: calc(rev; keep_only([])), region_total: calc(rev; keep_only([\"region\"])), product_total: calc(rev; without(\"region\"))}) | map(del(.level))"
+  },
+  {
+    "name": "unnest",
+    "input": "tests/fixtures/tickets.json",
+    "sql": "unnest.sql",
+    "jq": "unnest(.tags; \"tag\") | map({id, tag})"
+  },
+  {
+    "name": "unnest_outer",
+    "input": "tests/fixtures/tickets.json",
+    "sql": "unnest_outer.sql",
+    "jq": "unnest_outer(.tags; \"tag\") | map({id, tag})"
+  },
+  {
+    "name": "unnest_not_array_error",
+    "input": "tests/fixtures/tickets_bad.json",
+    "expect_error": "unnest: row 0 holds a string, not an array",
+    "jq": "unnest(.tags; \"tag\")"
+  },
+  {
+    "name": "flatten_fields",
+    "input": "tests/fixtures/nested_rows.json",
+    "expect_value": [
+      {
+        "id": "REQ1",
+        "user.name": "Avery",
+        "user.dept.code": "RAD",
+        "user.dept.site": "North",
+        "tags": [
+          "vpn"
+        ]
+      },
+      {
+        "id": "REQ2",
+        "user": {}
+      }
+    ],
+    "jq": "flatten_fields(\".\")"
+  },
+  {
+    "name": "flatten_fields_clash_error",
+    "input": "tests/fixtures/nested_clash.json",
+    "expect_error": "flatten_fields: two fields flatten to the same name",
+    "jq": "flatten_fields(\".\")"
+  },
+  {
+    "name": "nodes_from_nested",
+    "input": "tests/fixtures/org_nested.json",
+    "expect_value": [
+      {
+        "id": "ceo",
+        "parent": null
+      },
+      {
+        "id": "ops",
+        "parent": "ceo"
+      },
+      {
+        "id": "desk",
+        "parent": "ops"
+      },
+      {
+        "id": "noc",
+        "parent": "ops"
+      },
+      {
+        "id": "fin",
+        "parent": "ceo"
+      }
+    ],
+    "jq": "nodes_from_nested(.id; .children)"
+  },
+  {
+    "name": "nodes_then_tree_paths",
+    "input": "tests/fixtures/org_nested.json",
+    "expect_value": [
+      {
+        "id": "ceo",
+        "depth": 0
+      },
+      {
+        "id": "ops",
+        "depth": 1
+      },
+      {
+        "id": "desk",
+        "depth": 2
+      },
+      {
+        "id": "noc",
+        "depth": 2
+      },
+      {
+        "id": "fin",
+        "depth": 1
+      }
+    ],
+    "jq": "nodes_from_nested(.id; .children) | tree_paths(.id; .parent) | map({id, depth})"
+  },
+  {
+    "name": "rows_from_map",
+    "input": "tests/fixtures/hosts_map.json",
+    "expect_value": [
+      {
+        "host": "count",
+        "value": 3
+      },
+      {
+        "host": "db01",
+        "site": "South",
+        "os": "linux"
+      },
+      {
+        "host": "web01",
+        "site": "North",
+        "os": "linux"
+      }
+    ],
+    "jq": "rows_from_map(\"host\")"
+  },
+  {
+    "name": "fill_grid",
+    "input": "tests/fixtures/hourly.json",
+    "sql": "fill_grid.sql",
+    "jq": "fill_grid([\"site\"]; \"hour\"; 3600; {requests: 0})"
+  },
+  {
+    "name": "fill_grid_off_grid_error",
+    "input": "tests/fixtures/hourly_off_grid.json",
+    "expect_error": "fill_grid: 1800 is not on the 3600-second grid",
+    "jq": "fill_grid([\"site\"]; \"hour\"; 3600; {requests: 0})"
+  },
+  {
+    "name": "fill_grid_empty",
+    "input": "tests/fixtures/hourly.json",
+    "expect_value": [],
+    "jq": "map(select(.site == \"none\")) | fill_grid([\"site\"]; \"hour\"; 3600; {requests: 0})"
+  },
+  {
+    "name": "to_map",
+    "input": "tests/fixtures/hosts.json",
+    "expect_value": {
+      "web01": {
+        "host": "web01",
+        "site": "North"
+      },
+      "db01": {
+        "host": "db01",
+        "site": "South"
+      }
+    },
+    "jq": "to_map(.host)"
+  },
+  {
+    "name": "to_map_duplicate_error",
+    "input": "tests/fixtures/hosts_dup.json",
+    "expect_error": "to_map: duplicate key",
+    "jq": "to_map(.host)"
+  },
+  {
+    "name": "nested_from_nodes",
+    "input": "tests/fixtures/org_nodes.json",
+    "expect_value": [
+      {
+        "id": "ceo",
+        "parent": null,
+        "children": [
+          {
+            "id": "ops",
+            "parent": "ceo",
+            "children": [
+              {
+                "id": "desk",
+                "parent": "ops",
+                "children": []
+              }
+            ]
+          },
+          {
+            "id": "fin",
+            "parent": "ceo",
+            "children": []
+          }
+        ]
+      }
+    ],
+    "jq": "nested_from_nodes(.id; .parent; \"children\")"
+  },
+  {
+    "name": "nested_round_trip",
+    "input": "tests/fixtures/org_nested.json",
+    "expect_value": true,
+    "jq": ". as $org | nodes_from_nested(.id; .children) | nested_from_nodes(.id; .parent; \"children\") | map(walk(if type == \"object\" then del(.parent) | if .children == [] then del(.children) else . end else . end)) | .[0] == $org"
+  },
+  {
+    "name": "nested_from_nodes_orphan_error",
+    "input": "tests/fixtures/tree_orphan.json",
+    "expect_error": "is not a node",
+    "jq": "nested_from_nodes(.id; .parent; \"children\")"
+  },
+  {
+    "name": "node_link",
+    "input": "tests/fixtures/links.json",
+    "expect_value": {
+      "nodes": [
+        {
+          "id": "web01"
+        },
+        {
+          "id": "db01"
+        },
+        {
+          "id": "cache01"
+        }
+      ],
+      "links": [
+        {
+          "from": "web01",
+          "to": "db01",
+          "port": 5432,
+          "source": "web01",
+          "target": "db01"
+        },
+        {
+          "from": "web01",
+          "to": "cache01",
+          "port": 6379,
+          "source": "web01",
+          "target": "cache01"
+        }
+      ]
+    },
+    "jq": "node_link(.from; .to)"
+  },
+  {
+    "name": "to_csv",
+    "input": "tests/fixtures/csv_rows.json",
+    "expect_value": [
+      "\"id\",\"site\",\"hours\"",
+      "\"REQ1\",\"North\",4.5",
+      "\"REQ2\",\"South, annex\","
+    ],
+    "jq": "[to_csv([\"id\", \"site\", \"hours\"])]"
+  },
+  {
+    "name": "lead",
+    "input": "tests/fixtures/window.json",
+    "sql": "lead.sql",
+    "jq": "over(.g; .t; \"lead1\"; lead(.v; 1)) | over(.g; .t; \"lead2\"; lead(.v; 2)) | map({i, lead1, lead2})"
+  },
+  {
+    "name": "tz_offset",
+    "input": "tests/fixtures/tz_points.json",
+    "expect_value": [
+      -14400,
+      -18000,
+      3600,
+      0
+    ],
+    "jq": "tz(\"America/Detroit\") as $det | (map(.s | parse_ts | tz_offset($det))) + (map(.s | parse_ts | tz_offset(\"Europe/London\")))"
   }
 ]

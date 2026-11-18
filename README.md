@@ -1,6 +1,6 @@
 # analytics.jq: tables and statistics for jq
 
-`analytics.jq` is a jq module of 66 functions that let a jq program answer the questions people usually send to SQL, pandas or a graph library: hold several named tables at once, join them by key, condition and time, group and aggregate, percentiles, running and lagged values over ordered partitions, time series read as state machines, roll-ups over trees, reachability in graphs, measures evaluated at several levels of a report, and local time in a named time zone. Each function states its rule in a comment beside it (how it treats nulls, ties, order and rounding), and each rule is pinned by a test whose expected answer DuckDB computes. Its time-zone tables, generated from the IANA time-zone database, are a block inside the same file.
+`analytics.jq` is a jq module of 76 functions that let a jq program answer the questions people usually send to SQL, pandas or a graph library: hold several named tables at once, join them by key, condition and time, group and aggregate, percentiles, running and lagged values over ordered partitions, time series read as state machines, roll-ups over trees, reachability in graphs, measures evaluated at several levels of a report, and local time in a named time zone. Each function states its rule in a comment beside it (how it treats nulls, ties, order and rounding), and each rule is pinned by a test whose expected answer DuckDB computes. Its time-zone tables, generated from the IANA time-zone database, are a block inside the same file.
 
 It exists because plain jq leaves those rules to whoever writes the program. In one analysis of service requests, four shared jq helpers each decided a number without saying how: one dropped unresolved tickets, one used a different percentile rule, one hardcoded a single year's daylight-saving switch, one rounded before comparing with a threshold and miscounted by one. This library is one place where those rules are written down, tested against DuckDB, and the same for every analysis that loads it.
 
@@ -43,11 +43,11 @@ Every function takes rows, an array of objects. What differs is which fields a r
 | table | one record | `{"id": "REQ1", "site": "North", "hours": "4.5"}` | math over a list, types and time, grouping and windows, joins |
 | several tables | not a row: one object whose fields are tables | `{"dhcp": [...], "firewall": [...]}` | `split_by` makes it; `keep`, `shape` |
 | intervals | one span of one key, from a start to an end | `{"ip": "10.0.0.5", "mac": "m1", "start": 1731900000, "end": 1731943200}` | `join_overlap`; made by `state_blocks`, `sessions` |
-| tree | one node, pointing at its parent | `{"id": "ops", "parent": "ceo"}` | `tree_paths`, `tree_rollup` |
-| graph | one edge | `{"from": "web01", "to": "db01"}` | `reachable`, `components` |
+| tree | one node, pointing at its parent | `{"id": "ops", "parent": "ceo"}` | `tree_paths`, `tree_rollup`; `nodes_from_nested` makes it |
+| graph | one edge | `{"from": "web01", "to": "db01"}` | `reachable`, `components`; `node_link` exports it |
 | star | a fact table plus dimension tables | fact `{"site_id": "s1", "amount": 40}`, dimension `{"id": "s1", "region": "east"}` | `lookup`; `rollup`, `measure`, `calc`, `share` |
 
-An event log is not a shape: its rows are a table, and the question decides whether it becomes intervals, a tree, a graph or a star. Nested documents, objects keyed by id and YAML are sources that have to become rows first. [docs/design/05-shapes.md](docs/design/05-shapes.md) defines each shape and source, draws the conversions between them, and traces one nested export through three shapes.
+An event log is not a shape: its rows are a table, and the question decides whether it becomes intervals, a tree, a graph or a star. Nested documents, objects keyed by id and YAML are sources that have to become rows first: see [Shapes in and out](#shapes-in-and-out). [docs/design/05-shapes.md](docs/design/05-shapes.md) defines each shape and source, draws the conversions between them, and traces one nested export through three shapes.
 
 ## How the parts fit
 
@@ -75,7 +75,7 @@ The library is one file, `analytics.jq`, in a directory `<dir>` below. Its time-
 | Python `jq` package | `jq.compile('include "analytics" {search: "<dir>"}; ' + program).input_value(rows).first()`; the package has no `-L` and an empty default search list, so the path goes in the program |
 | Python package `jq_analytics` | `jq_analytics.include()` returns the `include` line with this package's directory filled in |
 
-Tested on jq 1.7.1 (Apple's build), jq 1.8.2, gojq 0.12.20, jaq 3.1.2 and the `jq` Python package 1.13.0, which builds jq 1.8.2: all pass the same 54 test cases (`tests/run_tests.py`). The library uses no builtin that is missing from any of them, and it parenthesises `reduce … as` inside function arguments, which jq 1.7.1's grammar requires.
+Tested on jq 1.7.1 (Apple's build), jq 1.8.2, gojq 0.12.20, jaq 3.1.2 and the `jq` Python package 1.13.0, which builds jq 1.8.2: all pass the same 74 test cases (`tests/run_tests.py`). The library uses no builtin that is missing from any of them, and it parenthesises `reduce … as` inside function arguments, which jq 1.7.1's grammar requires.
 
 ## Rules that hold everywhere
 
@@ -496,6 +496,102 @@ The input is the left table and `$right` the right table. Rules for all joins: a
 ```
 <!-- /example -->
 
+### Shapes in and out
+
+Converters between the forms data arrives in and the [shapes](#shapes-what-the-functions-take) the functions take, and from those shapes to what the next tool reads. A converter changes form, never values, and refuses input that is not its source.
+
+**`unnest(f; $as)`**, **`unnest_outer(f; $as)`.** One row per element of the array at `f`, the element in field `$as`; elements in array order, rows in input order. `unnest` drops a row whose array is empty or null, as SQL `UNNEST` does; `unnest_outer` keeps it once with `$as` null, as `LEFT JOIN LATERAL` does. A value that is neither an array nor null is an error naming the row's position.
+
+**`flatten_fields($sep)`.** Nested objects become columns named by their path joined with `$sep`. Arrays stay as values, for `unnest` to take; an empty object stays `{}`. Two paths that flatten to the same name are an error. (jq's own `flatten` flattens arrays; this flattens the objects inside each row.)
+
+<!-- example: shapes_nested -->
+```jq
+[{id: "REQ1", user: {name: "Avery", dept: {code: "RAD"}}, tags: ["vpn", "laptop"]}, {id: "REQ2", user: {name: "Bo", dept: {code: "LAB"}}, tags: []}] | flatten_fields(".") | {inner: (unnest(.tags; "tag") | map(del(.tags))), outer: (unnest_outer(.tags; "tag") | map({id, tag}))}
+```
+
+```json
+{
+  "inner": [{"id": "REQ1", "user.name": "Avery", "user.dept.code": "RAD", "tag": "vpn"}, {"id": "REQ1", "user.name": "Avery", "user.dept.code": "RAD", "tag": "laptop"}],
+  "outer": [{"id": "REQ1", "tag": "vpn"}, {"id": "REQ1", "tag": "laptop"}, {"id": "REQ2", "tag": null}]
+}
+```
+<!-- /example -->
+
+**`nodes_from_nested(id; children)`.** A nested tree, each node holding its children in an array, becomes node rows with `parent` (null for a root), in depth-first order, ready for `tree_paths` and `tree_rollup`. The input is one root or an array of roots.
+
+**`nested_from_nodes(id; parent; $as)`.** The reverse: node rows become nested roots, each node's children in field `$as`. A missing parent or a cycle is the same error `tree_paths` gives. Converting a nested tree to nodes and back gives the original.
+
+<!-- example: shapes_tree -->
+```jq
+{id: "ceo", children: [{id: "ops", children: [{id: "desk"}]}, {id: "fin"}]} | nodes_from_nested(.id; .children) as $nodes | {nodes: $nodes, depths: ($nodes | tree_paths(.id; .parent) | map({id, depth})), nested_again: ($nodes | nested_from_nodes(.id; .parent; "children") | .[0].children | map(.id))}
+```
+
+```json
+{
+  "nodes": [{"id": "ceo", "parent": null}, {"id": "ops", "parent": "ceo"}, {"id": "desk", "parent": "ops"}, {"id": "fin", "parent": "ceo"}],
+  "depths": [{"id": "ceo", "depth": 0}, {"id": "ops", "depth": 1}, {"id": "desk", "depth": 2}, {"id": "fin", "depth": 1}],
+  "nested_again": ["ops", "fin"]
+}
+```
+<!-- /example -->
+
+**`rows_from_map($as)`.** An object keyed by id becomes rows, the key in field `$as`, sorted by key (gojq does not keep an object's key order, so sorted is the only order every engine agrees on). A value that is not an object becomes `{($as): key, value: v}`.
+
+**`to_map(key)`.** The reverse: rows become an object keyed by `key` as a string. A duplicate key is an error; jq's own `INDEX(key)` keeps the last row silently.
+
+<!-- example: shapes_map -->
+```jq
+{web01: {site: "North"}, db01: {site: "South"}} | rows_from_map("host") as $rows | {rows: $rows, map_again: ($rows | to_map(.host) | keys)}
+```
+
+```json
+{
+  "rows": [{"host": "db01", "site": "South"}, {"host": "web01", "site": "North"}],
+  "map_again": ["db01", "web01"]
+}
+```
+<!-- /example -->
+
+**`fill_grid($keys; $time; $step; $fill)`.** Every combination of the `$keys` fields' values (in first appearance) at every time from the earliest to the latest in steps of `$step` seconds; a missing combination gets a row with the key fields, the time and `$fill`. Times are epoch seconds and must sit on the grid, else an error. Without the filled rows, `lag` or `moving_mean` steps over an empty period as if it were the next one.
+
+<!-- example: shapes_grid -->
+```jq
+[{site: "North", hour: 0, requests: 3}, {site: "North", hour: 7200, requests: 1}, {site: "South", hour: 3600, requests: 2}] | fill_grid(["site"]; "hour"; 3600; {requests: 0})
+```
+
+```json
+[
+  {"site": "North", "hour": 0, "requests": 3},
+  {"site": "North", "hour": 3600, "requests": 0},
+  {"site": "North", "hour": 7200, "requests": 1},
+  {"site": "South", "hour": 0, "requests": 0},
+  {"site": "South", "hour": 3600, "requests": 2},
+  {"site": "South", "hour": 7200, "requests": 0}
+]
+```
+<!-- /example -->
+
+**`node_link(from; to)`.** Edge rows become `{nodes: [{id}], links: [row + {source, target}]}`, the form networkx, d3 and Cytoscape read; nodes in order of first appearance.
+
+**`to_csv($cols)`.** A header line, then one CSV line per row, columns in the order of `$cols`: a stream of strings, so run jq with `-r`. A null is an empty cell; a comma inside a value is quoted. A nested value in a cell is an error from `@csv`: `flatten_fields` first.
+
+<!-- example: shapes_out -->
+```jq
+[{from: "web01", to: "db01", port: 5432}, {from: "web01", to: "cache01", port: 6379}] | node_link(.from; .to), ([{id: "REQ1", site: "South, annex", hours: null}] | to_csv(["id", "site", "hours"]))
+```
+
+```json
+{
+  "nodes": [{"id": "web01"}, {"id": "db01"}, {"id": "cache01"}],
+  "links": [{"from": "web01", "to": "db01", "port": 5432, "source": "web01", "target": "db01"}, {"from": "web01", "to": "cache01", "port": 6379, "source": "web01", "target": "cache01"}]
+}
+"\"id\",\"site\",\"hours\""
+"\"REQ1\",\"South, annex\","
+```
+<!-- /example -->
+
+**YAML.** jq reads JSON only. Convert first with `yq -o=json file.yaml | jq …`, or use gojq, which reads YAML itself: `gojq --yaml-input -L <dir> 'include "analytics"; rows_from_map("host")' hosts.yaml`.
+
 ### State machines over time
 
 Events of one entity, ordered by time, are read as a machine that is in one state at a time. The entity expression works as `group_agg`'s key does: an object key's fields are merged into each output row.
@@ -722,7 +818,9 @@ A mean is not a sum: split it with its group's rows, or carry the sum and the co
 - **Time zones.** Only the seven zones in the generated zone block, 1970 to 2100.
 - **Windows.** ROWS frames only; no RANGE or GROUPS frames.
 - **Measures in a context.** At 379,600 rows a daily report with share of total, prior day or to date takes 3.1 to 5.0 s on jq 1.8.2 and 1.5 to 2.6 s on gojq, about 1.3 to 2 times plain `group_by`, in step with the rows. A filter outside the report's levels costs a scan per cell (75 s on jq 1.8.2 for 77 cells). Not measured with thousands of cells.
-- **Graphs.** `tree_rollup`, `reachable` and `components` are tested for correctness, not yet measured on large graphs.
+- **Converters.** At 200,000 rows in the Python `jq` package, parsing included: `unnest` 2.1 s, `to_map` 0.9 s, `rows_from_map` 2.1 s, `to_csv` 0.8 s, `node_link` 2.6 s, `flatten_fields` 12.6 s (it walks every field of every row).
+- **Trees.** `tree_paths` walks each node's ancestry, so its cost grows with depth: 4,000 nodes took 0.5 s in a shallow tree and 16 s in one dozens of levels deep; 200,000 nodes in a shallow tree took 39 s. `tree_rollup` and `nested_from_nodes` call it and cost the same. Org charts and category trees are shallow.
+- **Graphs.** `reachable` and `components` are tested for correctness, not yet measured on large graphs.
 - **Not included yet.** Relationships between tables in the DAX sense (join or `lookup` first), funnels and cohorts, interval merging and concurrency, shortest path and topological order, fuzzy matching, approximate quantiles, mode, histograms, correlation, fill-down, top-n per group, date truncation to week or month.
 
 ## Files and tests
@@ -738,6 +836,9 @@ A mean is not a sum: split it with its group's rows, or carry the sum and the co
 | `tests/make_incidents.py` | writes `tests/fixtures/made_up_incidents.json` from a fixed seed |
 | `tests/run_tests.py` | runs every case on each jq engine and the Python `jq` package and compares with DuckDB |
 | `tools/reference_examples.py` | runs every example in this README and writes its output here |
+| `tools/bench_rows.py`, `tools/bench_converters.py` | time the library's questions and its converters at a given number of rows |
+| `tests/check_names.py` | fails when a public function has the name of an engine builtin; runs before the cases |
+| `docs/design/`, `docs/specs/` | the shapes design, the feature matrix, and one spec per sprint |
 
 All tests, from the repository root:
 

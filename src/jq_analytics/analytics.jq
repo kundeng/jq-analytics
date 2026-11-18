@@ -524,3 +524,101 @@ def to_date($dim):
   if (.at | has($dim) | not) then .
   elif .at[$dim] == null then .void = true
   else .at[$dim] = {to: .at[$dim]} end;
+
+# ---------------------------------------------------------------- shapes in and out
+
+# Converters between the forms data arrives in and the shapes the functions above take, and from
+# those shapes to what the next tool reads. docs/design/05-shapes.md defines the shapes.
+
+# the distinct values of an array in order of first appearance (jq's unique sorts them)
+# (each first sighting is stored with its position and the positions sorted at the end: appending
+# to an array inside the reduce copied it every time, 47 s for 400,000 values)
+def _distinct_in_order: reduce .[] as $x ({n: 0, s: {}}; ($x | tojson) as $k
+  | if .s[$k] then . else .s[$k] = [.n, $x] | .n += 1 end) | [.s[]] | sort_by(.[0]) | map(.[1]);
+
+# unnest: one row per element of the array at f, the element in field $as. A row whose array is
+# empty or null is dropped, as SQL's UNNEST drops it; unnest_outer keeps it once with $as null
+# (LEFT JOIN LATERAL). A value at f that is neither an array nor null is an error naming the row's
+# position. Elements come out in array order, rows in input order.
+def _unnest_arr(f; $i):
+  (f) as $a
+  | if $a == null then [] elif ($a | type) == "array" then $a
+    else error("unnest: row \($i) holds a \($a | type), not an array") end;
+def unnest(f; $as):
+  [to_entries[] | .key as $i | .value as $r | ($r | _unnest_arr(f; $i))[] as $x | $r + {($as): $x}];
+def unnest_outer(f; $as):
+  [to_entries[] | .key as $i | .value as $r
+   | ($r | _unnest_arr(f; $i) | if length == 0 then [null] else . end)[] as $x | $r + {($as): $x}];
+
+# flatten_fields: nested objects become columns named by their path joined with $sep
+# ({"user": {"dept": "x"}} gives "user.dept"). Arrays and scalars are left as values, for unnest to
+# take; an empty object stays as the value {}. Two paths that flatten to the same name are an error.
+# (jq's own flatten flattens arrays; this flattens the objects inside each row.)
+def _flat($p; $sep):
+  if type == "object" and length > 0
+  then to_entries[] | .key as $k | .value | _flat(if $p == null then $k else $p + $sep + $k end; $sep)
+  else {key: $p, value: .} end;
+def flatten_fields($sep):
+  map(if length == 0 then {}
+      else [_flat(null; $sep)] as $e | ($e | from_entries) as $o
+        | if ($o | length) != ($e | length)   # a repeated name collapsed in from_entries
+          then error("flatten_fields: two fields flatten to the same name: \($e | map(.key) | group_by(.) | map(select(length > 1)[0]) | tojson)")
+          else $o end
+      end);
+
+# nodes_from_nested: a nested tree (each node holding its children in an array at `children`)
+# becomes node rows, each with `parent` set to its parent's id (null for a root) and the children
+# array removed. The input is one root object or an array of roots. Rows are in depth-first order.
+def _nodes(id; children; $p): . as $n
+  | ($n | del(children) + {parent: $p}), ((($n | children) // [])[] | _nodes(id; children; ($n | id)));
+def nodes_from_nested(id; children): [(if type == "array" then .[] else . end) | _nodes(id; children; null)];
+
+# rows_from_map: an object keyed by id becomes rows, the key in field $as, sorted by key. A value
+# that is not an object becomes {($as): key, value: v}. Sorted because gojq does not keep an
+# object's key order, so the order the keys were written in cannot be the same on every engine.
+def rows_from_map($as):
+  to_entries | sort_by(.key) | map({($as): .key} + (if (.value | type) == "object" then .value else {value: .value} end));
+
+# fill_grid: every combination of the $keys fields' values (in first appearance) at every time from
+# the earliest to the latest in steps of $step seconds; a missing combination gets a row with the
+# key fields, the time field and $fill. $keys and $time are field names; times are epoch seconds
+# and must sit on the grid (an offset from the earliest that is a multiple of $step), else an
+# error. Without the filled rows a lag or a moving mean steps over an empty period as if it were
+# the next one.
+def fill_grid($keys; $time; $step; $fill):
+  if length == 0 then [] else
+  (map(.[$time]) | min) as $t0 | (map(.[$time]) | max) as $t1
+  | (map(select(((.[$time] - $t0) % $step) != 0)) | if length > 0
+       then error("fill_grid: \(.[0][$time]) is not on the \($step)-second grid from \($t0)") else . end) as $_
+  | (reduce .[] as $r ({}; .[[$r[$keys[]], $r[$time]] | tojson] += [$r])) as $ix
+  | ([.[] | [.[$keys[]]]] | _distinct_in_order) as $combos
+  | [$combos[] as $k | range($t0; $t1 + 1; $step) as $t
+     | ($ix[$k + [$t] | tojson] // [([$keys, $k] | transpose | map({key: .[0], value: .[1]}) | from_entries)
+                                     + {($time): $t} + $fill])[]]
+  end;
+
+# to_map: rows become an object keyed by `key` (as a string). A duplicate key is an error; jq's
+# own INDEX(key) keeps the last row silently.
+def to_map(key):
+  reduce .[] as $r ({}; ($r | key | tostring) as $k
+    | if has($k) then error("to_map: duplicate key \($k | tojson)") else .[$k] = $r end);
+
+# nested_from_nodes: node rows (id, parent) become a nested tree, each node's children in an array
+# in field $as, the roots in an array. Checked with tree_paths first, so a missing parent or a
+# cycle is the same error as there.
+def _nest($by; id; $as): . as $n | $n + {($as): [($by[$n | id | tojson] // [])[] | _nest($by; id; $as)]};
+def nested_from_nodes(id; parent; $as):
+  (tree_paths(id; parent) | length) as $_
+  | (reduce .[] as $r ({}; .[$r | parent | tojson] += [$r])) as $by
+  | [.[] | select((parent) == null or (parent) == "") | _nest($by; id; $as)];
+
+# node_link: edge rows become the node-link form graph tools read (networkx, d3, Cytoscape):
+# {nodes: [{id}], links: [row + {source, target}]}. Nodes are in order of first appearance.
+def node_link(from; to):
+  {nodes: ([.[] | (from), (to)] | _distinct_in_order | map({id: .})),
+   links: map(. + {source: (from), target: (to)})};
+
+# to_csv: a header line, then one CSV line per row, columns in the order of $cols; a stream of
+# strings, so run jq with -r. A null is an empty cell. A nested value in a cell is an error from
+# @csv itself: flatten_fields first.
+def to_csv($cols): ($cols | @csv), (.[] | [.[$cols[]]] | @csv);
