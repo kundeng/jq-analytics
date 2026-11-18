@@ -1,6 +1,6 @@
 # analytics.jq: tables and statistics for jq
 
-`analytics.jq` is a jq module of 62 functions that let a jq program answer the questions people usually send to SQL, pandas or a graph library: hold several named tables at once, join them by key, condition and time, group and aggregate, percentiles, running and lagged values over ordered partitions, time series read as state machines, roll-ups over trees, reachability in graphs, measures evaluated at several levels of a report, and local time in a named time zone. Each function states its rule in a comment beside it (how it treats nulls, ties, order and rounding), and each rule is pinned by a test whose expected answer DuckDB computes. `tzdata.jq`, generated from the IANA time-zone database, sits beside it.
+`analytics.jq` is a jq module of 66 functions that let a jq program answer the questions people usually send to SQL, pandas or a graph library: hold several named tables at once, join them by key, condition and time, group and aggregate, percentiles, running and lagged values over ordered partitions, time series read as state machines, roll-ups over trees, reachability in graphs, measures evaluated at several levels of a report, and local time in a named time zone. Each function states its rule in a comment beside it (how it treats nulls, ties, order and rounding), and each rule is pinned by a test whose expected answer DuckDB computes. Its time-zone tables, generated from the IANA time-zone database, are a block inside the same file.
 
 It exists because plain jq leaves those rules to whoever writes the program. In one analysis of service requests, four shared jq helpers each decided a number without saying how: one dropped unresolved tickets, one used a different percentile rule, one hardcoded a single year's daylight-saving switch, one rounded before comparing with a threshold and miscounted by one. This library is one place where those rules are written down, tested against DuckDB, and the same for every analysis that loads it.
 
@@ -41,14 +41,14 @@ flowchart LR
   C --> D["tables<br/>group_agg, join_*,<br/>join_asof, over,<br/>pivot, unpivot"]
   D --> E["math over a list<br/>mean, var_*, stddev_*,<br/>quantile_*, round_to"]
   E --> F["answer (JSON)"]
-  T["tzdata.jq<br/>generated from the<br/>tzdata package"] -.-> C
+  T["zone tables<br/>generated block<br/>inside analytics.jq"] -.-> C
 ```
 
 A program normally moves left to right: turn strings into numbers and instants, derive local times and durations, reshape the table (group, join, window), and reduce lists of numbers to statistics. Each stage is ordinary jq, so stages are joined with `|` and intermediate tables are named with `as $name`, as Power Query names its `let` steps.
 
 ## Loading it
 
-`analytics.jq` and `tzdata.jq` must sit in the same directory, `<dir>` below. The library includes `tzdata.jq` itself (`include "tzdata" {search: "./"}`, read relative to the library's own file), so a caller names only `analytics`.
+The library is one file, `analytics.jq`, in a directory `<dir>` below. Its time-zone tables are a generated block inside it, so nothing else needs to sit beside it.
 
 | where | how |
 |---|---|
@@ -58,7 +58,7 @@ A program normally moves left to right: turn strings into numbers and instants, 
 | Python `jq` package | `jq.compile('include "analytics" {search: "<dir>"}; ' + program).input_value(rows).first()`; the package has no `-L` and an empty default search list, so the path goes in the program |
 | Python package `jq_analytics` | `jq_analytics.include()` returns the `include` line with this package's directory filled in |
 
-Tested on jq 1.7.1 (Apple's build), jq 1.8.2, gojq 0.12.20, jaq 3.1.2 and the `jq` Python package 1.13.0, which builds jq 1.8.2: all pass the same 53 test cases (`tests/run_tests.py`). The library uses no builtin that is missing from any of them, and it parenthesises `reduce … as` inside function arguments, which jq 1.7.1's grammar requires.
+Tested on jq 1.7.1 (Apple's build), jq 1.8.2, gojq 0.12.20, jaq 3.1.2 and the `jq` Python package 1.13.0, which builds jq 1.8.2: all pass the same 54 test cases (`tests/run_tests.py`). The library uses no builtin that is missing from any of them, and it parenthesises `reduce … as` inside function arguments, which jq 1.7.1's grammar requires.
 
 ## Rules that hold everywhere
 
@@ -177,6 +177,18 @@ The input is an array of numbers that may contain nulls.
 ```
 <!-- /example -->
 
+**`min_nonnull`, `max_nonnull`, `min_by_nonnull(f)`, `max_by_nonnull(f)`**. The least and greatest non-null value, and the row whose `f` is least or greatest with null `f` left out; null when nothing is left. Why: jq's own `min` and `max` sort null below every number, so `[null, 1, 3] | min` is null. Matches DuckDB `min(x)`, `max(x)`, `arg_min(row, x)`, `arg_max(row, x)`. Ties: the first row for `min_by_nonnull`, the last for `max_by_nonnull`, as jq's `min_by` and `max_by`.
+
+<!-- example: min_max -->
+```jq
+[null, 3, 1] | {plain_min: min, min_nonnull: min_nonnull, max_nonnull: max_nonnull, nothing: ([null] | min_nonnull), first_lowest: ([{id: 1, x: null}, {id: 2, x: 5}, {id: 3, x: 2}] | min_by_nonnull(.x) | .id)}
+```
+
+```json
+{"plain_min": null, "min_nonnull": 1, "max_nonnull": 3, "nothing": null, "first_lowest": 3}
+```
+<!-- /example -->
+
 **`var_samp`, `var_pop`, `stddev_samp`, `stddev_pop`**. Variance and standard deviation, sample (divide by n − 1; null below two values) or population (divide by n; null when empty), computed in two passes (mean first, then squared deviations). Matches DuckDB's functions of the same names; Power Query's `List.StandardDeviation` is the sample one.
 
 <!-- example: variance -->
@@ -262,7 +274,7 @@ The input is an array of numbers that may contain nulls.
 
 ### Time zones and calendar
 
-**`tz($name)`, `tz_offset($tz)`, `local_time($tz)`**. `tz` returns one zone's transition table from `tzdata.jq`; `tz_offset` gives the UTC offset in seconds at an instant; `local_time` gives the wall clock as `{date, year, month, day, hour, minute, second, weekday (0 = Sunday), offset_s, local_epoch}`. `$tz` is a zone name or the table `tz` returned. Zones included: UTC, America/Detroit, New_York, Chicago, Denver, Los_Angeles, Europe/London, from 1970 to 2100, generated by `gen_tzdata.py` from the `tzdata` package 2026.6; add a zone by adding it to `ZONES` there and regenerating. Why: plain jq's `localtime` and `strflocaltime` use the process's `TZ` setting, which inside a Splunk search command is the whole search process's, and their `%Z` label is wrong next to a switch. Matches DuckDB `ts AT TIME ZONE 'America/Detroit'`; Power Query has fixed offsets only. **Cost:** `tz_rules` is a 27 KB literal that jq rebuilds on every call, so passing a name costs 0.78 ms per call and passing `tz(...)` bound once costs 0.024 ms: write `tz("America/Detroit") as $det` once and call `local_time($det)`.
+**`tz($name)`, `tz_offset($tz)`, `local_time($tz)`**. `tz` returns one zone's transition table from the library's generated zone block; `tz_offset` gives the UTC offset in seconds at an instant; `local_time` gives the wall clock as `{date, year, month, day, hour, minute, second, weekday (0 = Sunday), offset_s, local_epoch}`. `$tz` is a zone name or the table `tz` returned. Zones included: UTC, America/Detroit, New_York, Chicago, Denver, Los_Angeles, Europe/London, from 1970 to 2100, generated by `gen_tzdata.py` from the `tzdata` package 2026.6; add a zone by adding it to `ZONES` there and regenerating. Why: plain jq's `localtime` and `strflocaltime` use the process's `TZ` setting, which inside a Splunk search command is the whole search process's, and their `%Z` label is wrong next to a switch. Matches DuckDB `ts AT TIME ZONE 'America/Detroit'`; Power Query has fixed offsets only. **Cost:** `tz_rules` is a 27 KB literal that jq rebuilds on every call, so passing a name costs 0.78 ms per call and passing `tz(...)` bound once costs 0.024 ms: write `tz("America/Detroit") as $det` once and call `local_time($det)`.
 
 <!-- example: local_time -->
 ```jq
@@ -674,7 +686,7 @@ Measured on a table of 3,796 service requests and copies of it up to 379,600 row
 - **Speed.** jq interprets every step and holds the whole input in memory. At 379,600 rows the office-hours question takes 25.8 s on jq 1.8.2 and 7.1 s on gojq, with 1.6 to 2.2 GB of memory; grouping, joining and window functions take 1.4 to 5.5 s. Each grows in step with the rows. gojq and jaq run the library unchanged and fastest.
 - **As-of join with identical timestamps.** Many right rows with the same key and time slow `join_asof`: on copies where every timestamp repeated 100 times it took 24 to 47 s and grew 20 to 29 times for 10 times the rows.
 - **Streaming.** Every table function needs its whole table. Counts and sums can stream over NDJSON with plain `reduce inputs`; quantiles cannot.
-- **Time zones.** Only the seven zones in `tzdata.jq`, 1970 to 2100.
+- **Time zones.** Only the seven zones in the generated zone block, 1970 to 2100.
 - **Windows.** ROWS frames only; no RANGE or GROUPS frames.
 - **Measures in a context.** At 379,600 rows a daily report with share of total, prior day or to date takes 3.1 to 5.0 s on jq 1.8.2 and 1.5 to 2.6 s on gojq, about 1.3 to 2 times plain `group_by`, in step with the rows. A filter outside the report's levels costs a scan per cell (75 s on jq 1.8.2 for 77 cells). Not measured with thousands of cells.
 - **Graphs.** `tree_rollup`, `reachable` and `components` are tested for correctness, not yet measured on large graphs.
@@ -684,9 +696,9 @@ Measured on a table of 3,796 service requests and copies of it up to 379,600 row
 
 | file | role |
 |---|---|
-| `src/jq_analytics/analytics.jq` | the library |
-| `src/jq_analytics/tzdata.jq` | generated zone tables; do not edit; regenerate with `uv run --no-project --with tzdata==2026.6 python -I tools/gen_tzdata.py src/jq_analytics/tzdata.jq` |
-| `src/jq_analytics/__init__.py` | the directory of the two `.jq` files, for Python callers |
+| `src/jq_analytics/analytics.jq` | the library, one file; its time-zone tables are a generated block between the `tzdata` markers |
+| `tools/gen_tzdata.py` | rewrites the zone block: `uv run --no-project --with tzdata==2026.6 python -I tools/gen_tzdata.py src/jq_analytics/analytics.jq` |
+| `src/jq_analytics/__init__.py` | the directory of `analytics.jq`, for Python callers |
 | `tests/cases.json`, `tests/fixtures/*.json` | the test cases: edge-case fixtures, questions over 600 made-up service requests, and ports of three worked examples |
 | `tests/sql/*.sql` | the answer key: one DuckDB query per case that has one |
 | `tests/expected/ported_examples.json` | the answers the three ported examples must give, recorded from their original Python versions |

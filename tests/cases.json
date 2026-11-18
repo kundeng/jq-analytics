@@ -6,6 +6,12 @@
     "jq": "group_agg({g}; map(.x) | {n: count_nonnull, sum: sum_nonnull, mean: mean, var_samp: var_samp, var_pop: var_pop, sd_samp: stddev_samp, sd_pop: stddev_pop, qd: quantiles_disc([0, 0.1, 0.25, 0.3, 0.5, 0.7, 0.9, 1]), qc: quantiles_cont([0, 0.1, 0.25, 0.3, 0.5, 0.7, 0.9, 1]), median: median})"
   },
   {
+    "name": "min_max_nonnull",
+    "input": "tests/fixtures/nums.json",
+    "sql": "min_max_nonnull.sql",
+    "jq": "group_agg({g}; {min: (map(.x) | min_nonnull), max: (map(.x) | max_nonnull), i_min: (min_by_nonnull(.x) | if . == null then null else .i end), i_max: (max_by_nonnull(.x) | if . == null then null else .i end)})"
+  },
+  {
     "name": "round_to",
     "input": "tests/fixtures/round.json",
     "sql": "round_to.sql",

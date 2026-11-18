@@ -1,4 +1,4 @@
-"""jq_analytics: the jq module analytics.jq (with tzdata.jq), shipped as package data.
+"""jq_analytics: the jq module analytics.jq (one file, its zone tables included), shipped as package data.
 
     import jq, jq_analytics
     jq.compile(jq_analytics.include() + "group_agg({g}; length)").input_value(rows).first()
@@ -9,7 +9,7 @@ the directory; include() writes that line. From the command line: jq -L "$(pytho
 """
 from pathlib import Path
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 LIB_DIR = Path(__file__).resolve().parent
 
