@@ -1,6 +1,6 @@
 # Feature matrix
 
-What the library does, family by family, and how far each part is carried: the functions in `analytics.jq`, the test cases, the answer key, and the README. Counts are as of version 0.8.0 and come from `tests/cases.json` and the library file.
+What the library does, family by family, and how far each part is carried: the functions in `analytics.jq`, the test cases, the answer key, and the README. Counts are as of version 0.8.1 and come from `tests/cases.json` and the library file.
 
 ```mermaid
 flowchart LR
@@ -30,7 +30,7 @@ Legend: ✅ done · 🟡 partial · ⏳ planned · — not involved. A case coun
 | join-within | rows and intervals | ✅ 1 | ✅ 1 | 1 | ✅ | five engines, 2026-11-18 | [15](../specs/15-intervals/spec.md) |
 | interval-merge, interval-concurrency | intervals | ✅ 2 | ✅ 5 | 2 | ✅ | five engines, 2026-11-18 | [15](../specs/15-intervals/spec.md) |
 | calendar-table | none in; day rows out, each an interval and a dimension row | ✅ 1 | ✅ 7 | 2 | ✅ | five engines, 2026-11-18 | [20](../specs/20-calendar/spec.md) |
-| calendar-periods | star, inside a cell | ✅ 1 | ✅ 2 | 1 | ✅ | five engines, 2026-11-18 | [20](../specs/20-calendar/spec.md) |
+| calendar-periods | star, inside a cell | ✅ 1 | ✅ 3 | 1 | ✅ | five engines; equal to DAX's PREVIOUSMONTH and TOTALYTD compiled by dax-sql 0.2.2, 2026-11-18 | [20](../specs/20-calendar/spec.md), [45](../specs/45-read-out-and-teaching/spec.md) |
 | funnel | an event table, per entity | ✅ 2 | ✅ 8 | 2 | ✅ | five engines, 2026-11-18 | [25](../specs/25-event-paths/spec.md) |
 | cohort-retention | an event table, per entity, with a period list | ✅ 2 | ✅ 3 | 1 | ✅ | five engines, 2026-11-18 | [25](../specs/25-event-paths/spec.md) |
 | graph-hops, shortest-path, dependency-order | graph | ✅ 3 | ✅ 8 | 2 | ✅ | five engines, 2026-11-18 | [30](../specs/30-graph-paths/spec.md) |

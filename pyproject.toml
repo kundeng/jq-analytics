@@ -1,6 +1,6 @@
 [project]
 name = "jq-analytics"
-version = "0.8.0"
+version = "0.8.1"
 description = "A jq module for tables and statistics: joins, grouping, percentiles, windows, state machines, trees, graphs, measures at several levels, and local time"
 readme = "README.md"
 license = "MIT"

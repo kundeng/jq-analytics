@@ -937,6 +937,12 @@
     "jq": "def revenue: map(.amount) | add; (calendar(\"2025-12-01\"; \"2026-04-30\") | map(.year_month) | unique) as $months | rollup([\"region\", \"month\"]; {revenue: measure(revenue), prior: calc(revenue; on_calendar(\"month\"; $months) | shift(\"month\"; -1)), to_date: calc(revenue; on_calendar(\"month\"; $months) | to_date(\"month\"))}) | map(select(.level == \"region/month\") | del(.level))"
   },
   {
+    "name": "on_calendar_dax",
+    "input": "tests/fixtures/sales_gap.json",
+    "sql": "on_calendar_dax.sql",
+    "jq": "def revenue: map(.amount) | add; (calendar(\"2025-12-01\"; \"2026-04-30\") | map(.year_month) | unique) as $months | rollup([\"region\", \"month\"]; {revenue: measure(revenue), prior: calc(revenue; on_calendar(\"month\"; $months) | shift(\"month\"; -1)), to_date: calc(revenue; on_calendar(\"month\"; $months) | to_date(\"month\"))}) | map(select(.level == \"region/month\") | del(.level))"
+  },
+  {
     "name": "on_calendar_value_outside",
     "input": "tests/fixtures/sales_gap.json",
     "expect_value": [

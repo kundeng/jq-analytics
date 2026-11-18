@@ -1,0 +1,12 @@
+// The DAX behind on_calendar_dax.sql: compiled to DuckDB SQL by dax-sql 0.2.2.
+// Model: Sales(Region, Date, Amount) with measure Revenue = SUM(Sales[Amount]); a Date table with one row per day
+// from 2025-12-01 to 2026-04-30 (Date, Year, Month as YYYY-MM), marked as the time table and related to Sales by Date.
+// Each fixture row is dated the 15th of its month.
+EVALUATE
+SUMMARIZECOLUMNS(
+    Sales[Region], 'Date'[Month],
+    "revenue", [Revenue],
+    "prior", CALCULATE([Revenue], PREVIOUSMONTH('Date'[Date])),
+    "to_date", TOTALYTD([Revenue], 'Date'[Date])
+)
+ORDER BY Sales[Region], 'Date'[Month]

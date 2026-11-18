@@ -75,7 +75,7 @@ The library is one file, `analytics.jq`, in a directory `<dir>` below. Its time-
 | Python `jq` package | `jq.compile('include "analytics" {search: "<dir>"}; ' + program).input_value(rows).first()`; the package has no `-L` and an empty default search list, so the path goes in the program |
 | Python package `jq_analytics` | `jq_analytics.include()` returns the `include` line with this package's directory filled in |
 
-Tested on jq 1.7.1 (Apple's build), jq 1.8.2, gojq 0.12.20, jaq 3.1.2 and the `jq` Python package 1.13.0, which builds jq 1.8.2: all pass the same 134 test cases (`tests/run_tests.py`). The library uses no builtin that is missing from any of them, and it parenthesises `reduce … as` inside function arguments, which jq 1.7.1's grammar requires.
+Tested on jq 1.7.1 (Apple's build), jq 1.8.2, gojq 0.12.20, jaq 3.1.2 and the `jq` Python package 1.13.0, which builds jq 1.8.2: all pass the same 135 test cases (`tests/run_tests.py`). The library uses no builtin that is missing from any of them, and it parenthesises `reduce … as` inside function arguments, which jq 1.7.1's grammar requires.
 
 ## Rules that hold everywhere
 
@@ -961,7 +961,7 @@ A graph is a table of edges; two expressions give each edge's ends.
 
 **`hops(from; to; $start)`.** One row per node that can be reached from `$start`, the start itself at 0: `{node, hops}`, the number of edges on the shortest route; nearest first.
 
-**`shortest_path(from; to; $start; $goal)`** and **`shortest_path(from; to; weight; $start; $goal)`.** The route with the fewest edges, or with the lowest total weight when a weight expression is given: `{path, cost}`, the nodes from start to goal and the number of edges or the total weight; null when there is no route; `{path: [$start], cost: 0}` when start and goal are the same. Among equally good routes it returns the one found first, following edges in input order. Weights must be numbers of 0 or more; anything else is an error. The weighted form settles the nearest open node by scanning them all, with no priority queue: fine for a few thousand nodes.
+**`shortest_path(from; to; $start; $goal)`** and **`shortest_path(from; to; weight; $start; $goal)`.** The route with the fewest edges, or with the lowest total weight when a weight expression is given: `{path, cost}`, the nodes from start to goal and the number of edges or the total weight; null when there is no route; `{path: [$start], cost: 0}` when start and goal are the same. Among equally good routes it returns the one found first, following edges in input order. Weights must be numbers of 0 or more; anything else is an error. The weighted form settles the nearest open node by scanning them all, with no priority queue, so its time grows with the square of the nodes it has to settle before reaching the goal: a goal among the nearest hundred nodes takes well under a second at any size measured, while a goal that is the farthest of 2,500 nodes takes 3.3 s and the farthest of 10,000 takes 52 s.
 
 **`topo_order(from; to)`.** A dependency order: one row per node, `{node, level}`, sorted by level then node. Level 0 is a node nothing points to; otherwise one more than the highest level among the nodes that point to it. Every edge goes from a lower level to a higher one, and the nodes of one level do not depend on each other, so they can run side by side. A cycle is an error naming a node on it.
 
@@ -1027,7 +1027,7 @@ The changes, each taking a context and returning one; pipe them to combine:
 | `to_date($dim)` | everything up to and including this value, other filters kept | a running total; `DATESYTD` only when every period has rows |
 | `on_calendar($dim; $values)` | make `shift` and `to_date` on that field step through `$values`, every period in order, instead of through the values present in the data | a marked date table |
 
-**Calendar time.** By themselves `shift` and `to_date` follow the values present in the data, sorted as values: a month with no rows is skipped, and month names sort alphabetically. Pipe `on_calendar($dim; $values)` before them to step through every period instead; take the list from `calendar`, for example `calendar("2025-12-01"; "2026-03-31") | map(.year_month) | unique`. The previous calendar month of a cell is then the previous month even when it has no rows, and the measure runs on no rows there. `to_date` compares values, so the list must sort the way it is ordered: `"2026-03"` does, `"Mar"` does not. A report still has rows only for periods that have data. For DAX's own time functions and blank rules, write the measure in DAX and compile it to SQL.
+**Calendar time.** By themselves `shift` and `to_date` follow the values present in the data, sorted as values: a month with no rows is skipped, and month names sort alphabetically. Pipe `on_calendar($dim; $values)` before them to step through every period instead; take the list from `calendar`, for example `calendar("2025-12-01"; "2026-03-31") | map(.year_month) | unique`. The previous calendar month of a cell is then the previous month even when it has no rows, and the measure runs on no rows there. `to_date` compares values, so the list must sort the way it is ordered: `"2026-03"` does, `"Mar"` does not. A report still has rows only for periods that have data. For DAX's own time functions and blank rules, write the measure in DAX and compile it to SQL. The previous calendar month and the year to date computed this way equal DAX's `PREVIOUSMONTH` and `TOTALYTD` on the test fixture with an empty month (`tests/sql/on_calendar_dax.dax`, compiled to SQL by dax-sql 0.2.2). Two differences from DAX remain by design: `to_date` is a running total over the whole period list and does not start again in January, and a report has no row for a month without rows, where DAX returns one whenever some measure is not blank.
 
 <!-- example: calendar_previous -->
 ```jq
@@ -1147,7 +1147,7 @@ A mean is not a sum: split it with its group's rows, or carry the sum and the co
 - **Funnels and retention.** At 200,000 events over about 25,000 entities in the Python `jq` package, parsing included: `funnel` 5.7 s, `retention` over 12 periods 3.0 s, `cohorts` 2.2 s.
 - **Distributions, profiles, diffs.** At 200,000 rows of five fields in the Python `jq` package, parsing included: `mode` 1.5 s, `value_counts` 1.6 s, `histogram` 2.8 s, `corr` 2.0 s, `profile` 7.8 s, `diff_tables` 4.4 s.
 - **Converters.** At 200,000 rows in the Python `jq` package, parsing included: `unnest` 2.1 s, `to_map` 0.9 s, `rows_from_map` 2.1 s, `to_csv` 0.8 s, `node_link` 2.6 s, `flatten_fields` 12.6 s (it walks every field of every row).
-- **Trees and graphs.** Time grows in step with the input. In the Python `jq` package, parsing included, 200,000 edges or nodes take: `reachable` 6.9 s, `hops` 7.1 s, `components` 11.6 s, `topo_order` 8.1 s, `tree_paths` 7.7 s in a shallow tree and 20.1 s in one thousands of levels deep (its output, every node's full ancestry, is what grows). `tree_rollup` and `nested_from_nodes` call `tree_paths`. The weighted `shortest_path` scans for the nearest node at each step and is meant for a few thousand nodes.
+- **Trees and graphs.** Time grows in step with the input. In the Python `jq` package, parsing included, 200,000 edges or nodes take: `reachable` 6.9 s, `hops` 7.1 s, `components` 11.6 s, `topo_order` 8.1 s, `tree_paths` 7.7 s in a shallow tree and 20.1 s in one thousands of levels deep (its output, every node's full ancestry, is what grows). `tree_rollup` and `nested_from_nodes` call `tree_paths`. The weighted `shortest_path` scans for the nearest node at each step, so it slows with the square of the nodes it settles: with one node per four edges and the goal the farthest node, 10,000 edges take 3.3 s, 20,000 take 12.3 s and 40,000 take 51.5 s; a goal among the nearest hundred nodes takes 0.1 to 0.4 s at those sizes. Its costs equal a heap-based reference at each size (`tools/bench_weighted_path.py`).
 - **Not included yet.** Relationships between tables in the DAX sense (join or `lookup` first), edit distance and phonetic matching (use a database), approximate quantiles, rank correlation, fill-down, top-n per group, fiscal calendars and holidays.
 
 ## Files and tests
@@ -1158,14 +1158,16 @@ A mean is not a sum: split it with its group's rows, or carry the sum and the co
 | `tools/gen_tzdata.py` | rewrites the zone block: `uv run --no-project --with tzdata==2026.6 python -I tools/gen_tzdata.py src/jq_analytics/analytics.jq` |
 | `src/jq_analytics/__init__.py` | the directory of `analytics.jq`, for Python callers |
 | `tests/cases.json`, `tests/fixtures/*.json` | the test cases: edge-case fixtures, questions over 600 made-up service requests, and ports of three worked examples |
-| `tests/sql/*.sql` | the answer key: one DuckDB query per case that has one |
+| `tests/sql/*.sql` | the answer key: one DuckDB query per case that has one; `on_calendar_dax.sql` was compiled from the DAX beside it by dax-sql |
 | `tests/expected/ported_examples.json` | the answers the three ported examples must give, recorded from their original Python versions |
 | `tests/make_fuzzy.py` | writes the approximate-matching fixtures and their expected answers from its own Python implementation |
 | `tests/make_incidents.py` | writes `tests/fixtures/made_up_incidents.json` from a fixed seed |
 | `tests/run_tests.py` | runs every case on each jq engine and the Python `jq` package and compares with DuckDB |
 | `tools/reference_examples.py` | runs every example in this README and writes its output here |
-| `tools/bench_rows.py`, `tools/bench_converters.py`, `tools/bench_intervals.py`, `tools/bench_event_paths.py`, `tools/bench_graphs.py`, `tools/bench_profiles.py`, `tools/bench_fuzzy.py` | time the library's questions and its converters at a given number of rows |
+| `tools/bench_rows.py`, `tools/bench_converters.py`, `tools/bench_intervals.py`, `tools/bench_event_paths.py`, `tools/bench_graphs.py`, `tools/bench_profiles.py`, `tools/bench_fuzzy.py`, `tools/bench_weighted_path.py` | time the library's questions and its converters at a given number of rows |
 | `tests/check_names.py` | fails when a public function has the name of an engine builtin; runs before the cases |
+| `docs/readout/` | how each definition is written: its code, an explanation of each clause and a small run, one page per family. Generated by `tools/readout.py` from the library and the notes in `docs/readout/notes/`; a note whose code has changed stops the build |
+| `docs/tutorial-outline.md` | the chapters of a tutorial, each with its question, data, functions and hand check |
 | `docs/design/`, `docs/specs/` | the shapes design, the feature matrix, and one spec per sprint |
 
 All tests, from the repository root:
