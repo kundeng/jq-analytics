@@ -1,6 +1,6 @@
 # analytics.jq: tables and statistics for jq
 
-`analytics.jq` is a jq module of 80 functions that let a jq program answer the questions people usually send to SQL, pandas or a graph library: hold several named tables at once, join them by key, condition and time, group and aggregate, percentiles, running and lagged values over ordered partitions, time series read as state machines, roll-ups over trees, reachability in graphs, validity intervals built from events, measures evaluated at several levels of a report, and local time in a named time zone. Each function states its rule in a comment beside it (how it treats nulls, ties, order and rounding), and each rule is pinned by a test whose expected answer DuckDB computes. Its time-zone tables, generated from the IANA time-zone database, are a block inside the same file.
+`analytics.jq` is a jq module of 82 functions that let a jq program answer the questions people usually send to SQL, pandas or a graph library: hold several named tables at once, join them by key, condition and time, group and aggregate, percentiles, running and lagged values over ordered partitions, time series read as state machines, roll-ups over trees, reachability in graphs, validity intervals built from events, a calendar table, measures evaluated at several levels of a report, and local time in a named time zone. Each function states its rule in a comment beside it (how it treats nulls, ties, order and rounding), and each rule is pinned by a test whose expected answer DuckDB computes. Its time-zone tables, generated from the IANA time-zone database, are a block inside the same file.
 
 It exists because plain jq leaves those rules to whoever writes the program. In one analysis of service requests, four shared jq helpers each decided a number without saying how: one dropped unresolved tickets, one used a different percentile rule, one hardcoded a single year's daylight-saving switch, one rounded before comparing with a threshold and miscounted by one. This library is one place where those rules are written down, tested against DuckDB, and the same for every analysis that loads it.
 
@@ -75,7 +75,7 @@ The library is one file, `analytics.jq`, in a directory `<dir>` below. Its time-
 | Python `jq` package | `jq.compile('include "analytics" {search: "<dir>"}; ' + program).input_value(rows).first()`; the package has no `-L` and an empty default search list, so the path goes in the program |
 | Python package `jq_analytics` | `jq_analytics.include()` returns the `include` line with this package's directory filled in |
 
-Tested on jq 1.7.1 (Apple's build), jq 1.8.2, gojq 0.12.20, jaq 3.1.2 and the `jq` Python package 1.13.0, which builds jq 1.8.2: all pass the same 86 test cases (`tests/run_tests.py`). The library uses no builtin that is missing from any of them, and it parenthesises `reduce … as` inside function arguments, which jq 1.7.1's grammar requires.
+Tested on jq 1.7.1 (Apple's build), jq 1.8.2, gojq 0.12.20, jaq 3.1.2 and the `jq` Python package 1.13.0, which builds jq 1.8.2: all pass the same 95 test cases (`tests/run_tests.py`). The library uses no builtin that is missing from any of them, and it parenthesises `reduce … as` inside function arguments, which jq 1.7.1's grammar requires.
 
 ## Rules that hold everywhere
 
@@ -309,6 +309,43 @@ tz("America/Detroit") as $det | ["2026-03-08 06:59:59", "2026-03-08 07:00:00", "
 <!-- /example -->
 
 **`hours_between(a; b)`**. `(b − a) / 3600` for two epoch expressions; null when either is null; not rounded. Matches DuckDB `date_diff('second', a, b) / 3600.0`.
+
+**`calendar($from; $to; $zone)`, `calendar($from; $to)`.** One row per day from `$from` to `$to` inclusive, both `"YYYY-MM-DD"`; it ignores its input, so call it with `jq -n` or bind it with `as`. Each row: `date`, `year`, `quarter`, `month`, `day`, `weekday` (0 = Sunday), `day_of_year`, `iso_year` and `iso_week` (weeks start Monday, week 1 holds the year's first Thursday, so a day near New Year can belong to the neighbouring ISO year), `us_week` (weeks start Sunday, week 1 holds 1 January: a spreadsheet's `WEEKNUM(d, 1)`), `year_month` (`"2026-03"`), `year_quarter` (`"2026-Q1"`), `iso_year_week` (`"2026-W09"`), and `start` and `end`, the epoch seconds of local midnight in `$zone` (a name or `tz($name)`; UTC in the two-argument form). Not a date, an impossible date, `$from` after `$to`, or an unknown zone is an error. Matches DuckDB `year`, `quarter`, `dayofweek`, `dayofyear`, `isoyear`, `weekofyear` and `AT TIME ZONE` for every day of 2026 and around three New Years. No fiscal years, no holidays.
+
+<!-- example: calendar_new_year -->
+```jq
+calendar("2020-12-31"; "2021-01-04") | map({date, weekday, iso_year_week, us_week, year_quarter})
+```
+
+```json
+[
+  {"date": "2020-12-31", "weekday": 4, "iso_year_week": "2020-W53", "us_week": 53, "year_quarter": "2020-Q4"},
+  {"date": "2021-01-01", "weekday": 5, "iso_year_week": "2020-W53", "us_week": 1, "year_quarter": "2021-Q1"},
+  {"date": "2021-01-02", "weekday": 6, "iso_year_week": "2020-W53", "us_week": 1, "year_quarter": "2021-Q1"},
+  {"date": "2021-01-03", "weekday": 0, "iso_year_week": "2020-W53", "us_week": 2, "year_quarter": "2021-Q1"},
+  {"date": "2021-01-04", "weekday": 1, "iso_year_week": "2021-W01", "us_week": 2, "year_quarter": "2021-Q1"}
+]
+```
+<!-- /example -->
+
+Thursday 31 December 2020 is in ISO week 53 and US week 53; Friday 1 January 2021 is still ISO week 53 of 2020, and US week 1 of 2021.
+
+A day is an interval, `[start, end)`, so [`join_within`](#intervals) puts an event in its local day, and a day with a clock change is 23 or 25 hours long:
+
+<!-- example: calendar_days -->
+```jq
+calendar("2026-03-07"; "2026-03-09"; "America/Detroit") as $days | {hours: ($days | map({date, hours: ((.end - .start) / 3600)})), events_by_day: ([{id: 1, at: "2026-03-08 04:30:00"}, {id: 2, at: "2026-03-08 05:30:00"}, {id: 3, at: "2026-03-09 03:59:59"}] | map(.t = (.at | parse_ts) | .zone = "x") | join_within($days | map({zone: "x", date, start, end}); .zone; .zone; .t; .start; .end) | map({id, at, date}))}
+```
+
+```json
+{
+  "hours": [{"date": "2026-03-07", "hours": 24}, {"date": "2026-03-08", "hours": 23}, {"date": "2026-03-09", "hours": 24}],
+  "events_by_day": [{"id": 1, "at": "2026-03-08 04:30:00", "date": "2026-03-07"}, {"id": 2, "at": "2026-03-08 05:30:00", "date": "2026-03-08"}, {"id": 3, "at": "2026-03-09 03:59:59", "date": "2026-03-08"}]
+}
+```
+<!-- /example -->
+
+Event 2, at 05:30 UTC on 8 March, is 00:30 in Detroit on the 8th; event 1, an hour earlier, is still the 7th there. The 8th is 23 hours long.
 
 ### Grouping
 
@@ -828,10 +865,27 @@ The changes, each taking a context and returning one; pipe them to combine:
 | `without($dim)` | remove one filter | `ALL(column)`, `REMOVEFILTERS` |
 | `keep_only($dims)` | remove every filter except these; `keep_only([])` is the grand total | `ALLEXCEPT` |
 | `with_filter($at)` | add or replace filters; a value is equality, `{from, to}` a closed range | a filter argument of `CALCULATE` |
-| `shift($dim; $k)` | move to the k-th neighbouring value of that field present in the data; -1 is the previous one | none: not `PREVIOUSMONTH`, which follows a calendar |
+| `shift($dim; $k)` | move to the k-th neighbouring value of that field present in the data; -1 is the previous one | none by itself; after `on_calendar`, `PREVIOUSMONTH` and `DATEADD` by whole periods |
 | `to_date($dim)` | everything up to and including this value, other filters kept | a running total; `DATESYTD` only when every period has rows |
+| `on_calendar($dim; $values)` | make `shift` and `to_date` on that field step through `$values`, every period in order, instead of through the values present in the data | a marked date table |
 
-**Calendar time is not in this library.** `shift` and `to_date` follow the values present in the data, sorted as values: a month with no rows is skipped, and month names sort alphabetically. For previous-period, year-to-date, months with no rows and DAX's blank rules, write the measures in DAX and compile them with [dax-sql](https://github.com/djouallah/dax-sql) to one DuckDB query; the result runs in DuckDB from Python, the shell or a Splunk search command.
+**Calendar time.** By themselves `shift` and `to_date` follow the values present in the data, sorted as values: a month with no rows is skipped, and month names sort alphabetically. Pipe `on_calendar($dim; $values)` before them to step through every period instead; take the list from `calendar`, for example `calendar("2025-12-01"; "2026-03-31") | map(.year_month) | unique`. The previous calendar month of a cell is then the previous month even when it has no rows, and the measure runs on no rows there. `to_date` compares values, so the list must sort the way it is ordered: `"2026-03"` does, `"Mar"` does not. A report still has rows only for periods that have data. For DAX's own time functions and blank rules, write the measure in DAX and compile it to SQL.
+
+<!-- example: calendar_previous -->
+```jq
+def revenue: map(.amount) | add; [{region: "east", month: "2026-01", amount: 30}, {region: "east", month: "2026-03", amount: 40}] | (calendar("2025-12-01"; "2026-03-31") | map(.year_month) | unique) as $months | rollup(["month"]; {revenue: measure(revenue), previous_with_rows: calc(revenue; shift("month"; -1)), previous_month: calc(revenue; on_calendar("month"; $months) | shift("month"; -1))}) | map(select(.level == "month") | del(.level))
+```
+
+```json
+[
+  {"month": "2026-01", "revenue": 30, "previous_with_rows": null, "previous_month": null},
+  {"month": "2026-03", "revenue": 40, "previous_with_rows": 30, "previous_month": null}
+]
+```
+<!-- /example -->
+
+March's `previous_with_rows` is January's 30, a two-month step reported as if it were one month; its `previous_month` is null, because February has no rows.
+
 
 <!-- example: context_time -->
 ```jq
@@ -931,7 +985,7 @@ A mean is not a sum: split it with its group's rows, or carry the sum and the co
 - **Converters.** At 200,000 rows in the Python `jq` package, parsing included: `unnest` 2.1 s, `to_map` 0.9 s, `rows_from_map` 2.1 s, `to_csv` 0.8 s, `node_link` 2.6 s, `flatten_fields` 12.6 s (it walks every field of every row).
 - **Trees.** `tree_paths` walks each node's ancestry, so its cost grows with depth: 4,000 nodes took 0.5 s in a shallow tree and 16 s in one dozens of levels deep; 200,000 nodes in a shallow tree took 39 s. `tree_rollup` and `nested_from_nodes` call it and cost the same. Org charts and category trees are shallow.
 - **Graphs.** `reachable` and `components` are tested for correctness, not yet measured on large graphs.
-- **Not included yet.** Relationships between tables in the DAX sense (join or `lookup` first), funnels and cohorts, shortest path and topological order, fuzzy matching, approximate quantiles, mode, histograms, correlation, fill-down, top-n per group, date truncation to week or month.
+- **Not included yet.** Relationships between tables in the DAX sense (join or `lookup` first), funnels and cohorts, shortest path and topological order, fuzzy matching, approximate quantiles, mode, histograms, correlation, fill-down, top-n per group, fiscal calendars and holidays.
 
 ## Files and tests
 

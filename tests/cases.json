@@ -879,5 +879,80 @@
       }
     ],
     "jq": "intervals_from_events(.res; .who; .t; .kind; .ttl)"
+  },
+  {
+    "name": "calendar_year",
+    "input": "tests/fixtures/nums.json",
+    "sql": "calendar_year.sql",
+    "jq": "calendar(\"2026-01-01\"; \"2026-12-31\"; \"America/Detroit\")"
+  },
+  {
+    "name": "calendar_new_year",
+    "input": "tests/fixtures/nums.json",
+    "sql": "calendar_new_year.sql",
+    "jq": "tz(\"Europe/London\") as $z | calendar(\"2020-12-25\"; \"2021-01-10\"; $z) + calendar(\"2023-01-01\"; \"2023-01-08\"; $z) + calendar(\"2024-12-28\"; \"2025-01-05\"; $z)"
+  },
+  {
+    "name": "calendar_clock_change_days",
+    "input": "tests/fixtures/nums.json",
+    "expect_value": {
+      "spring": 82800,
+      "autumn": 90000,
+      "plain": 86400,
+      "utc": [
+        1767225600,
+        1767312000
+      ]
+    },
+    "jq": "def hours($d): calendar($d; $d; \"America/Detroit\") | .[0] | .end - .start; {spring: hours(\"2026-03-08\"), autumn: hours(\"2026-11-01\"), plain: hours(\"2026-06-15\"), utc: (calendar(\"2026-01-01\"; \"2026-01-01\") | .[0] | [.start, .end])}"
+  },
+  {
+    "name": "calendar_not_a_date_error",
+    "input": "tests/fixtures/nums.json",
+    "expect_error": "20260101",
+    "jq": "calendar(\"20260101\"; \"2026-01-02\")"
+  },
+  {
+    "name": "calendar_impossible_date_error",
+    "input": "tests/fixtures/nums.json",
+    "expect_error": "is not a date (YYYY-MM-DD)",
+    "jq": "calendar(\"2026-01-01\"; \"2026-02-30\")"
+  },
+  {
+    "name": "calendar_order_error",
+    "input": "tests/fixtures/nums.json",
+    "expect_error": "calendar: from",
+    "jq": "calendar(\"2026-03-01\"; \"2026-02-01\")"
+  },
+  {
+    "name": "calendar_zone_error",
+    "input": "tests/fixtures/nums.json",
+    "expect_error": "tz: zone not in the zone tables",
+    "jq": "calendar(\"2026-03-01\"; \"2026-03-02\"; \"Mars/Phobos\")"
+  },
+  {
+    "name": "on_calendar",
+    "input": "tests/fixtures/sales_gap.json",
+    "sql": "on_calendar.sql",
+    "jq": "def revenue: map(.amount) | add; (calendar(\"2025-12-01\"; \"2026-04-30\") | map(.year_month) | unique) as $months | rollup([\"region\", \"month\"]; {revenue: measure(revenue), prior: calc(revenue; on_calendar(\"month\"; $months) | shift(\"month\"; -1)), to_date: calc(revenue; on_calendar(\"month\"; $months) | to_date(\"month\"))}) | map(select(.level == \"region/month\") | del(.level))"
+  },
+  {
+    "name": "on_calendar_value_outside",
+    "input": "tests/fixtures/sales_gap.json",
+    "expect_value": [
+      {
+        "month": "2026-01",
+        "prior": null
+      },
+      {
+        "month": "2026-03",
+        "prior": null
+      },
+      {
+        "month": "2026-04",
+        "prior": 45
+      }
+    ],
+    "jq": "def revenue: map(.amount) | add; map(select(.region == \"east\")) | rollup([\"month\"]; {prior: calc(revenue; on_calendar(\"month\"; [\"2026-02\", \"2026-03\", \"2026-04\"]) | shift(\"month\"; -1))}) | map(select(.level == \"month\") | del(.level))"
   }
 ]

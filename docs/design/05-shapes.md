@@ -62,6 +62,8 @@ Three rules hold for every shape:
 - **Values arrive as strings.** `cast` and `parse_ts` turn them into numbers and epoch seconds before anything else runs; `""` becomes null.
 - **Nulls behave as in SQL.** Aggregates skip them, a null join key never matches, a null group key forms one group.
 
+A calendar is both a dimension and a set of intervals: `calendar` gives one row per day with its year, quarter, month and weeks, to `lookup` by date as a dimension of a star, and each day's local `start` and `end`, so `join_within` places an event in its day.
+
 ## Sources that are not shapes
 
 A source is a form data arrives in. It has to become a shape before a function can use it.

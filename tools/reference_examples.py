@@ -99,6 +99,14 @@ INTERVAL_EXAMPLES: dict[str, tuple[str, bool, bool]] = {
 }
 EXAMPLES.update(INTERVAL_EXAMPLES)
 
+SALES_GAP = '[{region: "east", month: "2026-01", amount: 30}, {region: "east", month: "2026-03", amount: 40}]'
+CALENDAR_EXAMPLES: dict[str, tuple[str, bool, bool]] = {
+    "calendar_new_year": ('calendar("2020-12-31"; "2021-01-04") | map({date, weekday, iso_year_week, us_week, year_quarter})', False, True),
+    "calendar_days": ('calendar("2026-03-07"; "2026-03-09"; "America/Detroit") as $days | {hours: ($days | map({date, hours: ((.end - .start) / 3600)})), events_by_day: ([{id: 1, at: "2026-03-08 04:30:00"}, {id: 2, at: "2026-03-08 05:30:00"}, {id: 3, at: "2026-03-09 03:59:59"}] | map(.t = (.at | parse_ts) | .zone = "x") | join_within($days | map({zone: "x", date, start, end}); .zone; .zone; .t; .start; .end) | map({id, at, date}))}', False, True),
+    "calendar_previous": ("def revenue: map(.amount) | add; " + SALES_GAP + ' | (calendar("2025-12-01"; "2026-03-31") | map(.year_month) | unique) as $months | rollup(["month"]; {revenue: measure(revenue), previous_with_rows: calc(revenue; shift("month"; -1)), previous_month: calc(revenue; on_calendar("month"; $months) | shift("month"; -1))}) | map(select(.level == "month") | del(.level))', False, True),
+}
+EXAMPLES.update(CALENDAR_EXAMPLES)
+
 CONTEXT_EXAMPLES: dict[str, tuple[str, bool, bool]] = {
     "context_rollup": (REVENUE + SALES + ' | rollup(["region", "product"]; {revenue: measure(revenue), share_of_region: share(revenue; without("product")), share_of_all: share(revenue; keep_only([]))})', False, True),
     "context_time": (REVENUE + SALES + ' | rollup(["month"]; {revenue: measure(revenue), prior: calc(revenue; shift("month"; -1)), to_date: calc(revenue; to_date("month")), east_only: calc(revenue; with_filter({region: "east"}))})', False, True),

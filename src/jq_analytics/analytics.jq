@@ -502,10 +502,10 @@ def without($dim): .at |= del(.[$dim]);
 def keep_only($dims): .at |= with_entries(select(.key as $k | $dims | any(. == $k)));   # ALLEXCEPT
 def with_filter($at): .at += $at;                     # add or replace filters; a value or {from, to}
 
-# Not a calendar. shift and to_date follow the values present in the data, sorted as values: a month
-# with no rows is skipped, and month names sort alphabetically. For calendar time (PREVIOUSMONTH,
-# DATEADD, DATESYTD, months with no rows, DAX's blank rules) write the measure in DAX and compile it
-# with dax-sql to DuckDB SQL (decisions-2026-11-17-02).
+# By themselves shift and to_date follow the values present in the data, sorted as values: a month
+# with no rows is skipped, and month names sort alphabetically. Pipe on_calendar (below) before them
+# to step through calendar periods instead. For DAX's own time functions and blank rules, write the
+# measure in DAX and compile it to SQL.
 #
 # move to the $k-th neighbouring value of $dim (-1 is the previous one). Neighbours are the field's
 # distinct values over all rows, sorted, so "previous" is the previous value that has rows anywhere,
@@ -517,6 +517,14 @@ def shift($dim; $k):
     | if $i == null or $i + $k < 0 or $i + $k >= (.members[$dim] | length) then .void = true
       else .at[$dim] = .members[$dim][$i + $k] end
     end;
+
+# on_calendar: make shift and to_date on $dim step through $values, in the order given, instead of
+# through the values present in the data: calc(revenue; on_calendar("month"; $months) | shift("month"; -1))
+# is the previous calendar month even when it has no rows (the measure then runs on no rows).
+# $values is every period in order, for example calendar(...) | map(.year_month) | unique. A cell
+# whose own value is not in $values has no context after a shift. to_date compares values, so the
+# list has to sort the way it is ordered: "2026-03" does, "Mar" does not.
+def on_calendar($dim; $values): .members[$dim] = $values;
 
 # everything up to and including this value of $dim, other filters kept (a running total, DATESYTD
 # when the year is another filter). No filter on $dim: unchanged.
@@ -746,3 +754,54 @@ def concurrency(start; fin):
   | [foreach .[] as $g ({open: 0};
        ($g | map(.d) | add) as $net | {open: (.open + $net), t: $g[0].t, net: $net};
        select(.net != 0) | {t, open})];
+
+# ---------------------------------------------------------------- calendar
+
+def _cal_bad($who): error("\($who): \(tojson) is not a date (YYYY-MM-DD)");
+# "YYYY-MM-DD" as epoch seconds of that day's midnight UTC; an impossible date (2026-02-30) is an error
+def _cal_date($who):
+  . as $s
+  | if type != "string" or (test("^[0-9]{4}-[0-9]{2}-[0-9]{2}$") | not) then _cal_bad($who)
+    else (try (($s + "T00:00:00Z") | fromdateiso8601) catch null) as $e
+    | if $e == null or ($e | gmtime | strftime("%Y-%m-%d")) != $s then ($s | _cal_bad($who)) else $e end
+    end;
+def _cal_p: (. + (. / 4 | floor) - (. / 100 | floor) + (. / 400 | floor)) % 7;
+def _cal_iso_weeks: if _cal_p == 4 or ((. - 1) | _cal_p) == 3 then 53 else 52 end;   # ISO weeks in year .
+def _cal_pad2: if . < 10 then "0\(.)" else tostring end;
+# the moment whose local clock in zone $z reads the UTC date of the input at 00:00; the second step
+# corrects a first guess that fell on the other side of a clock change
+def _cal_midnight($z): . as $m | ($m - ($m | tz_offset($z))) as $e | $m - ($e | tz_offset($z));
+
+# calendar: one row per day from $from to $to inclusive (both "YYYY-MM-DD"), ignoring its input:
+#   {date, year, quarter, month, day, weekday (0 = Sunday), day_of_year,
+#    iso_year, iso_week   (weeks start Monday; week 1 holds the year's first Thursday; a day near
+#                          New Year can belong to the neighbouring ISO year),
+#    us_week              (weeks start Sunday; week 1 holds 1 January: a spreadsheet's WEEKNUM(d, 1)),
+#    year_month "2026-03", year_quarter "2026-Q1", iso_year_week "2026-W09",
+#    start, end}          epoch seconds of local midnight in $zone (a name or tz($name)) at the
+#                         day's start and end, so a day is the interval [start, end): 23 or 25
+#                         hours long when the clocks change, and join_within puts an event in its day.
+# calendar($from; $to) is in UTC. Not a date, $from after $to, or an unknown zone: an error.
+def calendar($from; $to; $zone):
+  ($zone | if type == "string" then tz(.) else . end) as $z
+  | ($from | _cal_date("calendar")) as $d0 | ($to | _cal_date("calendar")) as $d1
+  | if $d0 > $d1 then error("calendar: from \($from | tojson) is after to \($to | tojson)")
+    else
+    [range(0; (($d1 - $d0) / 86400 | round) + 1) as $i
+     | ($d0 + 86400 * $i) as $m | ($m | gmtime) as $g
+     | ($g[0] | round) as $y | (($g[1] | round) + 1) as $mo | ($g[6] | round) as $wd | (($g[7] | round) + 1) as $doy
+     | (if $wd == 0 then 7 else $wd end) as $dow
+     | ((($doy - $dow + 10) / 7) | floor) as $w
+     | (if $w < 1 then {y: ($y - 1), w: (($y - 1) | _cal_iso_weeks)}
+        elif $w > ($y | _cal_iso_weeks) then {y: ($y + 1), w: 1}
+        else {y: $y, w: $w} end) as $iso
+     | ((($wd - ($doy - 1)) % 7 + 7) % 7) as $jan1
+     | ((($mo - 1) / 3 | floor) + 1) as $q
+     | {date: ($g | strftime("%Y-%m-%d")), year: $y, quarter: $q, month: $mo, day: ($g[2] | round),
+        weekday: $wd, day_of_year: $doy, iso_year: $iso.y, iso_week: $iso.w,
+        us_week: ((($doy + $jan1 - 1) / 7 | floor) + 1),
+        year_month: "\($y)-\($mo | _cal_pad2)", year_quarter: "\($y)-Q\($q)",
+        iso_year_week: "\($iso.y)-W\($iso.w | _cal_pad2)",
+        start: ($m | _cal_midnight($z)), end: (($m + 86400) | _cal_midnight($z))}]
+    end;
+def calendar($from; $to): calendar($from; $to; "UTC");
