@@ -143,7 +143,7 @@ Each loop step, for event `$e` with time `$t`, kind `$k`, holder `$h`:
 At the end marker, an interval still open leaves with `ended_by: "open"` and the end its last hold gave it, which is null when that hold had no ttl. Intervals of one resource never overlap.
 
 ## join_within/6
-<!-- code: 1a4b05ff -->
+<!-- code: 592f25da -->
 
 A left outer join of rows that have a time to the interval of the same key that contains that time. It answers "who held this at time T". In SQL: `LEFT JOIN intervals i ON i.key = l.key AND l.t >= i.start AND (i.end IS NULL OR l.t < i.end)`.
 
@@ -219,7 +219,7 @@ Step 3: from that position, move forward while the next start is also at or befo
 | 250 | 1 (bo) | bo's end 200 is not after 250, and `m` at 1 is 200: no earlier interval ends after 250, stop | left row alone |
 | -5 | -1 | before the first interval: stop | left row alone |
 
-Step 4: a left row that stopped on an interval containing its time is merged with it by `_merge`, the same helper the flat joins use: a field on both sides with different values is an error.
+Step 4: a left row that stopped on an interval containing its time is merged with it by `_merge`, the same helper the flat joins use: a field name on both sides that is not the key comes out twice, the right one with `_right`.
 
 ### The definition
 

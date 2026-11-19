@@ -9,7 +9,7 @@ How each definition in `src/jq_analytics/analytics.jq` is written: the code as i
 | [15](15-time-zones-and-calendar.md) | time zones and calendar | 4 |
 | [20](20-grouping.md) | grouping | 2 |
 | [25](25-several-tables-at-once.md) | several tables at once | 3 |
-| [30](30-joins.md) | joins | 13 |
+| [30](30-joins.md) | joins | 16 |
 | [35](35-windows.md) | windows | 7 |
 | [40](40-reshape.md) | reshape | 2 |
 | [45](45-state-machines-over-time.md) | state machines over time | 6 |

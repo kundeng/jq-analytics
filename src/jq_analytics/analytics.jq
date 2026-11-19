@@ -210,15 +210,54 @@ def shape: map_values({rows: length, fields: (map(keys) | add // [] | unique)});
 #   shape - flat (join_on: one output row per match) or nested (join_nest: matches as an array).
 # Rules for all: a null key never matches. Duplicate keys multiply rows in a flat join. Output
 # follows the left table's order, then the right table's order among matches, on every engine.
-# A flat match is the left row merged with the right row. A field present in both with the same
-# value is kept once; with different values it is an error naming the field, never a silent
-# overwrite: rename one side first.
+# A flat match is the left row with the right row's fields added. A field name that both tables
+# have is kept twice: the left one under its name, the right one under name + suffix ("_right"
+# unless join_on is given another), in every output row, whether or not the two values agree.
+# The exception is a field both keys read directly (`.host` and `.host`, `{site, host}` on both
+# sides, the same position of two arrays): it is equal in every match, so it appears once.
+# A suffixed name that already exists in either table is an error: pass another suffix.
+# A null suffix gives the strict rule instead: a shared field with the same value is kept once,
+# and with different values it is an error naming the field.
 
-def _merge($l; $r):
-  reduce ($r | to_entries[]) as $e ($l;
-    if has($e.key) and .[$e.key] != $e.value
-    then error("join: field \($e.key | tojson) differs between left (\(.[$e.key] | tojson)) and right (\($e.value | tojson)); rename one side first")
-    else .[$e.key] = $e.value end);
+# the field names lkey and rkey both read directly, at the same place of the key
+def _key_fields($lnames; $rnames; lkey; rkey):
+  def probe: map({key: ., value: {"\u0000field": .}}) | from_entries;
+  def marks: [paths as $p | getpath($p) as $v
+              | select(($v | type) == "object" and ($v | length) == 1 and ($v | has("\u0000field")))
+              | {p: $p, f: $v["\u0000field"]}];
+  (try ([$lnames | probe | lkey] | marks) catch []) as $a
+  | (try ([$rnames | probe | rkey] | marks) catch []) as $b
+  | [$a[] as $x | $b[] | select(.p == $x.p and .f == $x.f) | .f] | unique;
+
+# the plan for merging rows of two tables: {strict}, or {keys: {name: true}, names: {name: new name}}
+def _merge_plan($left; $right; lkey; rkey; $suffix):
+  if $suffix == null then {strict: true}
+  elif ($suffix | type) != "string" or $suffix == "" then error("join: the suffix must be a non-empty string, or null for the strict rule")
+  else
+    ([$left[] | keys[]] | unique) as $ln
+    | ([$right[] | keys[]] | unique) as $rn
+    | _key_fields($ln; $rn; lkey; rkey) as $k
+    | ($ln - ($ln - $rn) - $k) as $shared
+    | ($shared | map(. + $suffix)) as $new
+    | (($new - ($new - ($ln + $rn)))[0]) as $taken
+    | if $taken != null
+      then error("join: field \($taken | tojson) already exists, so the right table's \($taken | rtrimstr($suffix) | tojson) cannot take that name; pass another suffix")
+      else {keys: ($k | map({key: ., value: true}) | from_entries),
+            names: ([$shared, $new] | transpose | map({key: .[0], value: .[1]}) | from_entries)}
+      end
+  end;
+
+def _merge($l; $r; $plan):
+  if $plan.strict then
+    reduce ($r | to_entries[]) as $e ($l;
+      if has($e.key) and .[$e.key] != $e.value
+      then error("join: field \($e.key | tojson) differs between left (\(.[$e.key] | tojson)) and right (\($e.value | tojson)); rename one side first")
+      else .[$e.key] = $e.value end)
+  else
+    reduce ($r | to_entries[]) as $e ($l;
+      if $plan.keys[$e.key] then (if has($e.key) then . else .[$e.key] = $e.value end)
+      else .[$plan.names[$e.key] // $e.key] = $e.value end)
+  end;
 
 # each left row with its matching right rows: [{l: row, m: [{key: right position, value: right row}]}]
 def _matches($right; lkey; rkey; cond):
@@ -228,19 +267,24 @@ def _matches($right; lkey; rkey; cond):
      | {l: $l, m: [(if $k == null then empty else $ix[$k | tojson][]? end)
                    | select(.value as $r | {l: $l, r: $r} | cond)]}];
 
-# the general flat join
-def join_on($right; lkey; rkey; cond; $kind):
-  _matches($right; lkey; rkey; cond) as $rows
-  | if $kind == "inner" then [$rows[] | .l as $l | .m[] | _merge($l; .value)]
-    elif $kind == "left" then [$rows[] | .l as $l | if (.m | length) > 0 then .m[] | _merge($l; .value) else $l end]
+# the general flat join; $suffix as described above
+def join_on($right; lkey; rkey; cond; $kind; $suffix):
+  . as $left
+  | (if $kind == "inner" or $kind == "left" or $kind == "full" then _merge_plan($left; $right; lkey; rkey; $suffix) else null end) as $plan
+  | _matches($right; lkey; rkey; cond) as $rows
+  | if $kind == "inner" then [$rows[] | .l as $l | .m[] | _merge($l; .value; $plan)]
+    elif $kind == "left" then [$rows[] | .l as $l | if (.m | length) > 0 then .m[] | _merge($l; .value; $plan) else $l end]
     elif $kind == "semi" then [$rows[] | select((.m | length) > 0) | .l]
     elif $kind == "anti" then [$rows[] | select((.m | length) == 0) | .l]
     elif $kind == "full" then
-      # right rows that matched no left row follow the left part, in right order
+      # right rows that matched no left row follow the left part, in right order, with their
+      # shared fields under the suffixed names like every other row
       ([$rows[].m[] | {key: (.key | tostring), value: true}] | from_entries) as $hit
-      | [$rows[] | .l as $l | if (.m | length) > 0 then .m[] | _merge($l; .value) else $l end]
-        + [$right | to_entries[] | select($hit[.key | tostring] | not) | .value]
+      | [$rows[] | .l as $l | if (.m | length) > 0 then .m[] | _merge($l; .value; $plan) else $l end]
+        + [$right | to_entries[] | select($hit[.key | tostring] | not) | .value
+           | if $plan.strict then . else _merge({}; .; $plan) end]
     else error("join_on: unknown kind \($kind | tojson)") end;
+def join_on($right; lkey; rkey; cond; $kind): join_on($right; lkey; rkey; cond; $kind; "_right");
 
 # equality joins: shorthands for join_on with no condition
 def join_inner($right; lkey; rkey): join_on($right; lkey; rkey; true; "inner");
@@ -265,7 +309,8 @@ def lookup($dim; lkey; dkey; $as):
   | map(. as $l | ($l | lkey) as $k | $l + {($as): (if $k == null then null else $ix[$k | tojson] end)});
 
 # interval overlap: pairs with the same key whose intervals overlap, each interval closed at its
-# start and open at its end ([start, end)). Flat and inner; rename start and end on one side first.
+# start and open at its end ([start, end)). Flat and inner; a start or end field named the same on
+# both sides comes out twice, the right one with "_right".
 def join_overlap($right; lkey; rkey; lstart; lend; rstart; rend):
   join_on($right; lkey; rkey; (.l | lstart) < (.r | rend) and (.r | rstart) < (.l | lend); "inner");
 
@@ -276,7 +321,8 @@ def join_overlap($right; lkey; rkey; lstart; lend; rstart; rend):
 # fixture; pandas merge_asof takes the last; SQL leaves it open). No match, or a null key or time
 # on the left: the left row alone. Right rows with a null key or time are dropped.
 def join_asof($right; lkey; rkey; ltime; rtime; $max_age):
-  ([$right[] | select((rkey) != null and (rtime) != null)] | group_by(rkey)
+  _merge_plan(.; $right; lkey; rkey; "_right") as $plan
+  | ([$right[] | select((rkey) != null and (rtime) != null)] | group_by(rkey)
    | map({key: (.[0] | rkey | tojson), value: (sort_by(rtime) | {rows: ., t: map(rtime)})}) | from_entries) as $ix
   | [.[] as $l | ($l | lkey) as $k | ($l | ltime) as $t
      | if $k == null or $t == null or $ix[$k | tojson] == null then $l
@@ -286,7 +332,7 @@ def join_asof($right; lkey; rkey; ltime; rtime; $max_age):
        # then step back to the first of its run of equal times
        | (if $i >= 0 then $i else -2 - $i end) as $last
        | (if $last < 0 then -1 else $last | until(. == 0 or $g.t[. - 1] != $g.t[$last]; . - 1) end) as $j
-       | if $j < 0 or ($max_age != null and $t - $g.t[$j] > $max_age) then $l else _merge($l; $g.rows[$j]) end
+       | if $j < 0 or ($max_age != null and $t - $g.t[$j] > $max_age) then $l else _merge($l; $g.rows[$j]; $plan) end
        end];
 def join_asof($right; lkey; rkey; ltime; rtime): join_asof($right; lkey; rkey; ltime; rtime; null);
 
@@ -830,10 +876,11 @@ def intervals_from_events(resource; holder; time; kind; ttl):
 # join_within (left outer): each left row with the interval of the same key whose [rstart, rend)
 # contains the left row's ltime; a null rend means still open. No such interval, or a null key or
 # time on the left: the left row alone. When several intervals of a key contain the time, the one
-# that started last. Merged like every flat join: a field on both sides with different values is
-# an error. Use it for "who held this at T"; join_asof is for "the latest value at or before T".
+# that started last. Merged like every flat join: a field name on both sides that is not the
+# key comes out twice, the right one with "_right". Use it for "who held this at T"; join_asof is for "the latest value at or before T".
 def join_within($intervals; lkey; rkey; ltime; rstart; rend):
   1.7976931348623157e308 as $inf
+  | _merge_plan(.; $intervals; lkey; rkey; "_right") as $plan
   | ([$intervals[] | select((rkey) != null and (rstart) != null)] | group_by(rkey)
      | map(sort_by(rstart)
            | {key: (.[0] | rkey | tojson),
@@ -850,7 +897,7 @@ def join_within($intervals; lkey; rkey; ltime; rstart; rend):
        | ($at | until(. + 1 >= ($g.s | length) or $g.s[. + 1] > $t; . + 1)) as $last
        # go back until an interval contains $t, or no earlier one can
        | ($last | until(. < 0 or $g.e[.] > $t or $g.m[.] <= $t; . - 1)) as $c
-       | if $c >= 0 and $g.e[$c] > $t then _merge($l; $g.rows[$c]) else $l end
+       | if $c >= 0 and $g.e[$c] > $t then _merge($l; $g.rows[$c]; $plan) else $l end
        end];
 
 # an interval needs a start, and an end that is not before it

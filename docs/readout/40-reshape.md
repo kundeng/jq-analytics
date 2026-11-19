@@ -98,7 +98,7 @@ The outer `[...]` collects the rows of all input rows into one array.
 
 ### unpivot: the definition
 
-`unpivot/3`, lines 324 to 330:
+`unpivot/3`, lines 370 to 376:
 
 ```jq
 # unpivot: every field not in $keep becomes its own row {keep fields..., $name: field, $value: value}.
@@ -202,7 +202,7 @@ For `db01`, `$cells` has `ram` and `disk`. `$cells["cpu"]` is null, so the `cpu`
 
 ### pivot: the definition
 
-`pivot/5`, lines 332 to 337:
+`pivot/5`, lines 378 to 383:
 
 ```jq
 # pivot: one output row per rowkey (an object) and one column per name in $cols (Power Query's

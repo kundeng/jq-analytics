@@ -75,7 +75,7 @@ The library is one file, `analytics.jq`, in a directory `<dir>` below. Its time-
 | Python `jq` package | `jq.compile('include "analytics" {search: "<dir>"}; ' + program).input_value(rows).first()`; the package has no `-L` and an empty default search list, so the path goes in the program |
 | Python package `jq_analytics` | `jq_analytics.include()` returns the `include` line with this package's directory filled in |
 
-Tested on jq 1.7.1 (Apple's build), jq 1.8.2, gojq 0.12.20, jaq 3.1.2 and the `jq` Python package 1.13.0, which builds jq 1.8.2: all pass the same 150 test cases (`tests/run_tests.py`). The library uses no builtin that is missing from any of them, and it parenthesises `reduce … as` inside function arguments, which jq 1.7.1's grammar requires.
+Tested on jq 1.7.1 (Apple's build), jq 1.8.2, gojq 0.12.20, jaq 3.1.2 and the `jq` Python package 1.13.0, which builds jq 1.8.2: all pass the same 166 test cases (`tests/run_tests.py`). The library uses no builtin that is missing from any of them, and it parenthesises `reduce … as` inside function arguments, which jq 1.7.1's grammar requires.
 
 ## Names
 
@@ -498,9 +498,9 @@ Every join is four choices, and each is an argument:
 | Kind | `"inner"`, `"left"`, `"full"`, `"semi"`, `"anti"` | none |
 | Shape | flat (`join_on`: one row per match) or nested (`join_nest`: matches as an array) | nested never multiplies rows |
 
-The input is the left table and `$right` the right table. Rules for all joins: a null key never matches; duplicate keys multiply rows in a flat join; output follows the left table's order, then the right table's order among matches. A flat match is the left row merged with the right row: a field in both with the same value is kept once, and with different values it is an error naming the field, so rename one side first. jq's own `JOIN` builtins are a left join only, fail on numeric keys without `tostring`, and keep only the last of duplicate right keys.
+The input is the left table and `$right` the right table. Rules for all joins: a null key never matches; duplicate keys multiply rows in a flat join; output follows the left table's order, then the right table's order among matches. A flat match is the left row with the right row's fields added. A field name that both tables have is kept twice, the left one under its name and the right one with the suffix `_right` (`site` and `site_right`), in every output row whether or not the values agree; this is the rule of Polars. A field that both keys read directly (`.host` and `.host`, or the same field of two object or array keys) appears once. A suffixed name that already exists is an error. jq's own `JOIN` builtins are a left join only, fail on numeric keys without `tostring`, and keep only the last of duplicate right keys.
 
-**`join_on($right; lkey; rkey; cond; $kind)`.** The general flat join. Matches DuckDB `JOIN … ON key equality AND condition` in each kind, and Power Query `Table.Join` with a `JoinKind`.
+**`join_on($right; lkey; rkey; cond; $kind)`**, **`join_on($right; lkey; rkey; cond; $kind; $suffix)`.** The general flat join. `$suffix` replaces `"_right"`; `null` asks for the strict rule, where a shared field with equal values is kept once and with different values is an error naming the field. Matches DuckDB `JOIN … ON key equality AND condition` in each kind, and Power Query `Table.Join` with a `JoinKind`.
 
 <!-- example: join_on -->
 ```jq
@@ -514,6 +514,21 @@ The input is the left table and `$right` the right table. Rules for all joins: a
   {"id": 2, "amount": 60, "band": "upper"},
   {"id": 3, "amount": 5, "band": null}
 ]
+```
+<!-- /example -->
+
+A field name on both sides: both tables have `site`, the key `host` appears once, and the unmatched request has no `site_right`.
+
+<!-- example: join_shared_field -->
+```jq
+[{host: "web01", site: "N", owner: "ann"}, {host: "db01", site: "S", owner: "bo"}] as $hosts | [{id: 1, host: "web01", site: "N"}, {id: 2, host: "db01", site: "N"}, {id: 3, host: "zz09", site: "S"}] | {joined: join_left($hosts; .host; .host), sites_differ: (join_inner($hosts; .host; .host) | map(select(.site != .site_right) | .id))}
+```
+
+```json
+{
+  "joined": [{"id": 1, "host": "web01", "site": "N", "site_right": "N", "owner": "ann"}, {"id": 2, "host": "db01", "site": "N", "site_right": "S", "owner": "bo"}, {"id": 3, "host": "zz09", "site": "S"}],
+  "sites_differ": [2]
+}
 ```
 <!-- /example -->
 

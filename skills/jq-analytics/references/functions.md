@@ -199,17 +199,17 @@ for checking a pipeline midway: each table's row count and field names (sorted)
 
 | Call | What it is for |
 |---|---|
-| `join_on($right; lkey; rkey; cond; $kind)` | The general flat join: one output row per matching pair, with the fields of both rows |
+| `join_on($right; lkey; rkey; cond; $kind; $suffix)`, `join_on($right; lkey; rkey; cond; $kind)` | The general flat join: one output row per matching pair, with the fields of both rows |
 | `join_inner($right; lkey; rkey)`, `join_left($right; lkey; rkey)`, `join_full($right; lkey; rkey)`, `join_semi($right; lkey; rkey)`, `join_anti($right; lkey; rkey)` | The five kinds of equality join under their own names |
 | `join_nest($right; lkey; rkey; cond; $as)` | Every left row exactly once, with one new field holding the array of its matching right rows |
 | `lookup($dim; lkey; dkey; $as)` | Attaches the one matching row of a second table under a new field |
 | `join_overlap($right; lkey; rkey; lstart; lend; rstart; rend)` | Pairs with the same key whose time intervals overlap |
 | `join_asof($right; lkey; rkey; ltime; rtime; $max_age)`, `join_asof($right; lkey; rkey; ltime; rtime)` | For each left row, the right row with the same key and the latest time at or before the left row's time |
 
-`join_on($right; lkey; rkey; cond; $kind)`
+`join_on($right; lkey; rkey; cond; $kind; $suffix)`
 
 ```text
-the general flat join
+the general flat join; $suffix as described above
 ```
 
 `join_inner($right; lkey; rkey)`
@@ -236,7 +236,8 @@ A key that appears twice in the dimension is an error, so a lookup can never mul
 
 ```text
 interval overlap: pairs with the same key whose intervals overlap, each interval closed at its
-start and open at its end ([start, end)). Flat and inner; rename start and end on one side first.
+start and open at its end ([start, end)). Flat and inner; a start or end field named the same on
+both sides comes out twice, the right one with "_right".
 ```
 
 `join_asof($right; lkey; rkey; ltime; rtime; $max_age)`
@@ -661,8 +662,8 @@ A kind other than the three, or a null time on an event with a kind, is an error
 join_within (left outer): each left row with the interval of the same key whose [rstart, rend)
 contains the left row's ltime; a null rend means still open. No such interval, or a null key or
 time on the left: the left row alone. When several intervals of a key contain the time, the one
-that started last. Merged like every flat join: a field on both sides with different values is
-an error. Use it for "who held this at T"; join_asof is for "the latest value at or before T".
+that started last. Merged like every flat join: a field name on both sides that is not the
+key comes out twice, the right one with "_right". Use it for "who held this at T"; join_asof is for "the latest value at or before T".
 ```
 
 `merge_intervals(key; start; fin)`

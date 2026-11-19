@@ -2,12 +2,14 @@
 
 Generated from `src/jq_analytics/analytics.jq` and `docs/readout/notes/joins.md`. Do not edit.
 
-Thirteen definitions. Two helpers do the work: `_matches` pairs each left row with its right rows, and `_merge` joins one left row to one right row. `join_on` chooses what to emit from those pairs. Everything else except `lookup` and `join_asof` is a one-line call of `join_on` or `_matches`.
+Sixteen definitions. Two helpers do the work: `_matches` pairs each left row with its right rows, and `_merge` joins one left row to one right row. `_merge` follows a plan made once per join by `_merge_plan`, which says what happens to a field name that both tables have; `_key_fields` finds the key's own field names for that plan. `join_on` chooses what to emit from those pairs. Everything else except `lookup` and `join_asof` is a one-line call of `join_on` or `_matches`.
 
 ```mermaid
 flowchart LR
   M[_matches: index the right table by key, pair each left row with its matches] --> ON[join_on: emit by kind]
-  MG[_merge: one left row + one right row] --> ON
+  KF[_key_fields: the names both keys read] --> MP[_merge_plan: which right fields get the suffix]
+  MP --> MG
+  MG[_merge: one left row + one right row, by the plan] --> ON
   ON --> EQ[join_inner, join_left, join_full, join_semi, join_anti]
   ON --> OV[join_overlap]
   M --> NEST[join_nest]
@@ -49,7 +51,9 @@ On this page, in the order of the file:
 
 | Function | Whose | What it is for |
 |---|---|---|
-| `_merge` | Internal helper, not for callers | One left row and one right row made into one output row |
+| `_key_fields` | Internal helper, not for callers | The field names that both keys read directly, at the same place of the key |
+| `_merge_plan` | Internal helper, not for callers | The plan for merging the rows of two tables, made once per join: which fields are the key, and the new name of every other field name that both tables have |
+| `_merge` | Internal helper, not for callers | One left row and one right row made into one output row, by the plan |
 | `_matches` | Internal helper, not for callers | The pairing step that every join here shares, except `lookup` and `join_asof` |
 | `join_on` | Public function | The general flat join: one output row per matching pair, with the fields of both rows |
 | `join_inner`, `join_left`, `join_full`, `join_semi`, `join_anti` | Public functions | The five kinds of equality join under their own names |
@@ -60,85 +64,308 @@ On this page, in the order of the file:
 
 ---
 
-## _merge
+## _key_fields
 
-**Internal helper, not for callers** · `_merge($l; $r)`
+**Internal helper, not for callers** · `_key_fields($lnames; $rnames; lkey; rkey)`
 
-One left row and one right row made into one output row. A flat join calls it for every matching pair. It differs from jq's `$l + $r` in one way: a field that both rows have with different values is an error, not a silent overwrite.
+The field names that both keys read directly, at the same place of the key. A join's key is a filter, not a field name, so the library has to find out which fields it reads: those fields are equal in every match and should appear once in the output, not twice.
 
-### _merge: the example
+### _key_fields: the example
 
-Request 2 and the first `db01` host record. Both have a `host` field, with the same value.
+The requests have the fields `id` and `host`, the hosts `host` and `site`, and both keys are `.host`.
 
 ```jq
-_merge({id: 2, host: "db01"}; {host: "db01", site: "S"})
+_key_fields(["host", "id"]; ["host", "site"]; .host; .host)
 ```
 
 ```json
-{"id":2,"host":"db01","site":"S"}
+["host"]
 ```
 
-One row with the fields of both. `host` appears once.
+One name: `host` is the key on both sides.
+
+### _key_fields: reading the call
+
+| Argument | In the example | What it is |
+|---|---|---|
+| `$lnames` | `["host", "id"]` | a value: every field name of the left table |
+| `$rnames` | `["host", "site"]` | a value: every field name of the right table |
+| `lkey`, `rkey` | `.host`, `.host` | filters: the join's two keys, exactly as the join received them |
+
+### _key_fields: what happens inside, on the example
+
+The keys are run on a made-up row in which every field holds a label with its own name. Whatever comes out carries the labels of the fields the key read.
+
+Step 1, `probe`: the made-up left row. The label's field name starts with a character no real field has (shown as `\u0000`).
+
+```jq
+["host", "id"] | map({key: ., value: {"\u0000field": .}}) | from_entries
+```
+
+```json
+{"host":{"\u0000field":"host"},"id":{"\u0000field":"id"}}
+```
+
+Step 2, `[$lnames | probe | lkey]`: the key run on that row, inside an array. `.host` gives the label of `host`.
+
+```jq
+[{"host": {"\u0000field": "host"}, "id": {"\u0000field": "id"}} | .host]
+```
+
+```json
+[
+  {"\u0000field": "host"}
+]
+```
+
+Step 3, `marks`: every label in that result, with the place where it sits. Here one label, at position 0.
+
+```jq
+[{"\u0000field": "host"}] | [paths as $p | getpath($p) as $v | select(($v | type) == "object" and ($v | length) == 1 and ($v | has("\u0000field"))) | {p: $p, f: $v["\u0000field"]}]
+```
+
+```json
+[
+  {"p": [0], "f": "host"}
+]
+```
+
+Step 4: the same for the right side, and the names whose label sits at the same place on both sides.
+
+### _key_fields: other keys
+
+An object key and an array key work the same way, because the labels pass through them. A key that computes something from the field fails on a label, which is not a string; the failure is caught and no field counts as the key. Two array keys that read the same fields in a different order share no place, so nothing counts either.
+
+```jq
+_key_fields(["host", "site"]; ["host", "site"]; {site, host}; {site, host}),
+_key_fields(["host", "site"]; ["host", "site"]; [.site, .host]; [.site, .host]),
+_key_fields(["host"]; ["host"]; .host | ascii_downcase; .host | ascii_downcase),
+_key_fields(["a", "b"]; ["a", "b"]; [.a, .b]; [.b, .a])
+```
+
+```json
+["host","site"]
+["host","site"]
+[]
+[]
+```
+
+### _key_fields: the definition
+
+`_key_fields/4`, lines 222 to 230:
+
+```jq
+# the field names lkey and rkey both read directly, at the same place of the key
+def _key_fields($lnames; $rnames; lkey; rkey):
+  def probe: map({key: ., value: {"\u0000field": .}}) | from_entries;
+  def marks: [paths as $p | getpath($p) as $v
+              | select(($v | type) == "object" and ($v | length) == 1 and ($v | has("\u0000field")))
+              | {p: $p, f: $v["\u0000field"]}];
+  (try ([$lnames | probe | lkey] | marks) catch []) as $a
+  | (try ([$rnames | probe | rkey] | marks) catch []) as $b
+  | [$a[] as $x | $b[] | select(.p == $x.p and .f == $x.f) | .f] | unique;
+```
+
+Built into jq: `from_entries`, `getpath`, `has`, `length`, `map`, `paths`, `select`, `type`, `unique`.
+
+- `def probe` and `def marks` are two helpers defined inside the function: steps 1 and 3.
+- `try (...) catch []`: a key that cannot run on labels gives no marks.
+- The last line is step 4. `unique` sorts the names and drops repeats.
+
+---
+
+## _merge_plan
+
+**Internal helper, not for callers** · `_merge_plan($left; $right; lkey; rkey; $suffix)`
+
+The plan for merging the rows of two tables, made once per join: which fields are the key, and the new name of every other field name that both tables have.
+
+### _merge_plan: the example
+
+Two requests that carry a `site` of their own, and the hosts, which have a `site` too. The key is `host`.
+
+```jq
+_merge_plan([{id: 1, host: "db01", site: "N"}, {id: 2, host: "db02", site: "S"}];
+            [{host: "db01", site: "S", owner: "ann"}];
+            .host; .host; "_right")
+```
+
+```json
+{"keys":{"host":true},"names":{"site":"site_right"}}
+```
+
+`host` is the key and will appear once. `site` is on both sides and is not the key, so the right table's `site` will be written as `site_right`. `id` and `owner` are on one side only and are not in the plan.
+
+### _merge_plan: what happens inside, on the example
+
+Step 1, `$ln` and `$rn`: the field names of each table, over all its rows.
+
+```jq
+[{id: 1, host: "db01", site: "N"}, {id: 2, host: "db02", site: "S"}] | [.[] | keys[]] | unique
+```
+
+```json
+["host","id","site"]
+```
+
+Step 2, `$k`: `_key_fields` on those names, `["host"]`.
+
+Step 3, `$shared`: the names on both sides, without the key. `$ln - ($ln - $rn)` is the names of the left table that the right table also has.
+
+```jq
+["host", "id", "site"] as $ln | ["host", "owner", "site"] as $rn | ($ln - ($ln - $rn)), ($ln - ($ln - $rn) - ["host"])
+```
+
+```json
+["host","site"]
+["site"]
+```
+
+Step 4, `$new`: each shared name with the suffix, `["site_right"]`. If one of the new names is already a field of either table, the plan stops with an error.
+
+The plan is made from the field names, not from the values. `site_right` is in every matched row, whether or not the two sites agree, so the output has the same fields on every run.
+
+### _merge_plan: what is refused
+
+A new name that is taken, and a suffix that is not a string. A null suffix is allowed and asks for the strict rule, described under `_merge` below.
+
+```jq
+(try _merge_plan([{a: 1, x: 1, x_right: 2}]; [{a: 1, x: 5}]; .a; .a; "_right") catch .),
+(try _merge_plan([{a: 1}]; [{a: 1}]; .a; .a; "") catch .),
+_merge_plan([{a: 1}]; [{a: 1}]; .a; .a; null)
+```
+
+```json
+"join: field \"x_right\" already exists, so the right table's \"x\" cannot take that name; pass another suffix"
+"join: the suffix must be a non-empty string, or null for the strict rule"
+{"strict":true}
+```
+
+### _merge_plan: the definition
+
+`_merge_plan/5`, lines 232 to 248:
+
+```jq
+# the plan for merging rows of two tables: {strict}, or {keys: {name: true}, names: {name: new name}}
+def _merge_plan($left; $right; lkey; rkey; $suffix):
+  if $suffix == null then {strict: true}
+  elif ($suffix | type) != "string" or $suffix == "" then error("join: the suffix must be a non-empty string, or null for the strict rule")
+  else
+    ([$left[] | keys[]] | unique) as $ln
+    | ([$right[] | keys[]] | unique) as $rn
+    | _key_fields($ln; $rn; lkey; rkey) as $k
+    | ($ln - ($ln - $rn) - $k) as $shared
+    | ($shared | map(. + $suffix)) as $new
+    | (($new - ($new - ($ln + $rn)))[0]) as $taken
+    | if $taken != null
+      then error("join: field \($taken | tojson) already exists, so the right table's \($taken | rtrimstr($suffix) | tojson) cannot take that name; pass another suffix")
+      else {keys: ($k | map({key: ., value: true}) | from_entries),
+            names: ([$shared, $new] | transpose | map({key: .[0], value: .[1]}) | from_entries)}
+      end
+  end;
+```
+
+Built into jq: `error`, `from_entries`, `keys`, `map`, `rtrimstr`, `tojson`, `transpose`, `type`, `unique`. From this library: `_key_fields`.
+
+- `if $suffix == null then {strict: true}`: the strict plan needs no names.
+- The `$ln`, `$rn`, `$k`, `$shared` and `$new` lines are steps 1 to 4.
+- `$taken`: the first new name that is already a field somewhere, or null.
+- The last lines build the plan. `[$shared, $new] | transpose` pairs each name with its new name.
+
+---
+
+## _merge
+
+**Internal helper, not for callers** · `_merge($l; $r; $plan)`
+
+One left row and one right row made into one output row, by the plan. A flat join calls it for every matching pair. It differs from jq's `$l + $r`, where the right row's value silently replaces the left row's.
+
+### _merge: the example
+
+Request 1 with a `site` of its own, and the `db01` host record. The plan is the one from above.
+
+```jq
+_merge({id: 1, host: "db01", site: "N"}; {host: "db01", site: "S", owner: "ann"};
+       {keys: {host: true}, names: {site: "site_right"}})
+```
+
+```json
+{"id":1,"host":"db01","site":"N","site_right":"S","owner":"ann"}
+```
+
+One row. `host` appears once, both sites are there, and `owner` is added under its own name.
 
 ### _merge: what happens inside, on the example
 
-Step 1, `$r | to_entries`: the right row as a list of field and value pairs.
+Step 1, `$r | to_entries`: the right row as a list of field and value pairs. (The row is written here with its fields in alphabetical order, because one engine, gojq, always lists them that way.)
 
 ```jq
-{host: "db01", site: "S"} | to_entries
+{host: "db01", owner: "ann", site: "S"} | to_entries
 ```
 
 ```json
 [
   {"key": "host", "value": "db01"},
+  {"key": "owner", "value": "ann"},
   {"key": "site", "value": "S"}
 ]
 ```
 
-Step 2: `reduce` starts from the left row and handles one pair at a time. The run below uses `foreach`, which does the same and also prints the row after each pair:
+Step 2: `reduce` starts from the left row and handles one pair at a time. The run below uses `foreach`, which has the same form and also gives the row after each pair. Both are keywords of jq, written `reduce SOURCE as $e (START; UPDATE)`: START is the row to begin with, and UPDATE is run once per pair on the row so far.
 
 ```jq
-foreach ({host: "db01", site: "S"} | to_entries[]) as $e ({id: 2, host: "db01"}; .[$e.key] = $e.value)
+{keys: {host: true}, names: {site: "site_right"}} as $plan
+| foreach ({host: "db01", owner: "ann", site: "S"} | to_entries[]) as $e ({id: 1, host: "db01", site: "N"};
+    if $plan.keys[$e.key] then (if has($e.key) then . else .[$e.key] = $e.value end)
+    else .[$plan.names[$e.key] // $e.key] = $e.value end)
 ```
 
 ```json
-{"id":2,"host":"db01"}
+{"id":1,"host":"db01","site":"N"}
+{"id":1,"host":"db01","site":"N","owner":"ann"}
+{"id":1,"host":"db01","site":"N","owner":"ann","site_right":"S"}
+```
+
+Three values, one per pair. After `host` the row is unchanged: it is a key field and the row has it. After `owner` the row has `owner`. After `site` it has `site_right`.
+
+### _merge: the strict plan
+
+With the plan `{strict: true}` a field on both sides is kept once when the two values are equal, and stops the join when they differ. The message names the field and both values.
+
+```jq
+_merge({id: 2, host: "db01"}; {host: "db01", site: "S"}; {strict: true}),
+(try _merge({id: 2, host: "db01", site: "N"}; {host: "db01", site: "S"}; {strict: true}) catch .)
+```
+
+```json
 {"id":2,"host":"db01","site":"S"}
-```
-
-Two values, one per pair. After `host` the row is unchanged, because the field is set to the value it already has. After `site` the row has its new field.
-
-### _merge: what is refused
-
-A field on both sides with different values stops the join. The message names the field and both values:
-
-```jq
-try _merge({id: 2, host: "db01", site: "N"}; {host: "db01", site: "S"}) catch .
-```
-
-```json
 "join: field \"site\" differs between left (\"N\") and right (\"S\"); rename one side first"
 ```
 
-The remedy is in the message: rename the field on one side before the join.
-
 ### _merge: the definition
 
-`_merge/2`, lines 217 to 221:
+`_merge/3`, lines 250 to 260:
 
 ```jq
-def _merge($l; $r):
-  reduce ($r | to_entries[]) as $e ($l;
-    if has($e.key) and .[$e.key] != $e.value
-    then error("join: field \($e.key | tojson) differs between left (\(.[$e.key] | tojson)) and right (\($e.value | tojson)); rename one side first")
-    else .[$e.key] = $e.value end);
+def _merge($l; $r; $plan):
+  if $plan.strict then
+    reduce ($r | to_entries[]) as $e ($l;
+      if has($e.key) and .[$e.key] != $e.value
+      then error("join: field \($e.key | tojson) differs between left (\(.[$e.key] | tojson)) and right (\($e.value | tojson)); rename one side first")
+      else .[$e.key] = $e.value end)
+  else
+    reduce ($r | to_entries[]) as $e ($l;
+      if $plan.keys[$e.key] then (if has($e.key) then . else .[$e.key] = $e.value end)
+      else .[$plan.names[$e.key] // $e.key] = $e.value end)
+  end;
 ```
 
 Built into jq: `error`, `has`, `to_entries`, `tojson`.
 
-- `reduce ($r | to_entries[]) as $e ($l; ...)`: steps 1 and 2. `$l` and `$r` have a `$`, so they are values: the two rows themselves.
-- `if has($e.key) and .[$e.key] != $e.value then error(...)`: the row built so far already has this field, with another value.
-- `else .[$e.key] = $e.value`: a new field is added. A field with the same value on both sides is set to what it already is, which is how the join key ends up in the output once.
+- `if $plan.strict then ...`: the strict rule, one `reduce` over the right row's pairs.
+- `else reduce ...`: the usual rule, step 2.
+- `if $plan.keys[$e.key] then (if has($e.key) then . else .[$e.key] = $e.value end)`: a key field is set only when the row does not have it. That happens for a right row of a full join that matched nothing, which starts from an empty row.
+- `.[$plan.names[$e.key] // $e.key] = $e.value`: a name in the plan is written under its new name, any other under its own.
 
 ---
 
@@ -253,7 +480,7 @@ Step 5, `select(.value as $r | {l: $l, r: $r} | cond)`: each match found is kept
 
 ### _matches: the definition
 
-`_matches/4`, lines 223 to 229:
+`_matches/4`, lines 262 to 268:
 
 ```jq
 # each left row with its matching right rows: [{l: row, m: [{key: right position, value: right row}]}]
@@ -277,7 +504,7 @@ Built into jq: `empty`, `from_entries`, `group_by`, `map`, `select`, `to_entries
 
 ## join_on
 
-**Public function** · `join_on($right; lkey; rkey; cond; $kind)`
+**Public function** · `join_on($right; lkey; rkey; cond; $kind; $suffix)`, `join_on($right; lkey; rkey; cond; $kind)`
 
 The general flat join: one output row per matching pair, with the fields of both rows. It is SQL's `FROM l JOIN r ON l.k = r.k AND cond`, with the kind of join as an argument.
 
@@ -305,7 +532,7 @@ Five rows from four requests. Request 1 has its site. Request 2 appears twice, o
 
 ### join_on: reading the call
 
-The first four arguments are those of `_matches` above. The fifth, `$kind`, is a value, one of five strings:
+The first four arguments are those of `_matches` above. The fifth, `$kind`, is a value, one of five strings. The sixth, `$suffix`, may be left out and is then `"_right"`; it is explained under "A field name on both sides" below.
 
 | kind | emits |
 |---|---|
@@ -359,14 +586,15 @@ The first five rows are the left join. The last two are the right rows that no r
 
 ### join_on: what happens inside, on the example
 
-Step 1, `_matches($right; lkey; rkey; cond) as $rows`: the array of `{l, m}` entries shown under `_matches` above.
+Step 1, `_merge_plan(...) as $plan`: the plan, made once, for the three kinds that merge rows. Here it is `{keys: {host: true}, names: {}}`: `host` is the key and no other name is on both sides. Then `_matches($right; lkey; rkey; cond) as $rows`: the array of `{l, m}` entries shown under `_matches` above.
 
 Step 2: one expression per kind turns `$rows` into output rows. For `"left"`, on the entries of requests 2 and 3:
 
 ```jq
 [{l: {id: 2, host: "db01"}, m: [{key: 1, value: {host: "db01", site: "S"}}, {key: 2, value: {host: "db01", site: "N"}}]},
  {l: {id: 3, host: "zz09"}, m: []}] as $rows
-| [$rows[] | .l as $l | if (.m | length) > 0 then .m[] | _merge($l; .value) else $l end]
+| {keys: {host: true}, names: {}} as $plan
+| [$rows[] | .l as $l | if (.m | length) > 0 then .m[] | _merge($l; .value; $plan) else $l end]
 ```
 
 ```json
@@ -427,48 +655,123 @@ Positions 0, 1 and 2 matched. The right rows at the other positions, 3 and 4, ar
 
 Amount 500 is in no band and comes back alone. This form checks left rows times right rows pairs, so it is for small right tables.
 
+### join_on: a field name on both sides
+
+Here the requests carry a `site` of their own, the site the request came from. The hosts have a `site` too. Both are kept: the left one under its name, the right one as `site_right`.
+
+```jq
+[{host: "web01", site: "N"}, {host: "db01", site: "S"}] as $hosts
+| [{id: 1, host: "web01", site: "N"}, {id: 2, host: "db01", site: "N"}, {id: 3, host: "zz09", site: "S"}]
+| join_on($hosts; .host; .host; true; "left")
+```
+
+```json
+[
+  {"id": 1, "host": "web01", "site": "N", "site_right": "N"},
+  {"id": 2, "host": "db01", "site": "N", "site_right": "S"},
+  {"id": 3, "host": "zz09", "site": "S"}
+]
+```
+
+Request 3 has no match and so no `site_right`. The two values sit side by side, which makes the check a plain filter. The requests that reached a host at another site:
+
+```jq
+[{host: "web01", site: "N"}, {host: "db01", site: "S"}] as $hosts
+| [{id: 1, host: "web01", site: "N"}, {id: 2, host: "db01", site: "N"}, {id: 3, host: "zz09", site: "S"}]
+| join_on($hosts; .host; .host; true; "inner") | map(select(.site != .site_right))
+```
+
+```json
+[
+  {"id": 2, "host": "db01", "site": "N", "site_right": "S"}
+]
+```
+
+The sixth argument changes the suffix. With `null` it asks for the strict rule: a shared field is kept once when the values agree, and the join stops when they differ.
+
+```jq
+[{host: "web01", site: "N"}, {host: "db01", site: "S"}] as $hosts
+| [{id: 1, host: "web01", site: "N"}, {id: 2, host: "db01", site: "N"}]
+| join_on($hosts; .host; .host; true; "inner"; ".host"),
+  (try join_on($hosts; .host; .host; true; "inner"; null) catch .)
+```
+
+```json
+[{"id":1,"host":"web01","site":"N","site.host":"N"},{"id":2,"host":"db01","site":"N","site.host":"S"}]
+"join: field \"site\" differs between left (\"N\") and right (\"S\"); rename one side first"
+```
+
+In a full join the right rows that matched nothing carry their shared fields under the suffixed names too, so a field means the same thing in every row:
+
+```jq
+[{host: "web01", site: "N"}, {host: "app07", site: "S"}] as $hosts
+| [{id: 1, host: "web01", site: "N"}]
+| join_on($hosts; .host; .host; true; "full")
+```
+
+```json
+[
+  {"id": 1, "host": "web01", "site": "N", "site_right": "N"},
+  {"host": "app07", "site_right": "S"}
+]
+```
+
+When the key is computed, as in `.host | ascii_downcase`, the library cannot tell that `host` is the key, and `host` comes out twice like any other shared field (`_key_fields` above).
+
 ### join_on: what is refused
 
-A kind that is not one of the five is an error, not an empty result. A field that both tables have with different values is the `_merge` error.
+A kind that is not one of the five is an error, not an empty result. So is a suffixed name that one of the tables already has.
 
 ```jq
 (try ([{id: 1, host: "web01"}] | join_on([{host: "web01"}]; .host; .host; true; "outer")) catch .),
-(try ([{id: 1, host: "web01", site: "S"}] | join_on([{host: "web01", site: "N"}]; .host; .host; true; "inner")) catch .)
+(try ([{id: 1, host: "web01", site: "S", site_right: "x"}] | join_on([{host: "web01", site: "N"}]; .host; .host; true; "inner")) catch .)
 ```
 
 ```json
 "join_on: unknown kind \"outer\""
-"join: field \"site\" differs between left (\"S\") and right (\"N\"); rename one side first"
+"join: field \"site_right\" already exists, so the right table's \"site\" cannot take that name; pass another suffix"
 ```
 
 ### join_on: the definition
 
-`join_on/5`, lines 231 to 243:
+`join_on/6`, lines 270 to 286:
 
 ```jq
-# the general flat join
-def join_on($right; lkey; rkey; cond; $kind):
-  _matches($right; lkey; rkey; cond) as $rows
-  | if $kind == "inner" then [$rows[] | .l as $l | .m[] | _merge($l; .value)]
-    elif $kind == "left" then [$rows[] | .l as $l | if (.m | length) > 0 then .m[] | _merge($l; .value) else $l end]
+# the general flat join; $suffix as described above
+def join_on($right; lkey; rkey; cond; $kind; $suffix):
+  . as $left
+  | (if $kind == "inner" or $kind == "left" or $kind == "full" then _merge_plan($left; $right; lkey; rkey; $suffix) else null end) as $plan
+  | _matches($right; lkey; rkey; cond) as $rows
+  | if $kind == "inner" then [$rows[] | .l as $l | .m[] | _merge($l; .value; $plan)]
+    elif $kind == "left" then [$rows[] | .l as $l | if (.m | length) > 0 then .m[] | _merge($l; .value; $plan) else $l end]
     elif $kind == "semi" then [$rows[] | select((.m | length) > 0) | .l]
     elif $kind == "anti" then [$rows[] | select((.m | length) == 0) | .l]
     elif $kind == "full" then
-      # right rows that matched no left row follow the left part, in right order
+      # right rows that matched no left row follow the left part, in right order, with their
+      # shared fields under the suffixed names like every other row
       ([$rows[].m[] | {key: (.key | tostring), value: true}] | from_entries) as $hit
-      | [$rows[] | .l as $l | if (.m | length) > 0 then .m[] | _merge($l; .value) else $l end]
-        + [$right | to_entries[] | select($hit[.key | tostring] | not) | .value]
+      | [$rows[] | .l as $l | if (.m | length) > 0 then .m[] | _merge($l; .value; $plan) else $l end]
+        + [$right | to_entries[] | select($hit[.key | tostring] | not) | .value
+           | if $plan.strict then . else _merge({}; .; $plan) end]
     else error("join_on: unknown kind \($kind | tojson)") end;
 ```
 
-Built into jq: `error`, `from_entries`, `length`, `not`, `select`, `to_entries`, `tojson`, `tostring`. From this library: `_matches`, `_merge`.
+Built into jq: `error`, `from_entries`, `length`, `not`, `select`, `to_entries`, `tojson`, `tostring`. From this library: `_matches`, `_merge`, `_merge_plan`.
 
+`join_on/5`, line 287:
+
+```jq
+def join_on($right; lkey; rkey; cond; $kind): join_on($right; lkey; rkey; cond; $kind; "_right");
+```
+
+- `. as $left` keeps the left table for the plan. The plan is made only for `"inner"`, `"left"` and `"full"`; the other two kinds merge nothing.
 - `_matches(...) as $rows`: step 1.
-- `"inner"`: `.m[] | _merge($l; .value)` gives one row per match and nothing for an entry with no matches.
+- `"inner"`: `.m[] | _merge($l; .value; $plan)` gives one row per match and nothing for an entry with no matches.
 - `"left"`: step 2.
 - `"semi"` and `"anti"`: `select` on whether `m` is empty; the left row `.l` is emitted as it is, once.
-- `"full"`: `$hit` is step 3. The position goes through `tostring` because object keys are strings. The left part is the same expression as `"left"`, and the unmatched right rows follow it.
+- `"full"`: `$hit` is step 3. The position goes through `tostring` because object keys are strings. The left part is the same expression as `"left"`, and the unmatched right rows follow it, each merged into an empty row so that its shared fields take the suffixed names.
 - The last `else`: the unknown-kind error.
+- The five-argument form calls the six-argument form with `"_right"`.
 
 ---
 
@@ -512,7 +815,7 @@ Request 1 matches the second record. Request 2 matches neither.
 
 ### join_inner and the others: the definition
 
-`join_inner/3`, lines 245 to 246:
+`join_inner/3`, lines 289 to 290:
 
 ```jq
 # equality joins: shorthands for join_on with no condition
@@ -521,7 +824,7 @@ def join_inner($right; lkey; rkey): join_on($right; lkey; rkey; true; "inner");
 
 From this library: `join_on`.
 
-`join_left/3`, line 247:
+`join_left/3`, line 291:
 
 ```jq
 def join_left($right; lkey; rkey): join_on($right; lkey; rkey; true; "left");
@@ -529,7 +832,7 @@ def join_left($right; lkey; rkey): join_on($right; lkey; rkey; true; "left");
 
 From this library: `join_on`.
 
-`join_full/3`, line 248:
+`join_full/3`, line 292:
 
 ```jq
 def join_full($right; lkey; rkey): join_on($right; lkey; rkey; true; "full");
@@ -537,7 +840,7 @@ def join_full($right; lkey; rkey): join_on($right; lkey; rkey; true; "full");
 
 From this library: `join_on`.
 
-`join_semi/3`, line 249:
+`join_semi/3`, line 293:
 
 ```jq
 def join_semi($right; lkey; rkey): join_on($right; lkey; rkey; true; "semi");
@@ -545,7 +848,7 @@ def join_semi($right; lkey; rkey): join_on($right; lkey; rkey; true; "semi");
 
 From this library: `join_on`.
 
-`join_anti/3`, line 250:
+`join_anti/3`, line 294:
 
 ```jq
 def join_anti($right; lkey; rkey): join_on($right; lkey; rkey; true; "anti");
@@ -602,7 +905,7 @@ Step 1: `_matches`, as shown in its own section. Step 2, on the entry of request
 
 ### join_nest: the definition
 
-`join_nest/5`, lines 252 to 255:
+`join_nest/5`, lines 296 to 299:
 
 ```jq
 # nested join: every left row once, with field $as holding the array of its matching right rows
@@ -704,7 +1007,7 @@ try ([{id: 1, site: "N"}] | lookup([{site: "N", name: "North"}, {site: "S", name
 
 ### lookup: the definition
 
-`lookup/4`, lines 257 to 265:
+`lookup/4`, lines 301 to 309:
 
 ```jq
 # lookup: attach exactly one record of a dimension table under field $as (null when none).
@@ -765,7 +1068,7 @@ One row: the backup job ran during the window. The report job starts at 11, the 
 | `lstart`, `lend` | `.s`, `.e` | one left row | the left interval |
 | `rstart`, `rend` | `.ws`, `.we` | one right row | the right interval |
 
-The output is merged rows. If both tables called their fields `start` and `end`, the merge would refuse the differing values, so the two sides use different names, as here.
+The output is merged rows. If both tables called their fields `s` and `e`, the right table's would come out as `s_right` and `e_right`.
 
 ### join_overlap: what happens inside, on the example
 
@@ -786,11 +1089,12 @@ Two values, one per pair. Both halves are true for the backup job. For the repor
 
 ### join_overlap: the definition
 
-`join_overlap/7`, lines 267 to 270:
+`join_overlap/7`, lines 311 to 315:
 
 ```jq
 # interval overlap: pairs with the same key whose intervals overlap, each interval closed at its
-# start and open at its end ([start, end)). Flat and inner; rename start and end on one side first.
+# start and open at its end ([start, end)). Flat and inner; a start or end field named the same on
+# both sides comes out twice, the right one with "_right".
 def join_overlap($right; lkey; rkey; lstart; lend; rstart; rend):
   join_on($right; lkey; rkey; (.l | lstart) < (.r | rend) and (.r | rstart) < (.l | lend); "inner");
 ```
@@ -919,12 +1223,14 @@ Step 4, `until(. == 0 or $g.t[. - 1] != $g.t[$last]; . - 1)`: from position 2, s
 Step 5: `$j` is 1, so the right row is `rows[1]`, the change to limit 101, and `_merge` joins it to the request.
 
 ```jq
-_merge({id: 3, host: "web01", t: 12}; {host: "web01", at: 10, limit: 101})
+_merge({id: 3, host: "web01", t: 12}; {host: "web01", at: 10, limit: 101}; {keys: {host: true}, names: {}})
 ```
 
 ```json
 {"id":3,"host":"web01","t":12,"at":10,"limit":101}
 ```
+
+If the changes called their time `t` as well, it would be in the output as `t_right`, beside the request's `t`.
 
 ### join_asof: edge cases
 
@@ -949,7 +1255,7 @@ A left row with a null key or a null time comes back alone. Right rows with a nu
 
 ### join_asof: the definition
 
-`join_asof/6`, lines 272 to 290:
+`join_asof/6`, lines 317 to 336:
 
 ```jq
 # As-of join (left outer): for each left row, the right row with the same key whose rtime is the
@@ -959,7 +1265,8 @@ A left row with a null key or a null time comes back alone. Right rows with a nu
 # fixture; pandas merge_asof takes the last; SQL leaves it open). No match, or a null key or time
 # on the left: the left row alone. Right rows with a null key or time are dropped.
 def join_asof($right; lkey; rkey; ltime; rtime; $max_age):
-  ([$right[] | select((rkey) != null and (rtime) != null)] | group_by(rkey)
+  _merge_plan(.; $right; lkey; rkey; "_right") as $plan
+  | ([$right[] | select((rkey) != null and (rtime) != null)] | group_by(rkey)
    | map({key: (.[0] | rkey | tojson), value: (sort_by(rtime) | {rows: ., t: map(rtime)})}) | from_entries) as $ix
   | [.[] as $l | ($l | lkey) as $k | ($l | ltime) as $t
      | if $k == null or $t == null or $ix[$k | tojson] == null then $l
@@ -969,13 +1276,13 @@ def join_asof($right; lkey; rkey; ltime; rtime; $max_age):
        # then step back to the first of its run of equal times
        | (if $i >= 0 then $i else -2 - $i end) as $last
        | (if $last < 0 then -1 else $last | until(. == 0 or $g.t[. - 1] != $g.t[$last]; . - 1) end) as $j
-       | if $j < 0 or ($max_age != null and $t - $g.t[$j] > $max_age) then $l else _merge($l; $g.rows[$j]) end
+       | if $j < 0 or ($max_age != null and $t - $g.t[$j] > $max_age) then $l else _merge($l; $g.rows[$j]; $plan) end
        end];
 ```
 
-Built into jq: `bsearch`, `from_entries`, `group_by`, `map`, `select`, `sort_by`, `tojson`, `until`. From this library: `_merge`.
+Built into jq: `bsearch`, `from_entries`, `group_by`, `map`, `select`, `sort_by`, `tojson`, `until`. From this library: `_merge`, `_merge_plan`.
 
-`join_asof/5`, line 291:
+`join_asof/5`, line 337:
 
 ```jq
 def join_asof($right; lkey; rkey; ltime; rtime): join_asof($right; lkey; rkey; ltime; rtime; null);
@@ -985,5 +1292,5 @@ def join_asof($right; lkey; rkey; ltime; rtime): join_asof($right; lkey; rkey; l
 - `if $k == null or $t == null or $ix[$k | tojson] == null then $l`: no key, no time, or no changes for this key.
 - `($g.t | bsearch($t)) as $i` and the `$last` line: steps 2 and 3.
 - The `$j` line: step 4, or -1 when `$last` is -1.
-- `if $j < 0 or ($max_age != null and $t - $g.t[$j] > $max_age) then $l else _merge(...)`: no entry, or one that is too old, gives the left row alone. Otherwise step 5; a clashing field is the `_merge` error here too.
+- `if $j < 0 or ($max_age != null and $t - $g.t[$j] > $max_age) then $l else _merge(...)`: no entry, or one that is too old, gives the left row alone. Otherwise step 5. The plan is made on the first line, with the suffix `"_right"`.
 - The five-argument form calls the six-argument form with `null` for `$max_age`.

@@ -194,15 +194,6 @@
     "jq": "lookup($right; .gid; .gid; \"g\")"
   },
   {
-    "name": "join_clash_error",
-    "input": "tests/fixtures/trades.json",
-    "vars": {
-      "right": "tests/fixtures/quotes.json"
-    },
-    "expect_error": "differs between left",
-    "jq": "join_inner($right; .k; .k)"
-  },
-  {
     "name": "join_overlap",
     "input": "tests/fixtures/shifts.json",
     "vars": {
@@ -1681,5 +1672,302 @@
       }
     ],
     "jq": ".cast_missing | cast_columns({a: \"number\", b: \"number\"})"
+  },
+  {
+    "name": "join_shared_field_suffix",
+    "input": "tests/fixtures/shared_fields.json",
+    "expect_value": [
+      {
+        "id": 1,
+        "host": "db01",
+        "site": "N",
+        "site_right": "S",
+        "owner": "ann"
+      },
+      {
+        "id": 2,
+        "host": "db02",
+        "site": "S",
+        "site_right": "S",
+        "owner": "bo"
+      }
+    ],
+    "jq": ".right as $r | .left | join_inner($r; .host; .host)"
+  },
+  {
+    "name": "join_shared_field_object_key",
+    "input": "tests/fixtures/shared_fields.json",
+    "expect_value": [
+      {
+        "id": 1,
+        "host": "db01",
+        "site": "N",
+        "site_right": "S",
+        "owner": "ann"
+      },
+      {
+        "id": 2,
+        "host": "db02",
+        "site": "S",
+        "site_right": "S",
+        "owner": "bo"
+      },
+      {
+        "id": 3,
+        "host": "zz"
+      }
+    ],
+    "jq": ".right as $r | .left | join_left($r; {host}; {host})"
+  },
+  {
+    "name": "join_shared_field_array_key",
+    "input": "tests/fixtures/shared_fields.json",
+    "expect_value": [
+      {
+        "id": 1,
+        "host": "db01",
+        "site": "N",
+        "site_right": "S",
+        "owner": "ann"
+      },
+      {
+        "id": 2,
+        "host": "db02",
+        "site": "S",
+        "site_right": "S",
+        "owner": "bo"
+      }
+    ],
+    "jq": ".right as $r | .left | join_inner($r; [.host]; [.host])"
+  },
+  {
+    "name": "join_shared_field_full",
+    "input": "tests/fixtures/shared_fields.json",
+    "expect_value": [
+      {
+        "id": 1,
+        "host": "db01",
+        "site": "N",
+        "site_right": "S",
+        "owner": "ann"
+      },
+      {
+        "id": 2,
+        "host": "db02",
+        "site": "S",
+        "site_right": "S",
+        "owner": "bo"
+      },
+      {
+        "id": 3,
+        "host": "zz"
+      },
+      {
+        "host": "new",
+        "site_right": "W",
+        "owner": "cy"
+      }
+    ],
+    "jq": ".right as $r | .left | join_full($r; .host; .host)"
+  },
+  {
+    "name": "join_shared_field_other_suffix",
+    "input": "tests/fixtures/shared_fields.json",
+    "expect_value": [
+      {
+        "id": 1,
+        "host": "db01",
+        "site": "N",
+        "site.hosts": "S",
+        "owner": "ann"
+      },
+      {
+        "id": 2,
+        "host": "db02",
+        "site": "S",
+        "site.hosts": "S",
+        "owner": "bo"
+      }
+    ],
+    "jq": ".right as $r | .left | join_on($r; .host; .host; true; \"inner\"; \".hosts\")"
+  },
+  {
+    "name": "join_shared_field_computed_key",
+    "input": "tests/fixtures/shared_fields.json",
+    "expect_value": [
+      {
+        "id": 1,
+        "host": "db01",
+        "site": "N",
+        "host_right": "db01",
+        "site_right": "S",
+        "owner": "ann"
+      },
+      {
+        "id": 2,
+        "host": "db02",
+        "site": "S",
+        "host_right": "db02",
+        "site_right": "S",
+        "owner": "bo"
+      }
+    ],
+    "jq": ".right as $r | .left | join_inner($r; .host | ascii_upcase; .host | ascii_upcase)"
+  },
+  {
+    "name": "join_shared_field_no_key",
+    "input": "tests/fixtures/shared_fields.json",
+    "expect_value": [
+      {
+        "id": 2,
+        "host": "db02",
+        "site": "S",
+        "host_right": "db01",
+        "site_right": "S",
+        "owner": "ann"
+      },
+      {
+        "id": 2,
+        "host": "db02",
+        "site": "S",
+        "host_right": "db02",
+        "site_right": "S",
+        "owner": "bo"
+      }
+    ],
+    "jq": ".right as $r | .left | join_on($r; true; true; .l.site == .r.site; \"inner\")"
+  },
+  {
+    "name": "join_shared_field_crossed_keys",
+    "input": "tests/fixtures/shared_fields.json",
+    "expect_value": [
+      {
+        "a": 1,
+        "b": 2,
+        "v": "l",
+        "a_right": 2,
+        "b_right": 1,
+        "w": "r"
+      }
+    ],
+    "jq": ".cross_r as $r | .cross_l | join_inner($r; [.a, .b]; [.b, .a])"
+  },
+  {
+    "name": "join_shared_field_strict_same",
+    "input": "tests/fixtures/shared_fields.json",
+    "expect_value": [
+      {
+        "id": 1,
+        "host": "db01",
+        "site": "N",
+        "owner": "ann"
+      }
+    ],
+    "jq": ".same as $r | .left | join_on($r; .host; .host; true; \"inner\"; null)"
+  },
+  {
+    "name": "join_shared_field_asof",
+    "input": "tests/fixtures/shared_fields.json",
+    "expect_value": [
+      {
+        "host": "db01",
+        "t": 12,
+        "t_right": 10,
+        "limit": 101
+      },
+      {
+        "host": "db02",
+        "t": 3
+      }
+    ],
+    "jq": ".limits as $r | .reads | join_asof($r; .host; .host; .t; .t)"
+  },
+  {
+    "name": "join_shared_field_within",
+    "input": "tests/fixtures/shared_fields.json",
+    "expect_value": [
+      {
+        "host": "db01",
+        "t": 12,
+        "t_right": 10,
+        "until": 15,
+        "who": "ann"
+      },
+      {
+        "host": "db02",
+        "t": 3
+      }
+    ],
+    "jq": ".held as $r | .reads | join_within($r; .host; .host; .t; .t; .until)"
+  },
+  {
+    "name": "join_shared_field_overlap",
+    "input": "tests/fixtures/shared_fields.json",
+    "expect_value": [
+      {
+        "host": "db01",
+        "t": 14,
+        "until": 30,
+        "t_right": 10,
+        "until_right": 15,
+        "who": "ann"
+      }
+    ],
+    "jq": ".held as $r | [{host: \"db01\", t: 14, until: 30}] | join_overlap($r; .host; .host; .t; .until; .t; .until)"
+  },
+  {
+    "name": "join_shared_field_semi_untouched",
+    "input": "tests/fixtures/shared_fields.json",
+    "expect_value": [
+      {
+        "id": 1,
+        "host": "db01",
+        "site": "N"
+      },
+      {
+        "id": 2,
+        "host": "db02",
+        "site": "S"
+      }
+    ],
+    "jq": ".right as $r | .left | join_semi($r; .host; .host)"
+  },
+  {
+    "name": "join_shared_field_strict_error",
+    "input": "tests/fixtures/shared_fields.json",
+    "expect_error": "differs between left",
+    "jq": ".right as $r | .left | join_on($r; .host; .host; true; \"inner\"; null)"
+  },
+  {
+    "name": "join_shared_field_suffix_taken",
+    "input": "tests/fixtures/shared_fields.json",
+    "expect_error": "already exists",
+    "jq": ".taken_r as $r | .taken | join_inner($r; .a; .a)"
+  },
+  {
+    "name": "join_shared_field_empty_suffix",
+    "input": "tests/fixtures/shared_fields.json",
+    "expect_error": "suffix must be",
+    "jq": ".right as $r | .left | join_on($r; .host; .host; true; \"inner\"; \"\")"
+  },
+  {
+    "name": "join_shared_field_ragged_left",
+    "input": "tests/fixtures/shared_fields.json",
+    "expect_value": [
+      {
+        "id": 9,
+        "host": "db01",
+        "site_right": "S",
+        "owner": "ann"
+      },
+      {
+        "id": 1,
+        "host": "db02",
+        "site": "N",
+        "site_right": "S",
+        "owner": "bo"
+      }
+    ],
+    "jq": ".right as $r | .ragged | join_inner($r; .host; .host)"
   }
 ]

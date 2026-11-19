@@ -1,6 +1,6 @@
 # Feature matrix
 
-What the library does, family by family, and how far each part is carried: the functions in `analytics.jq`, the test cases, the answer key, and the README. Counts are as of version 0.11.0 and come from `tests/cases.json` and the library file.
+What the library does, family by family, and how far each part is carried: the functions in `analytics.jq`, the test cases, the answer key, and the README. Counts are as of version 0.12.0 and come from `tests/cases.json` and the library file.
 
 ```mermaid
 flowchart LR
@@ -22,12 +22,12 @@ Legend: ✅ done · 🟡 partial · ⏳ planned · — not involved. A case coun
 | types-and-time | table | ✅ 6 | ✅ 11 | 9 | ✅ | five engines, 2026-11-18 | |
 | grouping-and-windows | table | ✅ 10 | ✅ 13 | 13 | ✅ | five engines, 2026-11-18 | |
 | several-tables | several tables | ✅ 3 | ✅ 3 | 1 | ✅ | five engines, 2026-11-18 | |
-| joins | two tables; intervals for `join_overlap` | ✅ 10 | ✅ 18 | 15 | ✅ | five engines, 2026-11-18 | |
+| joins, shared-field-suffix | two tables; intervals for `join_overlap` | ✅ 10 | ✅ 33 | 15 | ✅ | five engines, 2026-11-18 | [59](../specs/59-shared-fields-in-joins/spec.md) |
 | state-over-time | an event table, per entity | ✅ 4 | ✅ 5 | 4 | ✅ | five engines, 2026-11-18 | |
 | trees-and-graphs | tree, graph | ✅ 4 | ✅ 5 | 2 | ✅ | five engines, 2026-11-18 | |
 | measures-at-levels | star | ✅ 10 | ✅ 9 | 7 | ✅ | five engines, 2026-11-18 | |
 | intervals-from-events | an event table, per resource | ✅ 1 | ✅ 6 | 0 | ✅ | five engines; equal to a reference on real lease and session logs, 2026-11-18 | [15](../specs/15-intervals/spec.md) |
-| join-within | rows and intervals | ✅ 1 | ✅ 1 | 1 | ✅ | five engines, 2026-11-18 | [15](../specs/15-intervals/spec.md) |
+| join-within | rows and intervals | ✅ 1 | ✅ 2 | 1 | ✅ | five engines, 2026-11-18 | [15](../specs/15-intervals/spec.md) |
 | interval-merge, interval-concurrency | intervals | ✅ 2 | ✅ 5 | 2 | ✅ | five engines, 2026-11-18 | [15](../specs/15-intervals/spec.md) |
 | calendar-table | none in; day rows out, each an interval and a dimension row | ✅ 1 | ✅ 7 | 2 | ✅ | five engines, 2026-11-18 | [20](../specs/20-calendar/spec.md) |
 | calendar-periods | star, inside a cell | ✅ 1 | ✅ 3 | 1 | ✅ | five engines; equal to DAX's PREVIOUSMONTH and TOTALYTD compiled by dax-sql 0.2.2, 2026-11-18 | [20](../specs/20-calendar/spec.md), [45](../specs/45-read-out-and-teaching/spec.md) |

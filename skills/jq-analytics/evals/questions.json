@@ -507,7 +507,7 @@
   },
   {
    "id": "q14",
-   "tests": "as-of join; both sides call the time t, which must be renamed; no reading gives null",
+   "tests": "as-of join; both sides call the time t, so the reading's comes out as t_right; no reading gives null",
    "question": "For each event, the latest temperature reading of the same host at or before the event's time (null when there is none).",
    "input": {
     "readings": [

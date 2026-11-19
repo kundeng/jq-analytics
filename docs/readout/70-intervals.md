@@ -62,7 +62,7 @@ The first emits nothing, so the array collected around it is empty; its second e
 
 ### _iv_check: the definition
 
-`_iv_check/2`, lines 770 to 777:
+`_iv_check/2`, lines 816 to 823:
 
 ```jq
 # an event's kind must be one of the three and, when it has a kind, it needs a time
@@ -183,7 +183,7 @@ The four intervals that close in the trace are the four rows of the result.
 
 ### intervals_from_events: the definition
 
-`intervals_from_events/5`, lines 779 to 828:
+`intervals_from_events/5`, lines 825 to 874:
 
 ```jq
 # intervals_from_events: validity intervals built from an event log. A resource (an address, a
@@ -368,20 +368,21 @@ Step 3: from that position, move forward while the next start is also at or befo
 | 250 | 1 (bo) | bo's end 200 is not after 250, and `m` at 1 is 200: no earlier interval ends after 250, stop | left row alone |
 | -5 | -1 | before the first interval: stop | left row alone |
 
-Step 4: a left row that stopped on an interval containing its time is merged with it by `_merge`, the same helper the flat joins use: a field on both sides with different values is an error.
+Step 4: a left row that stopped on an interval containing its time is merged with it by `_merge`, the same helper the flat joins use: a field name on both sides that is not the key comes out twice, the right one with `_right`.
 
 ### join_within: the definition
 
-`join_within/6`, lines 830 to 854:
+`join_within/6`, lines 876 to 901:
 
 ```jq
 # join_within (left outer): each left row with the interval of the same key whose [rstart, rend)
 # contains the left row's ltime; a null rend means still open. No such interval, or a null key or
 # time on the left: the left row alone. When several intervals of a key contain the time, the one
-# that started last. Merged like every flat join: a field on both sides with different values is
-# an error. Use it for "who held this at T"; join_asof is for "the latest value at or before T".
+# that started last. Merged like every flat join: a field name on both sides that is not the
+# key comes out twice, the right one with "_right". Use it for "who held this at T"; join_asof is for "the latest value at or before T".
 def join_within($intervals; lkey; rkey; ltime; rstart; rend):
   1.7976931348623157e308 as $inf
+  | _merge_plan(.; $intervals; lkey; rkey; "_right") as $plan
   | ([$intervals[] | select((rkey) != null and (rstart) != null)] | group_by(rkey)
      | map(sort_by(rstart)
            | {key: (.[0] | rkey | tojson),
@@ -398,11 +399,11 @@ def join_within($intervals; lkey; rkey; ltime; rstart; rend):
        | ($at | until(. + 1 >= ($g.s | length) or $g.s[. + 1] > $t; . + 1)) as $last
        # go back until an interval contains $t, or no earlier one can
        | ($last | until(. < 0 or $g.e[.] > $t or $g.m[.] <= $t; . - 1)) as $c
-       | if $c >= 0 and $g.e[$c] > $t then _merge($l; $g.rows[$c]) else $l end
+       | if $c >= 0 and $g.e[$c] > $t then _merge($l; $g.rows[$c]; $plan) else $l end
        end];
 ```
 
-Built into jq: `bsearch`, `from_entries`, `group_by`, `length`, `map`, `select`, `sort_by`, `tojson`, `until`. From this library: `_merge`.
+Built into jq: `bsearch`, `from_entries`, `group_by`, `length`, `map`, `select`, `sort_by`, `tojson`, `until`. From this library: `_merge`, `_merge_plan`.
 
 - `select((rkey) != null and (rstart) != null)`: intervals with no key or no start are left out of the index.
 - `if $k == null or $t == null or $ix[$k | tojson] == null then $l`: a left row with no key, no time, or a key with no intervals comes back alone.
@@ -436,7 +437,7 @@ The first input is fine and comes back as it was. The other two are the two erro
 
 ### _iv_order_check: the definition
 
-`_iv_order_check/3`, lines 856 to 859:
+`_iv_order_check/3`, lines 903 to 906:
 
 ```jq
 # an interval needs a start, and an end that is not before it
@@ -527,7 +528,7 @@ For room B, 7 to 8 joins because the open interval has no end.
 
 ### merge_intervals: the definition
 
-`merge_intervals/3`, lines 861 to 880:
+`merge_intervals/3`, lines 908 to 927:
 
 ```jq
 # merge_intervals: per key, intervals that overlap or touch become one row
@@ -637,7 +638,7 @@ Step 3: the `foreach` keeps a running sum of the net changes, 1, 2, 1, 2, 1, and
 
 ### concurrency: the definition
 
-`concurrency/2`, lines 882 to 891:
+`concurrency/2`, lines 929 to 938:
 
 ```jq
 # concurrency: how many intervals are open over time: one row {t, open} per moment the count

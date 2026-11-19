@@ -1,0 +1,121 @@
+{
+  "left": [
+    {
+      "id": 1,
+      "host": "db01",
+      "site": "N"
+    },
+    {
+      "id": 2,
+      "host": "db02",
+      "site": "S"
+    },
+    {
+      "id": 3,
+      "host": "zz"
+    }
+  ],
+  "right": [
+    {
+      "host": "db01",
+      "site": "S",
+      "owner": "ann"
+    },
+    {
+      "host": "db02",
+      "site": "S",
+      "owner": "bo"
+    },
+    {
+      "host": "new",
+      "site": "W",
+      "owner": "cy"
+    }
+  ],
+  "same": [
+    {
+      "host": "db01",
+      "site": "N",
+      "owner": "ann"
+    }
+  ],
+  "taken": [
+    {
+      "a": 1,
+      "x": 1,
+      "x_right": 2
+    }
+  ],
+  "taken_r": [
+    {
+      "a": 1,
+      "x": 5
+    }
+  ],
+  "cross_l": [
+    {
+      "a": 1,
+      "b": 2,
+      "v": "l"
+    }
+  ],
+  "cross_r": [
+    {
+      "a": 2,
+      "b": 1,
+      "w": "r"
+    }
+  ],
+  "reads": [
+    {
+      "host": "db01",
+      "t": 12
+    },
+    {
+      "host": "db02",
+      "t": 3
+    }
+  ],
+  "limits": [
+    {
+      "host": "db01",
+      "t": 10,
+      "limit": 101
+    },
+    {
+      "host": "db01",
+      "t": 20,
+      "limit": 102
+    },
+    {
+      "host": "db02",
+      "t": 5,
+      "limit": 7
+    }
+  ],
+  "held": [
+    {
+      "host": "db01",
+      "t": 10,
+      "until": 15,
+      "who": "ann"
+    },
+    {
+      "host": "db02",
+      "t": 0,
+      "until": 2,
+      "who": "bo"
+    }
+  ],
+  "ragged": [
+    {
+      "id": 9,
+      "host": "db01"
+    },
+    {
+      "id": 1,
+      "host": "db02",
+      "site": "N"
+    }
+  ]
+}

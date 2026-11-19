@@ -93,7 +93,7 @@ Find the question; the shape tells you what one row must be; then read those fun
 
 ## What the names do not tell you
 
-<!-- fields: from_first from_previous -->
+<!-- fields: from_first from_previous _right host_right t_right site_right x_right -->
 
 Facts that cost a wrong answer or a wasted run when guessed. The comment of each function in `references/functions.md` has the rest: what each argument means and which fields the result carries.
 
@@ -102,7 +102,7 @@ Facts that cost a wrong answer or a wasted run when guessed. The comment of each
 - **Descending order:** negate a number in the order argument (`-.sales`). For text or to reverse a whole result, `sort_by(...) | reverse` afterwards.
 - **`group_agg`'s second argument is any filter that returns an object,** run on one group's rows. The last row per group: `group_agg({emp}; max_by(.day) | {last_day: .day, total})`.
 - **Graph edges are followed from the first filter to the second.** With an edge meaning "X depends on Y", `reachable(.from; .to; "x")` is what x depends on; swap the two filters, `reachable(.to; .from; "db")`, for what depends on db. `reachable` leaves out the start; `hops` includes it at 0.
-- **A flat join merges the two rows, and refuses a clash.** A field that both sides have with different values is an error: `join: field "t" differs between left (150) and right (100); rename one side first`. Both tables nearly always call the time `t`, so rename on the right before an as-of or interval join: `join_asof($readings | map({host, read_t: .t, temp}); .host; .host; .t; .read_t)`. `lookup` and `join_nest` put the right side under a field of its own and cannot clash.
+- **A flat join keeps both values of a field name the two tables share.** The left one keeps its name and the right one gets `_right`: after `join_asof($readings; .host; .host; .t; .t)` a row has `t` (the event's) and `t_right` (the reading's). The key itself appears once when both keys are the plain field (`.host`), an object (`{host}`) or an array (`[.host]`); a computed key such as `.host | ascii_downcase` gives `host` and `host_right`. To find disagreements: `map(select(.site != .site_right))`. A left row with no match has no `_right` fields. `lookup` and `join_nest` put the right side under a field of its own instead.
 - **A start order for "X depends on Y"** is `topo_order(.to; .from)`: level 0 is what depends on nothing.
 - **`runs` has no partition and no order of its own.** It reads a list as given. Sort first, and for several entities run it per group: `group_agg({dev}; sort_by(.t) | map(.up) | runs(.) | ...)`.
 - **`pivot`'s last argument reduces the values that fall in one cell,** given as a list: `pivot(["jan", "feb"]; {k}; .m; .v; sum_nonnull)` gives one row per `k` with the columns `jan` and `feb`, null where a cell has no rows.
@@ -246,7 +246,7 @@ Was this opened in office hours in Detroit? The text is UTC.
 | `Cannot index string with string "x"`, `Cannot index number with ...` | a row was passed where a table is expected (rule 1), or a list of values where rows are expected | remove the `.[]`, or `map(.x)` only where the function wants a list |
 | `x/0 is not defined` | a bare field name as an argument (rule 2) | `.x` |
 | `string ("57") and number (2) cannot be divided`, `cannot be subtracted` | arithmetic on an uncast column (rule 3) | `cast_columns` first |
-| `join: field "t" differs between left (...) and right (...); rename one side first` | both tables have the field, with different values | rename it on one side with `map({..., read_t: .t})` before the join |
+| `join: field "x_right" already exists, so the right table's "x" cannot take that name; pass another suffix` | a table already has a field with the suffixed name | `join_on(...; "inner"; "_r2")`, or drop the field first |
 | `cast_columns: x = "..." is not a number` | a value that is not a number in a column you declared as one | look at the value; clean it or leave the column a string |
 | `has no keys`, `Cannot iterate over null` | the input is null or a scalar, often a wrong path into the document | print the input of that stage |
 | a message that starts with a function's name | the library refused the input and says why | read it; it names the value |
