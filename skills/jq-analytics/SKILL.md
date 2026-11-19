@@ -89,6 +89,21 @@ Find the question; the shape tells you what one row must be; then read those fun
 | Keys that almost match | two tables with a text key | clean the key first (lowercase, trim); then `join_fuzzy` inside a block; for volume, a database |
 | Hand the result to another tool | a table | `to_csv`, `to_map`, `node_link`, `nested_from_nodes` |
 
+## What the names do not tell you
+
+<!-- fields: from_first from_previous -->
+
+Facts that cost a wrong answer or a wasted run when guessed. The comment of each function in `references/functions.md` has the rest: what each argument means and which fields the result carries.
+
+- **Results have their own field names.** `intervals_from_events` returns `resource`, `holder`, `start`, `end`; `merge_intervals` returns the key as `key`; `funnel` returns `step`, `entities`, `from_previous`, `from_first`; `topo_order` returns `node`, `level`. Read the function's comment, or run it on two rows, before you join on or select its fields.
+- **A rank follows the order of the window.** `rank_by(f)` numbers the rows in the order `window` sorted them and lets rows with equal `f` share a rank. The order and `f` must be the same thing. Top seller per day: `window(.day; -.sales; "rank"; rank_by(.sales))`, then keep rank 1. With another order, such as `.emp`, the ranks are positions by name and mean nothing.
+- **Descending order:** negate a number in the order argument (`-.sales`). For text or to reverse a whole result, `sort_by(...) | reverse` afterwards.
+- **`group_agg`'s second argument is any filter that returns an object,** run on one group's rows. The last row per group: `group_agg({emp}; max_by(.day) | {last_day: .day, total})`.
+- **Graph edges are followed from the first filter to the second.** With an edge meaning "X depends on Y", `reachable(.from; .to; "x")` is what x depends on; swap the two filters, `reachable(.to; .from; "db")`, for what depends on db. `reachable` leaves out the start; `hops` includes it at 0.
+- **Intervals include their start and not their end.** One that ends at 10 and one that starts at 10 do not overlap, and a moment equal to an end belongs to the next interval. A null end means still open.
+- **Empty or null time text gives null** from `parse_ts`; text that is not a time is an error naming it. `cast_columns` takes the types `"number"`, `"timestamp"`, `"string"` and `"boolean"`.
+- **A limit that does not apply is null:** `funnel(...; $steps; null)` puts no time limit between the first and the last step; a number is a limit in the unit of the time argument.
+
 ## Working method
 
 1. **Look first.** Run `shape` or `profile` on a sample. Which columns are empty strings, which hold numbers as text, which are nested? Do not write the analysis before you have seen this.
