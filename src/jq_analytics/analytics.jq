@@ -267,7 +267,7 @@ def _matches($right; lkey; rkey; cond):
      | {l: $l, m: [(if $k == null then empty else $ix[$k | tojson][]? end)
                    | select(.value as $r | {l: $l, r: $r} | cond)]}];
 
-# the general flat join; $suffix as described above
+# the general flat join; $suffix goes on the right table's shared field names ("_right" by default), null = the strict rule
 def join_on($right; lkey; rkey; cond; $kind; $suffix):
   . as $left
   | (if $kind == "inner" or $kind == "left" or $kind == "full" then _merge_plan($left; $right; lkey; rkey; $suffix) else null end) as $plan
@@ -286,7 +286,7 @@ def join_on($right; lkey; rkey; cond; $kind; $suffix):
     else error("join_on: unknown kind \($kind | tojson)") end;
 def join_on($right; lkey; rkey; cond; $kind): join_on($right; lkey; rkey; cond; $kind; "_right");
 
-# equality joins: shorthands for join_on with no condition
+# equality joins: join_on with no condition; semi and anti return left rows only, with no right fields
 def join_inner($right; lkey; rkey): join_on($right; lkey; rkey; true; "inner");
 def join_left($right; lkey; rkey): join_on($right; lkey; rkey; true; "left");
 def join_full($right; lkey; rkey): join_on($right; lkey; rkey; true; "full");

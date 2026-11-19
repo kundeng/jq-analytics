@@ -209,13 +209,13 @@ for checking a pipeline midway: each table's row count and field names (sorted)
 `join_on($right; lkey; rkey; cond; $kind; $suffix)`
 
 ```text
-the general flat join; $suffix as described above
+the general flat join; $suffix goes on the right table's shared field names ("_right" by default), null = the strict rule
 ```
 
 `join_inner($right; lkey; rkey)`
 
 ```text
-equality joins: shorthands for join_on with no condition
+equality joins: join_on with no condition; semi and anti return left rows only, with no right fields
 ```
 
 `join_nest($right; lkey; rkey; cond; $as)`

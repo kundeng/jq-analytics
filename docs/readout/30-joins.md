@@ -737,7 +737,7 @@ A kind that is not one of the five is an error, not an empty result. So is a suf
 `join_on/6`, lines 270 to 286:
 
 ```jq
-# the general flat join; $suffix as described above
+# the general flat join; $suffix goes on the right table's shared field names ("_right" by default), null = the strict rule
 def join_on($right; lkey; rkey; cond; $kind; $suffix):
   . as $left
   | (if $kind == "inner" or $kind == "left" or $kind == "full" then _merge_plan($left; $right; lkey; rkey; $suffix) else null end) as $plan
@@ -818,7 +818,7 @@ Request 1 matches the second record. Request 2 matches neither.
 `join_inner/3`, lines 289 to 290:
 
 ```jq
-# equality joins: shorthands for join_on with no condition
+# equality joins: join_on with no condition; semi and anti return left rows only, with no right fields
 def join_inner($right; lkey; rkey): join_on($right; lkey; rkey; true; "inner");
 ```
 
