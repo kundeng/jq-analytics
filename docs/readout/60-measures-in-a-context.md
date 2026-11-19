@@ -34,11 +34,29 @@ There are no February rows; that matters for `shift`. Each run builds the table 
 
 Three jq reminders for this family. A `;` separates arguments. A `$name` parameter is a value, and a parameter without the `$` is a filter that the function runs later on an input it chooses. Inside a `cell` argument, `.` is the context, not a row.
 
+On this page, in the order of the file:
+
+| Function | Whose | What it is for |
+|---|---|---|
+| `_where` | Internal helper, not for callers | The rows that match a filter object, found by testing every row |
+| `_ctx_rows` | Internal helper, not for callers | Input |
+| `rollup_levels` | Public function | A report at several levels |
+| `rollup` | Public function | The levels of a hierarchy |
+| `measure`, `measure_with`, `share_of` | Public functions | The three functions a cell is written with |
+| `without_filter`, `only_filters`, `with_filter` | Public functions | Three context changes that edit `.at`, the filter object, and nothing else |
+| `shift` | Public function | A context change that moves the filter on `$dim` to a neighbouring value |
+| `on_calendar` | Public function | Makes `shift` and `to_date` on `$dim` step through a list of periods the caller gives, in place of the values present in the data |
+| `to_date` | Public function | A context change that turns the filter on `$dim` into "everything up to and including this value", with the other filters kept |
+
+---
+
 ## _where
+
+**Internal helper, not for callers** · `_where($at)`
 
 The rows that match a filter object, found by testing every row. It is SQL's `WHERE` with the conditions joined by `AND`. A filter `{field: value}` is equality; `{field: {from, to}}` is a closed range.
 
-### The example
+### _where: the example
 
 Four rows, one with no `rev`:
 
@@ -64,7 +82,7 @@ Three filters: region E and rev at least 15; rev at most 20; no filter.
 
 Three values, one per call. The first keeps the one E row with rev 15 or more. The second keeps 10 and 20 and drops the null: a null never satisfies a range. The third has nothing to test, so every row passes.
 
-### The definition
+### _where: the definition
 
 `_where/1`, lines 550 to 556:
 
@@ -86,11 +104,15 @@ Built into jq: `all`, `map`, `select`, `to_entries`, `type`.
 - `if ($v | type) == "object"`: a filter value that is an object is a range. The row's value must not be null, must be at or above `from` and at or below `to`. A bound that is missing or null is no bound.
 - `else $x == $v`: any other filter value is compared for equality. `{rev: null}` therefore matches rows whose rev is null.
 
+---
+
 ## _ctx_rows
+
+**Internal helper, not for callers** · `_ctx_rows`
 
 Input: a context. Output: the rows that its filters (`.at`) stand for. `measure_with` calls it after a context change, when `.rows` no longer matches `.at`. It reads the rows from the report's index when it can and scans with `_where` when it cannot.
 
-### The example
+### _ctx_rows: the example
 
 A context exists only inside a report, so the example is a report with two levels, region with month and region alone. This is the context of its first cell, with `all` (the five rows) and `index` (shown under `rollup_levels`) left out:
 
@@ -133,7 +155,7 @@ Now three changed contexts per cell, each passed to `_ctx_rows`. To keep the out
 
 Read the second row, E in March. Without the month filter it stands for E's three rows (10, 20, 10). Up to and including March is the same three rows. Adding "rev at least 20" to E in March leaves nothing, because that cell's one row has rev 10.
 
-### What happens inside, on the example
+### _ctx_rows: what happens inside, on the example
 
 `_ctx_rows` first works out three things about the context: the filter's fields in sorted order (`$ks`), which of them are ranges (`$ranges`), and whether the report's index has an entry for exactly that set of fields. The run shows them for the three changed contexts of the E in March cell. `look` is defined in the run to print them.
 
@@ -160,7 +182,7 @@ Three values, and each takes a different path:
 | region E, month up to 2026-03 | yes: region with month is a level | one, on month | the month's values in the range, 2026-01 and 2026-03, in order; the groups for E in each, joined end to end |
 | region E, month 2026-03, rev from 20 | no: no level has these three fields | one | scan all five rows with `_where` |
 
-### The definition
+### _ctx_rows: the definition
 
 `_ctx_rows/0`, lines 558 to 572:
 
@@ -190,11 +212,15 @@ Built into jq: `keys`, `length`, `map`, `select`, `to_entries`, `tojson`, `type`
 - `else`: one range, on field `$d`. `$c.members[$d]` lists the field's values in order. Each value inside the range is put in place of the range (`$c.at + {($d): $m}`), looked up, and its rows emitted. `[]?` skips a value with no group. A running total uses this path.
 - The index makes a changed context cheap in the common case. A filter on a field that is not a level scans every row once per cell, so the cost grows with rows times cells.
 
+---
+
 ## rollup_levels
+
+**Public function** · `rollup_levels($levels; cell)`
 
 A report at several levels: one output row per group at each level listed. It is SQL's `GROUP BY GROUPING SETS`. Every level is computed from the rows, so a median or a ratio is right at a total.
 
-### The example
+### rollup_levels: the example
 
 Three levels: by region, by month, and the grand total (`[]`). The cell asks for the row count, the revenue and the median revenue.
 
@@ -229,14 +255,14 @@ A row that lacks a level's field forms its own group, with null as the value. No
 []
 ```
 
-### Reading the call
+### rollup_levels: reading the call
 
 | Argument | In the example | Runs on | Meaning |
 |---|---|---|---|
 | `$levels` | `[["region"], ["month"], []]` | nothing: a value | the list of levels; each level is a list of field names |
 | `cell` | `{rows: measure(length), ...}` | one context: one group at one level | an object of result columns |
 
-### What happens inside, on the example
+### rollup_levels: what happens inside, on the example
 
 Step 1, `$members`: for every field named in any level, its distinct values over all rows, sorted. `shift` and `to_date` step through these lists.
 
@@ -286,7 +312,7 @@ Step 3: for each level in the order listed, each index group becomes a context, 
 
 Step 4: `cell` runs with each context as its input, and the output row is `.at`, then the level name, then what `cell` returned. For the first context that is `{"region":"E"}`, `{"level":"region"}` and `{"rows":3,"rev":40,"median":10}`, merged into the first row of the result at the top.
 
-### The definition
+### rollup_levels: the definition
 
 `rollup_levels/2`, lines 574 to 594:
 
@@ -322,11 +348,15 @@ Built into jq: `add`, `from_entries`, `group_by`, `has`, `join`, `keys`, `map`, 
 - `sort_by([.at[$lvl[]]])` orders a level's groups by its values, in the order the caller listed the fields.
 - `.at + {level: ...} + cell`: a cell field named like a level field, or named `level`, would overwrite it.
 
+---
+
 ## rollup
+
+**Public function** · `rollup($dims; cell)`
 
 The levels of a hierarchy: all the fields, then one fewer from the right, down to the grand total. It is SQL's `GROUP BY ROLLUP(region, month)`.
 
-### The example
+### rollup: the example
 
 ```jq
 [["E", "2026-01", 10], ["E", "2026-01", 20], ["E", "2026-03", 10], ["W", "2026-01", 30], ["W", "2026-03", 30]]
@@ -348,7 +378,7 @@ The levels of a hierarchy: all the fields, then one fewer from the right, down t
 
 Four rows for region with month, two subtotals for the regions, one grand total. Hand check: E's months are 30 and 10, its subtotal is 40; the two subtotals 40 and 60 make the total 100.
 
-### What happens inside, on the example
+### rollup: what happens inside, on the example
 
 The one step before `rollup_levels` is the list of levels:
 
@@ -364,7 +394,7 @@ The one step before `rollup_levels` is the list of levels:
 ]
 ```
 
-### The definition
+### rollup: the definition
 
 `rollup/2`, lines 596 to 598:
 
@@ -378,11 +408,15 @@ Built into jq: `length`, `range`. From this library: `rollup_levels`.
 
 `range($dims | length; -1; -1)` counts down from the number of fields to 0, here 2, 1, 0. `$dims[0:$n]` is the first `$n` fields. The list goes to `rollup_levels` with the same `cell`.
 
+---
+
 ## measure, measure_with, share_of
+
+**Public functions** · `measure(f)`, `measure_with(f; change)`, `share_of(f; change)`
 
 The three functions a cell is written with. `measure(f)` runs measure `f` on the cell's own rows. `measure_with(f; change)` runs it on the rows of a changed context, which is DAX's `CALCULATE`. `share_of(f; change)` divides the first by the second.
 
-### The example
+### measure and the others: the example
 
 At the region with month level: the cell's revenue, its region's revenue, its share of the region, and its share of everything.
 
@@ -407,14 +441,14 @@ At the region with month level: the cell's revenue, its region's revenue, its sh
 
 Hand check on the first row: E in January is 10 + 20 = 30. E in all months is 40, so the share is 30 / 40 = 0.75. Everything is 100, so the share of all is 0.3.
 
-### Reading the call
+### measure and the others: reading the call
 
 | Argument | In the example | Runs on | Meaning |
 |---|---|---|---|
 | `f` | `map(.rev)` then `sum_nonnull` | an array of rows: the cell's, or the changed context's | the measure |
 | `change` | `without_filter("month")`, `only_filters([])` | the cell's context | returns the context to measure in; several changes can be piped |
 
-### What happens inside, on the example
+### measure and the others: what happens inside, on the example
 
 For `measure_with(map(.rev) | sum_nonnull; without_filter("month"))` in the first cell, E in January. Step 1, the change: the context's `at` loses its month.
 
@@ -460,7 +494,7 @@ A change can leave no context: `shift` past the first value marks the context `v
 ]
 ```
 
-### The definition
+### measure and the others: the definition
 
 `measure/1`, lines 600 to 601:
 
@@ -494,11 +528,15 @@ From this library: `measure`, `measure_with`.
 - `measure_with`: `(change) as $c` runs the change on the cell's context. `if $c.void then null` is the no-context case. Otherwise `$c | _ctx_rows | f`.
 - `share_of`: `measure(f) as $a | measure_with(f; change) as $b` binds both numbers without changing the input. The result is null when either is null or the divisor is 0, and `$a / $b` otherwise.
 
+---
+
 ## without_filter, only_filters, with_filter
+
+**Public functions** · `without_filter($dim)`, `only_filters($dims)`, `with_filter($at)`
 
 Three context changes that edit `.at`, the filter object, and nothing else. `without_filter` removes one filter (DAX's `ALL` or `REMOVEFILTERS` on one column), `only_filters` drops all but the listed ones (`ALLEXCEPT`), `with_filter` adds or replaces filters.
 
-### The example
+### without_filter and the others: the example
 
 A context is an object, so the changes can be tried on a hand-made one that has only `at`. Four calls on a cell for region E in January:
 
@@ -516,7 +554,7 @@ A context is an object, so the changes can be tried on a hand-made one that has 
 
 Four contexts. `without_filter("month")` leaves the region. `only_filters(["month"])` leaves the month. `only_filters([])` leaves no filter, which is the grand total. `with_filter` replaces the month and adds a range on `rev`.
 
-### The definition
+### without_filter and the others: the definition
 
 `without_filter/1`, lines 612 to 615:
 
@@ -547,11 +585,15 @@ def with_filter($at): .at += $at;                     # add or replace filters; 
 - `only_filters`: `with_entries(select(...))` keeps the entries of `.at` whose key is in `$dims`.
 - `with_filter`: `.at += $at` merges the new filters in; a field already filtered takes the new value.
 
+---
+
 ## shift
+
+**Public function** · `shift($dim; $k)`
 
 A context change that moves the filter on `$dim` to a neighbouring value: `shift("month"; -1)` is the previous month, `shift("month"; 1)` the next. It is how a cell reads the previous period.
 
-### The example
+### shift: the example
 
 A hand-made context for E in March, in a report whose months are January and March. Three calls: one back, one forward, and one back for a cell with no month filter.
 
@@ -596,7 +638,7 @@ A field with a filter but no member list is refused. Here the report's only leve
 "shift: \"month\" is not a level of this report; add it to a level or use on_calendar"
 ```
 
-### The definition
+### shift: the definition
 
 `shift/2`, lines 624 to 636:
 
@@ -625,11 +667,15 @@ Built into jq: `error`, `has`, `index`, `length`, `not`, `tojson`, `type`.
 - Otherwise `.at[$dim]` takes the value `$k` places along.
 - The member list is the values present in the data, sorted as values, unless `on_calendar` replaced it. So "previous" means the previous value that has rows anywhere in the table, and month names such as "Mar" would sort alphabetically.
 
+---
+
 ## on_calendar
+
+**Public function** · `on_calendar($dim; $values)`
 
 Makes `shift` and `to_date` on `$dim` step through a list of periods the caller gives, in place of the values present in the data. With it, the previous month of March is February even when February has no rows.
 
-### The example
+### on_calendar: the example
 
 The same hand-made context as under `shift`, with and without a calendar of three months:
 
@@ -669,7 +715,7 @@ In a report, both kinds of "previous month" side by side:
 
 For E in March, the previous month that has rows is January (30). The previous calendar month is February; it has no rows, so the measure runs on an empty list and `sum_nonnull` gives null. January has no previous value either way. At the region level there is no month to move from, so both are null.
 
-### The definition
+### on_calendar: the definition
 
 `on_calendar/2`, lines 638 to 644:
 
@@ -685,11 +731,15 @@ def on_calendar($dim; $values): .members[$dim] = $values;
 
 One assignment: the member list of `$dim` becomes `$values`. `shift` and `to_date` read that list, so nothing else changes. `$values` is every period in order, for example `calendar(...) | map(.year_month) | unique`. A cell whose own value is not in the list has no context after a shift. `to_date` compares values, so the list has to sort the way it is ordered: "2026-03" does, "Mar" does not.
 
+---
+
 ## to_date
+
+**Public function** · `to_date($dim)`
 
 A context change that turns the filter on `$dim` into "everything up to and including this value", with the other filters kept. It gives a running total; with the year as another filter it is DAX's `DATESYTD`.
 
-### The example
+### to_date: the example
 
 Three hand-made contexts: a month filter, no month filter, and a null month.
 
@@ -729,7 +779,7 @@ In a report:
 
 Hand check: E's running total is 30 after January and 30 + 10 = 40 after March. At the region and total levels, `to_date` equals `rev`.
 
-### The definition
+### to_date: the definition
 
 `to_date/1`, lines 646 to 651:
 

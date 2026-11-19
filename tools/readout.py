@@ -13,7 +13,10 @@ the notes first. --list prints each family's definitions and whether a note cove
 example and writes nothing. A note may hold the line <!-- definition --> where its code is to
 appear; without it the code comes first. Under each definition's code the page lists the names the
 code calls, in two groups: jq's own built-ins (asked of the engines with `builtins`) and functions
-of this library, so a reader can tell which is which.
+of this library, so a reader can tell which is which. Each page opens with a table of its
+functions (name, public or internal, what it is for); each function starts with a rule, its
+heading and a line saying whose it is and how it is called; and a note's `### The example`
+is written out as `### <function>: the example`, so no two headings of a page read the same.
 """
 import hashlib
 import json
@@ -218,6 +221,33 @@ def render_body(body: list[str], engines: list[str]) -> list[str]:
     return out
 
 
+def names_of(note: dict) -> list[str]:
+    return list(dict.fromkeys(k.split("/")[0] for k in note["keys"]))
+
+
+def whose(note: dict) -> str:
+    """Public function or internal helper, by the leading underscore of the note's names."""
+    internal = [n.startswith("_") for n in names_of(note)]
+    many = "s" if len(internal) > 1 else ""
+    return f"Internal helper{many}, not for callers" if all(internal) else f"Public function{many}" if not any(internal) else "Public functions and internal helpers"
+
+
+def purpose(note: dict) -> str:
+    """The note's first line of prose, up to its first full stop: what the function is for."""
+    first = next((line.strip() for line in note["body"] if line.strip() and not line.startswith(("#", "<!--", "```", "|"))), "")
+    return re.split(r"(?<=[.:])\s", first, maxsplit=1)[0].rstrip(":.").replace("|", "\\|")
+
+
+def sub_heading(line: str, lead: str) -> str:
+    """A note's `### The example` becomes `### <function>: the example`, so that no two headings of a page read the same."""
+    m = re.match(r"^### (.+)$", line)
+    if not m:
+        return line
+    text = m.group(1)
+    text = text if text[1:2].isupper() or text.startswith("`") else text[0].lower() + text[1:]
+    return f"### {lead}: {text}"
+
+
 def tidy(lines: list[str]) -> str:
     """One blank line before every heading and never two in a row, outside code blocks."""
     out: list[str] = []
@@ -294,10 +324,17 @@ def main() -> None:
                 f"Generated from `src/jq_analytics/analytics.jq` and `docs/readout/notes/{family['slug']}.md`. Do not edit.", ""]
         page += render_body(intro, engines)
         notes.sort(key=lambda note: by_key[note["keys"][0]]["first"])
+        page += ["", "On this page, in the order of the file:", "", "| Function | Whose | What it is for |", "|---|---|---|"]
+        for note in notes:
+            page.append(f"| {', '.join('`' + n + '`' for n in names_of(note))} | {whose(note)} | {purpose(note)} |")
+        page.append("")
         for note in notes:
             defs = [by_key[k] for k in note["keys"]]
-            names = ", ".join("`" + k.split("/")[0] + "`" for k in dict.fromkeys(note["keys"]))
-            page += ["## " + ", ".join(dict.fromkeys(k.split("/")[0] for k in note["keys"])), ""]
+            title = ", ".join(names_of(note))
+            lead = names_of(note)[0] + (" and the others" if len(names_of(note)) > 1 else "")
+            note = dict(note, body=[sub_heading(line, lead) for line in note["body"]])
+            signatures = ", ".join("`" + DEF.match(d["code"][0]).group(0)[4:-1] + "`" for d in defs)
+            page += ["---", "", "## " + title, "", f"**{whose(note)}** · {signatures}", ""]
             code: list[str] = []
             for d in defs:
                 first = d["first"] - len(d["comment"])

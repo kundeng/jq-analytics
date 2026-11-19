@@ -6,11 +6,23 @@ Four definitions for keys that should match and do not. The order to try things 
 
 The measure used is built on bigrams: the two-character pieces of a string. Two strings are alike when they share most of their bigrams.
 
+On this page, in the order of the file:
+
+| Function | Whose | What it is for |
+|---|---|---|
+| `_bigrams`, `_dice` | Internal helpers, not for callers | The two helpers under `similarity` |
+| `similarity` | Public function | How alike two strings are, from 0 to 1 |
+| `join_fuzzy` | Public function | A left outer join on "most similar string" |
+
+---
+
 ## _bigrams, _dice
+
+**Internal helpers, not for callers** · `_bigrams`, `_dice($x; $y)`
 
 The two helpers under `similarity`. `_bigrams` gives the distinct two-character slices of a string, sorted. `_dice($x; $y)` scores two such lists from 0 to 1 with the Dice coefficient: twice the number of bigrams they share, divided by the sizes of both lists added together.
 
-### The example
+### _bigrams and the others: the example
 
 The bigrams of two host names, then their score:
 
@@ -38,7 +50,7 @@ Edge cases: a string of one character has no bigrams, a list with no bigrams sco
 "similarity: 5 is not a string"
 ```
 
-### What happens inside, on the example
+### _bigrams and the others: what happens inside, on the example
 
 `_bigrams`, step 1: `explode` turns the string into a list of code points, one number per character, so slicing is by character and not by byte.
 
@@ -71,7 +83,7 @@ Step 2: for each position but the last, the slice of two code points starting th
 ["b0","eb","we"]
 ```
 
-### The definition
+### _bigrams and the others: the definition
 
 `_bigrams/0`, lines 1125 to 1128:
 
@@ -98,11 +110,15 @@ Built into jq: `length`.
 - `_dice`: `if ($x | length) == 0 or ($y | length) == 0 then 0` avoids a division by 0 and scores a string with no bigrams as unlike everything.
 - `2 * (shared | length) / (($x | length) + ($y | length))` is the coefficient.
 
+---
+
 ## similarity
+
+**Public function** · `similarity(a; b)`
 
 How alike two strings are, from 0 to 1. Databases offer the same idea as trigram similarity; this one uses bigrams.
 
-### The example
+### similarity: the example
 
 Six pairs:
 
@@ -132,11 +148,11 @@ try similarity("a"; 5) catch .
 "similarity: 5 is not a string"
 ```
 
-### Reading the call
+### similarity: reading the call
 
 Both arguments are filters, run on the input of `similarity`. In `map(similarity(.[0]; .[1]))` the input is one pair, and the two filters pick its two members. On a table row it would read `similarity(.name; .alias)`.
 
-### The definition
+### similarity: the definition
 
 `similarity/2`, lines 1133 to 1142:
 
@@ -161,11 +177,15 @@ Built into jq: `type`. From this library: `_bigrams`, `_dice`.
 - `elif $a == $b then 1` answers equal strings without computing anything, and covers strings too short to have a bigram, which `_dice` would score 0.
 - `else _dice($a | _bigrams; $b | _bigrams)`.
 
+---
+
 ## join_fuzzy
+
+**Public function** · `join_fuzzy($right; lblock; rblock; lstr; rstr; $min; $as)`
 
 A left outer join on "most similar string": each left row gets the right row whose string is most like its own, if the similarity reaches a minimum. Rows are compared only when they share an exact key, the block, which keeps the number of comparisons down.
 
-### The example
+### join_fuzzy: the example
 
 Host names typed by hand, to be matched to an inventory. Left rows:
 
@@ -203,7 +223,7 @@ The block is the site, the left string is the host in lower case, and the minimu
 
 Every left row comes back with a `match` field. `WEB01` in lower case equals `web01`: similarity 1. `veb02` is closest to `web02` at 0.75. `db1` scores 0.4 against `db01`, below the minimum, so its match is null. `lab01` has no site, so it is compared with nothing.
 
-### Reading the call
+### join_fuzzy: reading the call
 
 | Argument | In the example | Runs on | Meaning |
 |---|---|---|---|
@@ -215,7 +235,7 @@ Every left row comes back with a `match` field. `WEB01` in lower case equals `we
 | `$min` | `0.6` | nothing: a value | the lowest similarity that counts as a match |
 | `$as` | `"match"` | nothing: a value | the name of the field added to each left row |
 
-### What happens inside, on the example
+### join_fuzzy: what happens inside, on the example
 
 Step 1, the index `$ix`, built once: the right rows grouped by block. Each is stored with its block as JSON text (`b`), its string (`s`), its bigrams (`g`) and the row itself (`r`).
 
@@ -248,7 +268,7 @@ Step 3: the best candidate is kept. `web01` scores 0.5, below the minimum of 0.6
 
 Step 4: the left row gets the field: `{similarity: 0.75, row: the web02 row}`, or null when nothing was kept.
 
-### The definition
+### join_fuzzy: the definition
 
 `join_fuzzy/7`, lines 1144 to 1160:
 

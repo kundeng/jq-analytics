@@ -15,11 +15,25 @@ flowchart LR
 
 Times are epoch seconds: the number of seconds since 1970-01-01 00:00 UTC. A day is 86,400 of them.
 
+On this page, in the order of the file:
+
+| Function | Whose | What it is for |
+|---|---|---|
+| `_cal_bad`, `_cal_date` | Internal helpers, not for callers | `_cal_date` turns the text `"YYYY-MM-DD"` into the epoch seconds of that day's midnight UTC, and refuses anything that is not a real date |
+| `_cal_p`, `_cal_iso_weeks` | Internal helpers, not for callers | Input |
+| `_cal_pad2` | Internal helper, not for callers | A number as text of at least two digits, for `2026-03` and `2026-W09` |
+| `_cal_midnight` | Internal helper, not for callers | Input |
+| `calendar` | Public function | A date table |
+
+---
+
 ## _cal_bad, _cal_date
+
+**Internal helpers, not for callers** · `_cal_bad($who)`, `_cal_date($who)`
 
 `_cal_date` turns the text `"YYYY-MM-DD"` into the epoch seconds of that day's midnight UTC, and refuses anything that is not a real date. `_cal_bad` is its one error message, with the caller's name in front.
 
-### The example
+### _cal_bad and the others: the example
 
 A good date, an impossible one, the wrong format, and a number:
 
@@ -33,7 +47,7 @@ A good date, an impossible one, the wrong format, and a number:
 
 The first is midnight UTC of 8 March 2026. The other three are refused with the same message, each quoting its input.
 
-### What happens inside, on the example
+### _cal_bad and the others: what happens inside, on the example
 
 Step 1, the pattern test: the input must be a string of four digits, a dash, two digits, a dash, two digits. `"08/03/2026"` and the number stop here.
 
@@ -57,7 +71,7 @@ Step 3, the round trip: the number is printed back as a date and compared with t
 "2026-03-08"
 ```
 
-### The definition
+### _cal_bad and the others: the definition
 
 `_cal_bad/1`, line 895:
 
@@ -85,11 +99,15 @@ Built into jq: `fromdateiso8601`, `gmtime`, `not`, `strftime`, `test`, `type`. F
 - `try (...) catch null`: an engine that refuses an impossible date in `fromdateiso8601` gives null here; the others give a number. `$e == null or (... != $s)` treats both the same way, which makes the result equal on every engine.
 - `($s | _cal_bad($who))`: `_cal_bad` builds its message from its input with `tojson`, so a string is quoted and a number is not.
 
+---
+
 ## _cal_p, _cal_iso_weeks
+
+**Internal helpers, not for callers** · `_cal_p`, `_cal_iso_weeks`
 
 Input: a year. `_cal_iso_weeks` gives the number of ISO weeks in it, 52 or 53. `_cal_p` is the helper it is built from: the weekday of 31 December of the year, with 0 for Sunday.
 
-### The example
+### _cal_p and the others: the example
 
 ```jq
 [2015, 2020, 2021, 2026] | map({year: ., dec31_weekday: _cal_p, iso_weeks: _cal_iso_weeks})
@@ -106,7 +124,7 @@ Input: a year. `_cal_iso_weeks` gives the number of ISO weeks in it, 52 or 53. `
 
 2015, 2020 and 2026 end on a Thursday (4) and have 53 weeks. 2021 ends on a Friday (5) and did not start on a Thursday, so it has 52.
 
-### The definition
+### _cal_p and the others: the definition
 
 `_cal_p/0`, line 903:
 
@@ -127,11 +145,15 @@ From this library: `_cal_p`.
 - `_cal_p` is `(y + y/4 - y/100 + y/400) mod 7`, each division rounded down. One weekday step per year, and one more per leap year.
 - An ISO week runs Monday to Sunday and belongs to the year that holds its Thursday. A year has 53 of them when it ends on a Thursday (`_cal_p == 4`) or starts on one, which is the same as the year before ending on a Wednesday (`(. - 1) | _cal_p == 3`).
 
+---
+
 ## _cal_pad2
+
+**Internal helper, not for callers** · `_cal_pad2`
 
 A number as text of at least two digits, for `2026-03` and `2026-W09`.
 
-### The example
+### _cal_pad2: the example
 
 ```jq
 [3, 12] | map(_cal_pad2)
@@ -141,7 +163,7 @@ A number as text of at least two digits, for `2026-03` and `2026-W09`.
 ["03","12"]
 ```
 
-### The definition
+### _cal_pad2: the definition
 
 `_cal_pad2/0`, line 905:
 
@@ -153,11 +175,15 @@ Built into jq: `tostring`.
 
 `"0\(.)"` is string interpolation: the text `0` followed by the input. A number of 10 or more goes through `tostring`.
 
+---
+
 ## _cal_midnight
+
+**Internal helper, not for callers** · `_cal_midnight($z)`
 
 Input: `$m`, midnight UTC of some date. Output: the moment at which clocks in zone `$z` read that same date at 00:00. `calendar` uses it for a day's `start` and `end`.
 
-### The example
+### _cal_midnight: the example
 
 Three days around a clock change. In the zone `America/Detroit`, clocks go forward one hour on 8 March 2026. For each date the run shows when the local day starts, in UTC, and how long it is.
 
@@ -179,7 +205,7 @@ tz("America/Detroit") as $z
 
 8 March starts at 05:00 UTC, on winter time, five hours behind UTC. The next day starts at 04:00 UTC, on summer time. So 8 March is 23 hours long.
 
-### What happens inside, on the example
+### _cal_midnight: what happens inside, on the example
 
 Local midnight is `$m` minus the zone's offset from UTC. The offset depends on the moment, and the moment is what is being looked for, so the function guesses and then corrects. For 8 March:
 
@@ -201,7 +227,7 @@ tz("America/Detroit") as $z | ("2026-03-08" | _cal_date("x")) as $m
 
 Step 1: the offset in force at `$m` is -18000 seconds (five hours behind), so the guess is `$m` plus 18000. Step 2: the offset in force at the guess is the same, so the result equals the guess.
 
-### The definition
+### _cal_midnight: the definition
 
 `_cal_midnight/1`, lines 906 to 908:
 
@@ -216,11 +242,15 @@ From this library: `tz_offset`.
 - `($m - ($m | tz_offset($z))) as $e` is the guess. `$m - ($e | tz_offset($z))` is the answer, using the offset at the guess.
 - The second step changes the answer only when a clock change falls between `$m` and the guess. In the example the change is at 2 in the morning local time, after local midnight, so the guess is already right. The step keeps the function right for a zone that changes closer to midnight.
 
+---
+
 ## calendar
+
+**Public function** · `calendar($from; $to; $zone)`, `calendar($from; $to)`
 
 A date table: one row per day from `$from` to `$to`, both included. It ignores its input. A report joins events to it to get weeks, quarters and day boundaries, the way a SQL warehouse uses a date dimension. The two-argument form is the same in UTC.
 
-### The example
+### calendar: the example
 
 One day in full:
 
@@ -296,7 +326,7 @@ Refused: a `$from` after `$to`, a zone the tables do not have, and anything `_ca
 "tz: zone not in the zone tables: Mars/Base"
 ```
 
-### Reading the call
+### calendar: reading the call
 
 All three arguments are values.
 
@@ -306,7 +336,7 @@ All three arguments are values.
 | `$to` | `"2026-03-09"` | the last day, included |
 | `$zone` | `"America/Detroit"` | a zone name, or the result of `tz(name)`; decides `start` and `end` only |
 
-### What happens inside, on the example
+### calendar: what happens inside, on the example
 
 Step 1: both dates go through `_cal_date`, giving `$d0` and `$d1`, and `range` numbers the days from 0. Day `$i` has midnight UTC `$m = $d0 + 86400 * $i`, which is exact because UTC has no clock changes.
 
@@ -335,7 +365,7 @@ Step 4, the US week: floor((doy + jan1 - 1) / 7) + 1. For 4 January 2021, floor(
 
 Step 5: `start` is `_cal_midnight` of `$m` and `end` is `_cal_midnight` of `$m + 86400`.
 
-### The definition
+### calendar: the definition
 
 `calendar/3`, lines 910 to 941:
 

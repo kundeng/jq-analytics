@@ -128,6 +128,7 @@ calls line of one definition:
 
 - 2026-11-18: opened on the owner's review comment on `shape` and his go-ahead for the renames and the marking. Sprint 60 (input-type check) still waits for the end of his review; this sprint does not touch behaviour.
 - 2026-11-18: tasks 1 to 4 done, closed as SHIPPED. 150 cases pass on jq 1.7.1, jq 1.8.2, gojq 0.12.20, jaq 3.1.2 and the Python jq 1.13.0 package with the new names; `tests/check_names.py` finds no clash; every README example and every read-out run gives the same output on four engines. A search for the seven old names as calls or in backticks finds none outside the README's table of renames. The read-out's 18 pages carry 122 calls lines; read against the code for `shape`, `group_agg`, `_groups`, `tz_offset`, `join_asof` and `join_within`. `import "analytics" as a` with a user's own `mean` beside `a::mean` gives both answers on the five engines. Version 0.10.0.
+- 2026-11-18: after the close, on the owner's word that the hierarchy of a read-out page was hard to follow: each page now opens with a table of its functions (name, public or internal, what it is for), each function starts with a rule and a line saying whose it is and how it is called, and each sub-heading names its function (`### shape: the example`). Generator only; version 0.10.1.
 
 ## As built
 

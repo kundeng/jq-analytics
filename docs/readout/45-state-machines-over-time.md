@@ -25,11 +25,26 @@ Most examples on this page use the five events of request T1 drawn above:
 | T1 | 50 | Open |
 | T1 | 80 | Closed |
 
+On this page, in the order of the file:
+
+| Function | Whose | What it is for |
+|---|---|---|
+| `_time_check` | Internal helper, not for callers | A guard that `state_blocks`, `transitions` and `sessions` each call first |
+| `_blocks` | Internal helper, not for callers | The blocks of one entity |
+| `state_blocks` | Public function | A table of events into a table of blocks |
+| `transitions` | Public function | One row per change of state |
+| `sessions` | Public function | Events grouped into sessions |
+| `runs` | Public function | Run-length encoding |
+
+---
+
 ## _time_check
+
+**Internal helper, not for callers** · `_time_check(time; $who)`
 
 A guard that `state_blocks`, `transitions` and `sessions` each call first. An event with a null time cannot be sorted into place or subtracted, so it stops the function with an error that names it.
 
-### The example
+### _time_check: the example
 
 Events that all have a time pass through unchanged. One event with no time is the error. The second argument is the name of the calling function, for the message.
 
@@ -43,7 +58,7 @@ Events that all have a time pass through unchanged. One event with no time is th
 "sessions: an event has no time"
 ```
 
-### The definition
+### _time_check: the definition
 
 `_time_check/2`, lines 343 to 344:
 
@@ -58,11 +73,15 @@ Built into jq: `any`, `error`.
 - `error("\($who): an event has no time")`: the message starts with the caller's name, which is the value `$who`.
 - `else . end`: otherwise the input goes on as it is, so the guard can be the first step of a pipeline.
 
+---
+
 ## _blocks
+
+**Internal helper, not for callers** · `_blocks(time; state)`
 
 The blocks of one entity: its events, already sorted by time, with consecutive events of the same state merged. `state_blocks` and `transitions` call it once per entity.
 
-### The example
+### _blocks: the example
 
 The five events of T1.
 
@@ -82,11 +101,11 @@ The five events of T1.
 
 Four blocks from five events. The two Open events at 0 and 10 are one block that lasts from 0 to 30: a repeated state does not restart the clock. Each block ends where the next one starts, so the blocks cover the timeline with no gaps. The last block has no end yet, and so no duration.
 
-### Reading the call
+### _blocks: reading the call
 
 Both arguments are filters, each run on one event: `time` gives the event's time and `state` its state.
 
-### What happens inside, on the example
+### _blocks: what happens inside, on the example
 
 Step 1, `[range($n) | select(. == 0 or (state here != state before))] as $st`: the positions that start a block. Position 0 always does. Position 1 does not, because its state equals the one before.
 
@@ -128,7 +147,7 @@ Step 3: each block is read off those two positions. For block 0, `$i` is 0 and `
 
 That is the first block of the result at the top.
 
-### The definition
+### _blocks: the definition
 
 `_blocks/2`, lines 346 to 356:
 
@@ -155,11 +174,15 @@ Built into jq: `length`, `range`, `select`.
 - `$t0` and `$t1`: the time of the block's first event, and of the next block's first event, or null.
 - The object: step 3. `events` for the last block is `$n - $i`, the rest of the array.
 
+---
+
 ## state_blocks
+
+**Public function** · `state_blocks(entity; time; state)`
 
 A table of events into a table of blocks: per entity, how long it spent in each state, in order. It answers "how long was each request in each status".
 
-### The example
+### state_blocks: the example
 
 The events of two requests, mixed and not in time order.
 
@@ -190,7 +213,7 @@ The events of two requests, mixed and not in time order.
 
 Five rows: the four blocks of T1 in time order, then the one block of T2. T1 comes first because its first event comes first in the input. Each row carries the entity key, `id`.
 
-### Reading the call
+### state_blocks: reading the call
 
 | Argument | In the example | Runs on | Meaning |
 |---|---|---|---|
@@ -200,7 +223,7 @@ Five rows: the four blocks of T1 in time order, then the one block of T2. T1 com
 
 The entity key is copied into the output as `group_agg` does on the grouping page: the fields of an object key, or a field called `key` for any other value.
 
-### What happens inside, on the example
+### state_blocks: what happens inside, on the example
 
 Step 1, `_time_check(time; "state_blocks")`: every event has a time, so the table passes through.
 
@@ -230,7 +253,7 @@ Step 3, `[.[] | del(.blocks) as $k | .blocks[] | $k + .]`: the nested blocks are
 {"id":"T2","state":"Open","start":5,"end":null,"duration":null,"events":1}
 ```
 
-### What is refused
+### state_blocks: what is refused
 
 ```jq
 [{id: "T1", t: 0, s: "Open"}, {id: "T1", t: null, s: "Work"}] | try state_blocks({id}; .t; .s) catch .
@@ -240,7 +263,7 @@ Step 3, `[.[] | del(.blocks) as $k | .blocks[] | $k + .]`: the nested blocks are
 "state_blocks: an event has no time"
 ```
 
-### The definition
+### state_blocks: the definition
 
 `state_blocks/3`, lines 357 to 367:
 
@@ -262,11 +285,15 @@ Built into jq: `del`, `sort_by`. From this library: `_blocks`, `_time_check`, `g
 
 The three lines are steps 1, 2 and 3. `sort_by` is stable, so two events of one entity with the same time keep their input order.
 
+---
+
 ## transitions
+
+**Public function** · `transitions(entity; time; state)`
 
 One row per change of state: from which state, to which, and when. It answers "how often does a request go from Work back to Open".
 
-### The example
+### transitions: the example
 
 The five events of T1.
 
@@ -285,7 +312,7 @@ The five events of T1.
 
 Three changes from four blocks. The event at 10 is no change, because the state stayed Open. An entity with one block has no rows here.
 
-### What happens inside, on the example
+### transitions: what happens inside, on the example
 
 Steps 1 and 2 are those of `state_blocks`: the time check, then one row per entity with its `blocks`. Step 3 reads each pair of neighbouring blocks: for `$i` from 1, `from` is the state of block `$i - 1`, `to` is the state of block `$i`, and `at` is the start of block `$i`. On the states and starts of T1's four blocks:
 
@@ -302,7 +329,7 @@ Steps 1 and 2 are those of `state_blocks`: the time check, then one row per enti
 ]
 ```
 
-### The definition
+### transitions: the definition
 
 `transitions/3`, lines 369 to 374:
 
@@ -321,11 +348,15 @@ Built into jq: `del`, `length`, `range`, `sort_by`. From this library: `_blocks`
 - `range(1; $b | length) as $i`: from 1, because the first block has nothing before it.
 - `$k + {from: ..., to: ..., at: ...}`: the entity key in front, as in `state_blocks`.
 
+---
+
 ## sessions
+
+**Public function** · `sessions(entity; time; $gap)`
 
 Events grouped into sessions: per entity, a new session starts when the gap since the previous event is greater than a limit. It is the usual way to turn page views into visits.
 
-### The example
+### sessions: the example
 
 Five events of user `u1`, at times 0, 10, 100, 120 and 200, with a gap limit of 30.
 
@@ -344,11 +375,11 @@ Five events of user `u1`, at times 0, 10, 100, 120 and 200, with a gap limit of 
 
 Three sessions. The gaps are 10, 90, 20 and 80. The gaps of 10 and 20 stay inside a session, and the gaps of 90 and 80 each start a new one. `end` is the time of the session's last event, so a session of one event starts and ends at the same time.
 
-### Reading the call
+### sessions: reading the call
 
 `entity` and `time` are filters run on one event, as in `state_blocks`. The third argument, `$gap`, is a value, in the same unit as the times.
 
-### What happens inside, on the example
+### sessions: what happens inside, on the example
 
 Steps 1 and 2 have the shape of `state_blocks`: the time check, then `group_agg` by entity with the events sorted by time. Inside one entity:
 
@@ -376,7 +407,7 @@ Step 4: session `$j` runs from its start `$i` up to the next start `$nx`, or to 
 
 Step 5: the nested sessions are flattened and the entity key put in front, as in `state_blocks`.
 
-### Edge cases and what is refused
+### sessions: edge cases and what is refused
 
 A gap of exactly `$gap` does not start a new session, because the test is "greater than". An event with no time is the error.
 
@@ -390,7 +421,7 @@ A gap of exactly `$gap` does not start a new session, because the test is "great
 "sessions: an event has no time"
 ```
 
-### The definition
+### sessions: the definition
 
 `sessions/3`, lines 376 to 386:
 
@@ -416,11 +447,15 @@ Built into jq: `del`, `length`, `range`, `select`, `sort_by`. From this library:
 - The `$nx` line and the object: step 4. Sessions are numbered from 1 within the entity (`$j + 1`).
 - The last line: step 5.
 
+---
+
 ## runs
+
+**Public function** · `runs(f)`
 
 Run-length encoding: consecutive items with the same value become one row with the value, where the run starts and how long it is. It works on an array as it stands, with no sorting and no entity. Streaks are the long runs.
 
-### The example
+### runs: the example
 
 Six check results in order.
 
@@ -450,7 +485,7 @@ The longest failing streak is then one more step:
 {"value":"fail","start":2,"n":3}
 ```
 
-### What happens inside, on the example
+### runs: what happens inside, on the example
 
 Step 1, the start positions `$st`: position 0, and every position whose value differs from the one before.
 
@@ -465,7 +500,7 @@ Step 1, the start positions `$st`: position 0, and every position whose value di
 
 Step 2: run `$j` starts at `$i = $st[$j]`, and its length `n` is the next start minus `$i`, or the array's length minus `$i` for the last run. The lengths here are 2 - 0, 5 - 2 and 6 - 5.
 
-### The definition
+### runs: the definition
 
 `runs/1`, lines 388 to 394:
 

@@ -6,11 +6,26 @@ Eight definitions for the first questions asked of a table: which values are com
 
 The first four take a plain list of values as input, so a column is first pulled out of a table with `map(.field)`. `corr` and `diff_tables` take a table and filter arguments; in jq a `;` separates arguments, and an argument such as `.x` is a filter run on each row.
 
+On this page, in the order of the file:
+
+| Function | Whose | What it is for |
+|---|---|---|
+| `mode` | Public function | The most frequent non-null value of a list |
+| `value_counts` | Public function | One row per distinct non-null value of a list, with its count and its share of the non-null values, most frequent first |
+| `bin_edges`, `histogram` | Public functions | A histogram of a list of numbers |
+| `corr` | Public function | Pearson's correlation of two columns |
+| `profile` | Public function | A first look at a table |
+| `_diff_index`, `diff_tables` | Public functions and internal helpers | `diff_tables` reports what changed between two versions of a table that share a key |
+
+---
+
 ## mode
+
+**Public function** · `mode`
 
 The most frequent non-null value of a list. SQL has `mode() WITHIN GROUP`; a spreadsheet has `MODE`.
 
-### The example
+### mode: the example
 
 ```jq
 [3, 1, 3, 1, null, 2] | mode
@@ -32,7 +47,7 @@ A list with no non-null value has no mode:
 ["a",null,null]
 ```
 
-### What happens inside, on the example
+### mode: what happens inside, on the example
 
 Step 1, `nonnull | group_by(.)`: the null dropped, equal values gathered, groups sorted by value.
 
@@ -64,7 +79,7 @@ Step 2, `map([-length, .[0]])`: each group becomes `[minus its size, the value]`
 
 Step 3, `min | .[1]`: arrays compare element by element, so the smallest pair is the largest group, and among groups of the same size the one with the smallest value. Here that is `[-2, 1]`, and its second element is the result.
 
-### The definition
+### mode: the definition
 
 `mode/0`, lines 1027 to 1029:
 
@@ -78,11 +93,15 @@ Built into jq: `group_by`, `length`, `map`, `min`. From this library: `nonnull`.
 
 One `min` does both the "most frequent" and the tie rule, because the size is negated. `if length == 0 then null` covers the empty case before grouping.
 
+---
+
 ## value_counts
+
+**Public function** · `value_counts`
 
 One row per distinct non-null value of a list, with its count and its share of the non-null values, most frequent first. It is SQL's `SELECT v, count(*) ... GROUP BY v ORDER BY 2 DESC`, and what pandas calls `value_counts`.
 
-### The example
+### value_counts: the example
 
 ```jq
 ["a", "b", "a", "c", null] | value_counts
@@ -98,7 +117,7 @@ One row per distinct non-null value of a list, with its count and its share of t
 
 Four non-null values. `a` appears twice, a share of 2 / 4 = 0.5. `b` and `c` tie on count and come in value order. The null is not counted and is not in the divisor.
 
-### The definition
+### value_counts: the definition
 
 `value_counts/0`, lines 1031 to 1034:
 
@@ -115,11 +134,15 @@ Built into jq: `group_by`, `length`, `map`, `sort_by`. From this library: `nonnu
 - `group_by(.) | map({value: .[0], count: length, share: (length / $n)})`: one row per group of equal values.
 - `sort_by([-.count, .value])`: highest count first, ties by value.
 
+---
+
 ## bin_edges, histogram
+
+**Public functions** · `bin_edges($lo; $hi; $n)`, `histogram($edges)`
 
 A histogram of a list of numbers: how many fall in each bin. `bin_edges($lo; $hi; $n)` makes the edges of `$n` equal bins; `histogram($edges)` counts. A spreadsheet's `FREQUENCY` and numpy's `histogram` do the same.
 
-### The example
+### bin_edges and the others: the example
 
 Four bins from 0 to 64, and six values, one of them null:
 
@@ -149,7 +172,7 @@ Refused: a value outside the edges, edges that are not increasing, and a `bin_ed
 "bin_edges: need hi > lo and n >= 1"
 ```
 
-### What happens inside, on the example
+### bin_edges and the others: what happens inside, on the example
 
 Step 1: the edges are checked: at least two, all numbers, each above the one before.
 
@@ -175,7 +198,7 @@ Step 2: each value is placed in a bin by a binary search of the edges. jq's `bse
 
 Step 3: the counts per bin number are 1, 1, 1 and 2, and the last line lays them out over all bins with their edges, with 0 for a bin nothing fell in.
 
-### The definition
+### bin_edges and the others: the definition
 
 `bin_edges/3`, lines 1036 to 1039:
 
@@ -219,11 +242,15 @@ Built into jq: `any`, `bsearch`, `error`, `length`, `range`, `select`, `tojson`,
 - `if ($v | type) != "number" or $v < $edges[0] or $v > $edges[$k - 1]` is the out-of-range error.
 - `$c[tostring] // 0` reads a bin's count, 0 when the bin has no entry.
 
+---
+
 ## corr
+
+**Public function** · `corr(x; y)`
 
 Pearson's correlation of two columns: 1 when they rise together on a straight line, -1 when one falls as the other rises, near 0 when there is no straight-line relation. It matches SQL's `corr(y, x)` and a spreadsheet's `CORREL`.
 
-### The example
+### corr: the example
 
 | x | y |
 |---|---|
@@ -256,7 +283,7 @@ null
 null
 ```
 
-### What happens inside, on the example
+### corr: what happens inside, on the example
 
 Step 1, `$p`: the pairs `[x, y]` where neither is null.
 
@@ -289,7 +316,7 @@ By hand: the differences are (-1, -1), (0, 1) and (1, 0). The products sum to 1 
 
 Step 4: the first sum divided by the square root of the product of the other two: 1 / sqrt(2 × 2) = 0.5.
 
-### The definition
+### corr: the definition
 
 `corr/2`, lines 1060 to 1070:
 
@@ -313,11 +340,15 @@ Built into jq: `add`, `length`, `map`, `select`, `sqrt`.
 - `$mx`, `$my` are the means of step 2.
 - `if $s[1] == 0 or $s[2] == 0 then null`: a sum of squares of 0 means that side never varies, and the division would be by 0.
 
+---
+
 ## profile
+
+**Public function** · `profile`
 
 A first look at a table: one row per column, saying how many rows have it, how many are null or empty, how many distinct values it holds, of which types, and its smallest and largest value.
 
-### The example
+### profile: the example
 
 Four made-up host rows with the usual defects: an empty string, a number stored as text, a null, a missing field.
 
@@ -343,7 +374,7 @@ Four made-up host rows with the usual defects: an empty string, a number stored 
 
 Three rows, in column-name order. `ram` holds two numbers, one string and one null: `types` says so, and `min` and `max` are null because numbers and strings have no common order worth reporting. `site` is present on three rows of four; the absent one counts under `nulls`, and the empty string under `empty`. An empty string is still a value, so it counts in `distinct` and is the `min`.
 
-### What happens inside, on the example
+### profile: what happens inside, on the example
 
 Step 1, `$cols`: every field name of every row, sorted, repeats removed.
 
@@ -372,7 +403,7 @@ Step 2, per column, three lists. For `ram` the run prints `$pv`, the values on t
 
 Step 3: the output row is counted from those lists. For `ram`: `present` 4 (the size of `$pv`), `nulls` 4 - 3 = 1, `distinct` 3, and no `min` or `max` because `$ts` has two types.
 
-### The definition
+### profile: the definition
 
 `profile/0`, lines 1072 to 1089:
 
@@ -404,11 +435,15 @@ Built into jq: `from_entries`, `group_by`, `has`, `keys`, `length`, `map`, `max`
 - `min` and `max` are given only when `$ts` is exactly `["number"]` or `["string"]`.
 - Each column is one pass over the rows, so the cost grows with rows times columns.
 
+---
+
 ## _diff_index, diff_tables
+
+**Public functions and internal helpers** · `_diff_index(key; $who)`, `diff_tables($old; key)`
 
 `diff_tables` reports what changed between two versions of a table that share a key: one row per key that was added, removed or changed. The input is the new table and `$old` is the old one. `_diff_index` is its helper: a table as a lookup from key to row.
 
-### The example
+### _diff_index and the others: the example
 
 Yesterday's hosts:
 
@@ -448,7 +483,7 @@ A key that appears twice in either table, or a null key, is refused, and the mes
 "diff_tables: a row of the old table has a null key"
 ```
 
-### What happens inside, on the example
+### _diff_index and the others: what happens inside, on the example
 
 Step 1: `_diff_index` on each table. For the new one, `$n`, a lookup from the key as JSON text to the row; the old one, `$o`, is built the same way.
 
@@ -486,7 +521,7 @@ Step 3: each key is looked up in both. A hand trace:
 | old01 | no | yes | removed |
 | web01 | yes | yes, different | changed; fields os and ram |
 
-### The definition
+### _diff_index and the others: the definition
 
 `_diff_index/2`, lines 1091 to 1095:
 

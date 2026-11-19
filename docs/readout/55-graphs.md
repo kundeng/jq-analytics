@@ -31,11 +31,27 @@ As a table of edges, in the order every example lists them:
 | lint | package |
 | docs | package |
 
+On this page, in the order of the file:
+
+| Function | Whose | What it is for |
+|---|---|---|
+| `_adj` | Internal helper, not for callers | A lookup from a node to the list of nodes its edges lead to |
+| `_search` | Internal helper, not for callers | Breadth-first search from `$start` |
+| `reachable`, `hops` | Public functions | `reachable` lists every node that can be reached from `$start` along the edges, nearest first |
+| `shortest_path` | Public function | The route from `$start` to `$goal` with the fewest edges, as `{path, cost}`, where `cost` is the number of edges |
+| `shortest_path` | Public function | The route with the lowest total weight, where `weight` is a filter giving each edge's weight |
+| `topo_order` | Public function | A dependency order |
+| `components` | Public function | Connected groups, with the edges read as undirected |
+
+---
+
 ## _adj
+
+**Internal helper, not for callers** · `_adj(from; to)`
 
 A lookup from a node to the list of nodes its edges lead to. Every search below reads a node's neighbours from it with one lookup.
 
-### The example
+### _adj: the example
 
 ```jq
 [["fetch", "compile"], ["compile", "test"], ["test", "package"], ["fetch", "lint"], ["lint", "package"], ["docs", "package"]]
@@ -54,7 +70,7 @@ A lookup from a node to the list of nodes its edges lead to. Every search below 
 
 One object. Each key is a node written as JSON text, which is why `fetch` appears as `"\"fetch\""`: an object key has to be a string, and `tojson` turns any node (a number, an array) into one. `fetch` has two neighbours, in the order its edges appear in the input. `package` has no key because no edge starts there.
 
-### What happens inside, on the example
+### _adj: what happens inside, on the example
 
 Step 1, `group_by(.a)`: one array of five groups, one per starting node. The builtin sorts the groups by the node, and inside a group the edges keep their input order.
 
@@ -92,7 +108,7 @@ Step 2, `map({key: ..., value: map(to)})`: each group becomes one key and value 
 
 Step 3, `from_entries`: the pairs become one object, the result at the top.
 
-### The definition
+### _adj: the definition
 
 `_adj/2`, lines 435 to 436:
 
@@ -108,11 +124,15 @@ Built into jq: `from_entries`, `group_by`, `map`, `tojson`.
 - `map(to)` runs `to` on each edge of the group.
 - `from_entries` builds the object in one step.
 
+---
+
 ## _search
+
+**Internal helper, not for callers** · `_search($adj; $start)`
 
 Breadth-first search from `$start`: every node that can be reached, the start first, in the order met. Each row says how many edges away the node is (`hops`) and which node it was reached from (`via`). `$adj` is the lookup that `_adj` makes.
 
-### The example
+### _search: the example
 
 ```jq
 [["fetch", "compile"], ["compile", "test"], ["test", "package"], ["fetch", "lint"], ["lint", "package"], ["docs", "package"]]
@@ -131,7 +151,7 @@ Breadth-first search from `$start`: every node that can be reached, the start fi
 
 `compile` and `lint` are one edge from `fetch`. `test` and `package` are two edges away. `package` was reached from `lint`, not from `test`, because the search met it at distance 2 through `lint` before it looked at `test`'s edges. `docs` is missing: no edge leads to it from `fetch`.
 
-### What happens inside, on the example
+### _search: what happens inside, on the example
 
 The search keeps a state object and changes it once per round:
 
@@ -165,7 +185,7 @@ The frontiers of the trace can be read back from the result by grouping its rows
 
 After the loop, `[.seen[]] | sort_by(.[0])` puts the five records in position order, and `map({node: .[1], hops: .[2], via: .[3]})` names their parts. That is the result at the top.
 
-### The definition
+### _search: the definition
 
 `_search/2`, lines 438 to 451:
 
@@ -194,11 +214,15 @@ Built into jq: `length`, `map`, `sort_by`, `to_entries`, `tojson`, `tonumber`, `
 - `if .seen[$k] != null then .` skips a node met before. This is what makes a cycle safe: a node is recorded once.
 - `.next[.n | tostring] = $e[1]` stores the new node under its position, and `sort_by(.key | tonumber)` reads them back in that order. `next` and `seen` are objects written by key because appending to an array inside a loop copies the array each time, and the cost then grows with the square of the graph.
 
+---
+
 ## reachable, hops
+
+**Public functions** · `reachable(from; to; $start)`, `hops(from; to; $start)`
 
 `reachable` lists every node that can be reached from `$start` along the edges, nearest first. `hops` gives the same nodes with their distance in edges, the start included at 0. In SQL both need a recursive query.
 
-### The example
+### reachable and the others: the example
 
 ```jq
 [["fetch", "compile"], ["compile", "test"], ["test", "package"], ["fetch", "lint"], ["lint", "package"], ["docs", "package"]]
@@ -224,7 +248,7 @@ Two values. From `compile` the build can go on to `test` and then `package`. Fro
 ["compile","lint","test","package"]
 ```
 
-### The definition
+### reachable and the others: the definition
 
 `reachable/3`, lines 453 to 456:
 
@@ -253,11 +277,15 @@ Both run `_adj` and then `_search`, and differ in what they keep of the search r
 - `reachable`: `.[1:]` drops the first row, which is always the start, and `map(.node)` keeps the names.
 - `hops`: `map({node, hops})` keeps two of the three fields. `{node, hops}` is short for `{node: .node, hops: .hops}`.
 
+---
+
 ## shortest_path
+
+**Public function** · `shortest_path(from; to; $start; $goal)`
 
 The route from `$start` to `$goal` with the fewest edges, as `{path, cost}`, where `cost` is the number of edges.
 
-### The example
+### shortest_path: the example
 
 Three calls: a goal that can be reached, one that cannot, and the start itself.
 
@@ -275,7 +303,7 @@ null
 
 Through `lint` takes two edges; through `compile` and `test` takes three. No route gives null. The start to itself is a path of one node and cost 0.
 
-### What happens inside, on the example
+### shortest_path: what happens inside, on the example
 
 Step 1: the search result, indexed by node. `$ix` is one object from each node (as JSON text) to its search row.
 
@@ -310,7 +338,7 @@ Step 2: start at the goal and follow `via` back. `package` was reached from `lin
 
 Step 3: `reverse` turns goal to start into start to goal, and the goal's `hops` is the cost. That is the first result at the top.
 
-### The definition
+### shortest_path: the definition
 
 `shortest_path/4`, lines 463 to 472:
 
@@ -334,11 +362,15 @@ Built into jq: `recurse`, `reverse`, `select`, `tojson`. From this library: `_ad
 - `recurse(f)` emits its input, then `f` of it, then `f` of that, until `f` emits nothing. Here `f` looks up the node's `via`, and `select(. != null)` ends the walk at the start.
 - Among routes with the same number of edges, the result is the one the breadth-first search finds first, following edges in input order.
 
+---
+
 ## shortest_path
+
+**Public function** · `shortest_path(from; to; weight; $start; $goal)`
 
 The route with the lowest total weight, where `weight` is a filter giving each edge's weight. The output is the same `{path, cost}`, with `cost` the total weight. This is Dijkstra's algorithm.
 
-### The example
+### shortest_path: the example
 
 Each edge carries a duration in minutes:
 
@@ -363,7 +395,7 @@ Each edge carries a duration in minutes:
 
 The route through `compile` and `test` has three edges and costs 1 + 1 + 1 = 3. The route through `lint` has two edges and costs 5 + 5 = 10. The four-argument form picked the second; this one picks the first.
 
-### Reading the call
+### shortest_path: reading the call
 
 | Argument | In the example | Runs on | Meaning |
 |---|---|---|---|
@@ -373,7 +405,7 @@ The route through `compile` and `test` has three edges and costs 1 + 1 + 1 = 3. 
 | `$start` | `"fetch"` | nothing: a value | where the route begins |
 | `$goal` | `"package"` | nothing: a value | where it ends |
 
-### What happens inside, on the example
+### shortest_path: what happens inside, on the example
 
 Step 1: the weights are checked. A weight that is not a number, or is below 0, stops the call with an error that names it.
 
@@ -417,7 +449,7 @@ Step 3: the rounds. The state holds `d`, the best known cost and `via` for each 
 
 Step 4: the path is read from `d` as in the four-argument form, following each node's `via` back from the goal (`package`, `test`, `compile`, `fetch`) and reversing. The goal's cost in `d` is the result's `cost`.
 
-### The definition
+### shortest_path: the definition
 
 `shortest_path/5`, lines 474 to 501:
 
@@ -461,11 +493,15 @@ Built into jq: `del`, `error`, `first`, `from_entries`, `group_by`, `length`, `m
 - Inside the `reduce`, `$nd` is the cost of reaching the neighbour through `$u`. A neighbour already final is left alone. One not met before gets `$nd`. One met at a higher cost gets `$nd` and `$u` as its new `via`, and keeps its order found.
 - The lowest open node is found by looking at every open node each round, with no priority queue. The work grows with the nodes made final times the nodes open, which suits a few thousand nodes.
 
+---
+
 ## topo_order
+
+**Public function** · `topo_order(from; to)`
 
 A dependency order: one row per node with a `level`, such that every edge goes from a lower level to a higher one. Nodes on the same level do not depend on each other, so a build could run them at the same time.
 
-### The example
+### topo_order: the example
 
 ```jq
 [["fetch", "compile"], ["compile", "test"], ["test", "package"], ["fetch", "lint"], ["lint", "package"], ["docs", "package"]]
@@ -496,7 +532,7 @@ A graph with a cycle has no such order. The error names a node on the cycle:
 "topo_order: cycle through \"compile\""
 ```
 
-### What happens inside, on the example
+### topo_order: what happens inside, on the example
 
 Step 1: `$nodes`, every node named at either end of an edge, sorted, and `$deg0`, for each node the number of edges that point to it. The run prints the two values.
 
@@ -525,7 +561,7 @@ A node joins the frontier in the round after the last node pointing to it was ha
 
 Step 3: all six nodes were given a level, so there is no cycle, and the rows are sorted by level and node. In the cycle example, `compile`, `test` and `package` never reach a count of 0, the frontier runs empty with three nodes left, and the error branch runs.
 
-### The definition
+### topo_order: the definition
 
 `topo_order/2`, lines 503 to 526:
 
@@ -564,11 +600,15 @@ Built into jq: `error`, `length`, `map`, `select`, `sort`, `sort_by`, `tojson`, 
 - `if .left > 0`: nodes are left when the frontier runs empty. Each of them still has a count above 0, so each has another left node pointing to it.
 - `$pred` is the reversed graph among the left nodes. The walk starts at the first left node and steps to its smallest predecessor until it lands on a node it has visited. That node is on a cycle. Taking the smallest predecessor makes the node named the same on every run.
 
+---
+
 ## components
+
+**Public function** · `components(a; b)`
 
 Connected groups, with the edges read as undirected: one row per node, `{node, component}`, where `component` is the smallest node of the node's group.
 
-### The example
+### components: the example
 
 Three edges. `lint` points to `fetch`, against the direction of the other `fetch` edge; `x` and `y` touch nothing else.
 
@@ -588,7 +628,7 @@ Three edges. `lint` points to `fetch`, against the direction of the other `fetch
 
 Two groups. `compile`, `fetch` and `lint` are joined through `fetch`, and the group is named `compile`, its smallest node in jq's sort order. `x` and `y` form the group `x`.
 
-### What happens inside, on the example
+### components: what happens inside, on the example
 
 Step 1: the neighbour lookup holds every edge in both directions, so the search can walk an edge either way.
 
@@ -622,7 +662,7 @@ Step 2: the nodes are taken in sorted order: `compile`, `fetch`, `lint`, `x`, `y
 
 Step 3: each member is labelled with the node that started its search, and the rows are sorted by node. That is the result at the top.
 
-### The definition
+### components: the definition
 
 `components/2`, lines 528 to 539:
 

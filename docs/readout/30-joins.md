@@ -45,11 +45,28 @@ Two idioms recur in the code and are explained once here:
 - **A key goes through `tojson` before it is used as an object key.** jq object keys are strings, so the number `1` and the string `"1"` would otherwise collide, and an array key (a composite key) could not be used at all. `tojson` gives `1`, `"1"` and `[1,"a"]` three different strings.
 - **The right table is indexed once.** An object from key to rows is built before the left rows are walked, so the cost is left rows plus right rows, not their product.
 
+On this page, in the order of the file:
+
+| Function | Whose | What it is for |
+|---|---|---|
+| `_merge` | Internal helper, not for callers | One left row and one right row made into one output row |
+| `_matches` | Internal helper, not for callers | The pairing step that every join here shares, except `lookup` and `join_asof` |
+| `join_on` | Public function | The general flat join |
+| `join_inner`, `join_left`, `join_full`, `join_semi`, `join_anti` | Public functions | The five kinds of equality join under their own names |
+| `join_nest` | Public function | Every left row exactly once, with one new field holding the array of its matching right rows |
+| `lookup` | Public function | Attaches the one matching row of a second table under a new field |
+| `join_overlap` | Public function | Pairs with the same key whose time intervals overlap |
+| `join_asof` | Public function | For each left row, the right row with the same key and the latest time at or before the left row's time |
+
+---
+
 ## _merge
+
+**Internal helper, not for callers** · `_merge($l; $r)`
 
 One left row and one right row made into one output row. A flat join calls it for every matching pair. It differs from jq's `$l + $r` in one way: a field that both rows have with different values is an error, not a silent overwrite.
 
-### The example
+### _merge: the example
 
 Request 2 and the first `db01` host record. Both have a `host` field, with the same value.
 
@@ -63,7 +80,7 @@ _merge({id: 2, host: "db01"}; {host: "db01", site: "S"})
 
 One row with the fields of both. `host` appears once.
 
-### What happens inside, on the example
+### _merge: what happens inside, on the example
 
 Step 1, `$r | to_entries`: the right row as a list of field and value pairs.
 
@@ -91,7 +108,7 @@ foreach ({host: "db01", site: "S"} | to_entries[]) as $e ({id: 2, host: "db01"};
 
 Two values, one per pair. After `host` the row is unchanged, because the field is set to the value it already has. After `site` the row has its new field.
 
-### What is refused
+### _merge: what is refused
 
 A field on both sides with different values stops the join. The message names the field and both values:
 
@@ -105,7 +122,7 @@ try _merge({id: 2, host: "db01", site: "N"}; {host: "db01", site: "S"}) catch .
 
 The remedy is in the message: rename the field on one side before the join.
 
-### The definition
+### _merge: the definition
 
 `_merge/2`, lines 217 to 221:
 
@@ -123,11 +140,15 @@ Built into jq: `error`, `has`, `to_entries`, `tojson`.
 - `if has($e.key) and .[$e.key] != $e.value then error(...)`: the row built so far already has this field, with another value.
 - `else .[$e.key] = $e.value`: a new field is added. A field with the same value on both sides is set to what it already is, which is how the join key ends up in the output once.
 
+---
+
 ## _matches
+
+**Internal helper, not for callers** · `_matches($right; lkey; rkey; cond)`
 
 The pairing step that every join here shares, except `lookup` and `join_asof`. For each left row it finds the right rows with the same key. It merges nothing and drops nothing; `join_on` and `join_nest` decide what to do with the pairs.
 
-### The example
+### _matches: the example
 
 The two tables from the top of the page, matched on `host`.
 
@@ -148,7 +169,7 @@ The two tables from the top of the page, matched on `host`.
 
 One entry per left row, in left order. `l` is the left row. `m` is the list of its matches, each as `{key, value}`, where `value` is the right row and `key` is that row's position in the right table (0 for the first row). Request 1 has one match, request 2 has two, and request 3 has none. Request 4 has a null host and matches nothing, not even the right row whose host is also null.
 
-### Reading the call
+### _matches: reading the call
 
 `_matches($hosts; .host; .host; true)` has four arguments.
 
@@ -161,7 +182,7 @@ One entry per left row, in left order. `l` is the left row. `m` is the list of i
 
 In the definition `$right` has a `$` and the other three do not. A `$name` parameter is a value, computed once before the call. A bare parameter is a filter: a piece of program that the function runs later, on an input it chooses.
 
-### What happens inside, on the example
+### _matches: what happens inside, on the example
 
 Step 1, `$right | to_entries`: every right row with its position as `key`.
 
@@ -230,7 +251,7 @@ A key that is not in the index, such as `zz09`, gives no values: the `?` after `
 
 Step 5, `select(.value as $r | {l: $l, r: $r} | cond)`: each match found is kept only when `cond` is true for the pair. With `true` every match is kept. The entries `{l, m}` are collected into the array shown at the top.
 
-### The definition
+### _matches: the definition
 
 `_matches/4`, lines 223 to 229:
 
@@ -252,11 +273,15 @@ Built into jq: `empty`, `from_entries`, `group_by`, `map`, `select`, `to_entries
 - `$ix[$k | tojson][]?`: the lookup. The matches come out in right-table order, because step 2 kept that order inside each group, on every engine.
 - `select(...)`: step 5. `cond` runs only on pairs that already share a key.
 
+---
+
 ## join_on
+
+**Public function** · `join_on($right; lkey; rkey; cond; $kind)`
 
 The general flat join: one output row per matching pair, with the fields of both rows. It is SQL's `FROM l JOIN r ON l.k = r.k AND cond`, with the kind of join as an argument.
 
-### The example
+### join_on: the example
 
 A left join of the requests to the hosts.
 
@@ -278,7 +303,7 @@ A left join of the requests to the hosts.
 
 Five rows from four requests. Request 1 has its site. Request 2 appears twice, once per `db01` record: a duplicate key on the right multiplies rows. Requests 3 and 4 have no match and come back as they were, with no `site` field.
 
-### Reading the call
+### join_on: reading the call
 
 The first four arguments are those of `_matches` above. The fifth, `$kind`, is a value, one of five strings:
 
@@ -290,7 +315,7 @@ The first four arguments are those of `_matches` above. The fifth, `$kind`, is a
 | `"anti"` | the left row when it has no match |
 | `"full"` | the `left` output, then the right rows no left row matched, in right order |
 
-### The other four kinds
+### join_on: the other four kinds
 
 The same call with `"inner"`, `"semi"` and `"anti"`. Each kind's result is one array, printed on its own line.
 
@@ -332,7 +357,7 @@ The same call with `"inner"`, `"semi"` and `"anti"`. Each kind's result is one a
 
 The first five rows are the left join. The last two are the right rows that no request matched: `app07`, and the record with a null host. They have no `id`.
 
-### What happens inside, on the example
+### join_on: what happens inside, on the example
 
 Step 1, `_matches($right; lkey; rkey; cond) as $rows`: the array of `{l, m}` entries shown under `_matches` above.
 
@@ -382,7 +407,7 @@ Positions 0, 1 and 2 matched. The right rows at the other positions, 3 and 4, ar
 ]
 ```
 
-### A condition, and a join with no key
+### join_on: a condition, and a join with no key
 
 `cond` is a filter over the pair `{l: left row, r: right row}`. With `true` for both keys every right row shares the one key `true`, so every pair is checked. A left join of three amounts to the bands that contain them:
 
@@ -402,7 +427,7 @@ Positions 0, 1 and 2 matched. The right rows at the other positions, 3 and 4, ar
 
 Amount 500 is in no band and comes back alone. This form checks left rows times right rows pairs, so it is for small right tables.
 
-### What is refused
+### join_on: what is refused
 
 A kind that is not one of the five is an error, not an empty result. A field that both tables have with different values is the `_merge` error.
 
@@ -416,7 +441,7 @@ A kind that is not one of the five is an error, not an empty result. A field tha
 "join: field \"site\" differs between left (\"S\") and right (\"N\"); rename one side first"
 ```
 
-### The definition
+### join_on: the definition
 
 `join_on/5`, lines 231 to 243:
 
@@ -445,11 +470,15 @@ Built into jq: `error`, `from_entries`, `length`, `not`, `select`, `to_entries`,
 - `"full"`: `$hit` is step 3. The position goes through `tostring` because object keys are strings. The left part is the same expression as `"left"`, and the unmatched right rows follow it.
 - The last `else`: the unknown-kind error.
 
+---
+
 ## join_inner, join_left, join_full, join_semi, join_anti
+
+**Public functions** · `join_inner($right; lkey; rkey)`, `join_left($right; lkey; rkey)`, `join_full($right; lkey; rkey)`, `join_semi($right; lkey; rkey)`, `join_anti($right; lkey; rkey)`
 
 The five kinds of equality join under their own names. Each is `join_on` with `true` for the condition and its kind fixed, so the common case reads as one word and has three arguments.
 
-### The example
+### join_inner and the others: the example
 
 Which requests reached a known host, and which did not:
 
@@ -481,7 +510,7 @@ A key can be made of several fields by writing an array. Here a request matches 
 
 Request 1 matches the second record. Request 2 matches neither.
 
-### The definition
+### join_inner and the others: the definition
 
 `join_inner/3`, lines 245 to 246:
 
@@ -526,11 +555,15 @@ From this library: `join_on`.
 
 Each line passes its three arguments through to `join_on` and adds `true` and the kind.
 
+---
+
 ## join_nest
+
+**Public function** · `join_nest($right; lkey; rkey; cond; $as)`
 
 Every left row exactly once, with one new field holding the array of its matching right rows. It never multiplies rows and never clashes on a field name. It is Power Query's `Table.NestedJoin`. Use it when the right side is "many" and the next step counts or summarises the matches per left row.
 
-### The example
+### join_nest: the example
 
 ```jq
 [{host: "web01", site: "N"}, {host: "db01", site: "S"}, {host: "db01", site: "N"}, {host: "app07", site: "S"}, {host: null, site: "S"}] as $hosts
@@ -549,11 +582,11 @@ Every left row exactly once, with one new field holding the array of its matchin
 
 Four requests in, four rows out. Request 2 holds both `db01` records in its `records` field. Requests 3 and 4 hold an empty array.
 
-### Reading the call
+### join_nest: reading the call
 
 The first four arguments are those of `_matches`. The fifth, `$as`, is a value: the name of the new field.
 
-### What happens inside, on the example
+### join_nest: what happens inside, on the example
 
 Step 1: `_matches`, as shown in its own section. Step 2, on the entry of request 2: `[.m[].value]` takes the right rows out of the matches, and `.l + {...}` adds them to the left row under the name in `$as`.
 
@@ -567,7 +600,7 @@ Step 1: `_matches`, as shown in its own section. Step 2, on the entry of request
 {"id":2,"host":"db01","records":[{"host":"db01","site":"S"},{"host":"db01","site":"N"}]}
 ```
 
-### The definition
+### join_nest: the definition
 
 `join_nest/5`, lines 252 to 255:
 
@@ -583,11 +616,15 @@ From this library: `_matches`.
 - `[_matches(...)[] | ...]`: one output row per entry, so one per left row.
 - `.l + {($as): [.m[].value]}`: step 2. The parentheses in `{($as): ...}` make the field name come from the variable. A left row that already has a field of that name gets it replaced.
 
+---
+
 ## lookup
+
+**Public function** · `lookup($dim; lkey; dkey; $as)`
 
 Attaches the one matching row of a second table under a new field. It is a spreadsheet's `VLOOKUP` or `XLOOKUP`, or SQL's left join to a table with a unique key. The second table is called the dimension: one row per key, such as one row per site.
 
-### The example
+### lookup: the example
 
 Three requests with a site code, and a dimension of two sites.
 
@@ -606,7 +643,7 @@ Three requests with a site code, and a dimension of two sites.
 
 Every request comes back once with an `info` field. Request 1 has the row of site N. Site W is not in the dimension and request 3 has no site, so both get null.
 
-### Reading the call
+### lookup: reading the call
 
 | Argument | In the example | Runs on | Meaning |
 |---|---|---|---|
@@ -615,7 +652,7 @@ Every request comes back once with an `info` field. Request 1 has the row of sit
 | `dkey` | `.site` | one dimension row | that row's key |
 | `$as` | `"info"` | nothing: it is a value | the name of the new field |
 
-### What happens inside, on the example
+### lookup: what happens inside, on the example
 
 Step 1, `$dim | group_by(dkey)`: the dimension grouped by key. With a unique key every group has one row.
 
@@ -653,7 +690,7 @@ Step 3: each left row gets the field. For request 1, the key through `tojson`, t
 {"id":1,"site":"N","info":{"site":"N","name":"North","staff":12}}
 ```
 
-### What is refused
+### lookup: what is refused
 
 A key that appears twice in the dimension is an error naming the key, so a lookup can never multiply rows. The check runs while the index is built, so it fires even when no left row uses that key.
 
@@ -665,7 +702,7 @@ try ([{id: 1, site: "N"}] | lookup([{site: "N", name: "North"}, {site: "S", name
 "lookup: key \"S\" appears more than once in the dimension"
 ```
 
-### The definition
+### lookup: the definition
 
 `lookup/4`, lines 257 to 265:
 
@@ -689,11 +726,15 @@ Built into jq: `error`, `from_entries`, `group_by`, `length`, `map`, `select`, `
 - `else {key: ..., value: .[0]} end ... | from_entries`: step 2.
 - `map(. as $l | ($l | lkey) as $k | $l + {($as): ...})`: step 3. A null key gives null without a lookup, and a key that is not in `$ix` gives null because that is what a missing object key reads as.
 
+---
+
 ## join_overlap
+
+**Public function** · `join_overlap($right; lkey; rkey; lstart; lend; rstart; rend)`
 
 Pairs with the same key whose time intervals overlap. It is SQL's `JOIN ... ON l.k = r.k AND l.start < r.end AND r.start < l.end`. Each interval is closed at its start and open at its end, written `[start, end)`.
 
-### The example
+### join_overlap: the example
 
 Two jobs on host `web01`, and one maintenance window on the same host from 10 to 11.
 
@@ -715,7 +756,7 @@ Two jobs on host `web01`, and one maintenance window on the same host from 10 to
 
 One row: the backup job ran during the window. The report job starts at 11, the moment the window ends, and two intervals that only touch do not overlap.
 
-### Reading the call
+### join_overlap: reading the call
 
 | Argument | In the example | Runs on | Meaning |
 |---|---|---|---|
@@ -726,7 +767,7 @@ One row: the backup job ran during the window. The report job starts at 11, the 
 
 The output is merged rows. If both tables called their fields `start` and `end`, the merge would refuse the differing values, so the two sides use different names, as here.
 
-### What happens inside, on the example
+### join_overlap: what happens inside, on the example
 
 It is one call of `join_on` with kind `"inner"` and the overlap test as the condition. The test on each of the two pairs, as `{l, r}`:
 
@@ -743,7 +784,7 @@ It is one call of `join_on` with kind `"inner"` and the overlap test as the cond
 
 Two values, one per pair. Both halves are true for the backup job. For the report job the first half is false: it starts at 11, which is not before the window's end at 11.
 
-### The definition
+### join_overlap: the definition
 
 `join_overlap/7`, lines 267 to 270:
 
@@ -759,11 +800,15 @@ From this library: `join_on`.
 - `(.l | lstart) < (.r | rend) and (.r | rstart) < (.l | lend)`: each interval starts before the other ends. The `<` and not `<=` is what makes the end open.
 - The condition is checked only for pairs with the same key, so the cost follows the number of same-key pairs.
 
+---
+
 ## join_asof
+
+**Public function** · `join_asof($right; lkey; rkey; ltime; rtime; $max_age)`, `join_asof($right; lkey; rkey; ltime; rtime)`
 
 For each left row, the right row with the same key and the latest time at or before the left row's time. It is DuckDB's `ASOF LEFT JOIN` and pandas' `merge_asof`. It answers "which value was in force when this happened", for a table of changes such as prices or settings.
 
-### The example
+### join_asof: the example
 
 The rate limit of host `web01` was set four times; two of the changes carry the same time, 10.
 
@@ -814,7 +859,7 @@ The six-argument form adds a maximum age. With 3, a match older than 3 time unit
 
 Request 4 now comes back alone: its match is 30 - 14 = 16 old. Requests 2 and 3 keep theirs, 0 and 2 old.
 
-### Reading the call
+### join_asof: reading the call
 
 | Argument | In the example | Runs on | Meaning |
 |---|---|---|---|
@@ -824,7 +869,7 @@ Request 4 now comes back alone: its match is 30 - 14 = 16 old. Requests 2 and 3 
 | `rtime` | `.at` | one right row | the moment the change took effect |
 | `$max_age` | 3, or absent | nothing: it is a value | the greatest allowed `ltime - rtime`; null for no limit |
 
-### What happens inside, on the example
+### join_asof: what happens inside, on the example
 
 Step 1, the index `$ix`: the right rows grouped by key, each group sorted by time and stored as `{rows, t}`, where `t` is the list of times alone.
 
@@ -881,7 +926,7 @@ _merge({id: 3, host: "web01", t: 12}; {host: "web01", at: 10, limit: 101})
 {"id":3,"host":"web01","t":12,"at":10,"limit":101}
 ```
 
-### Edge cases
+### join_asof: edge cases
 
 A left row with a null key or a null time comes back alone. Right rows with a null key or a null time are dropped before the index is built.
 
@@ -898,11 +943,11 @@ A left row with a null key or a null time comes back alone. Right rows with a nu
 ]
 ```
 
-### What it is not for
+### join_asof: what it is not for
 
 "Latest value at or before T" is the right question for prices and settings. It is the wrong one for "who held this at T", where the value may have ended before T. For that, use `intervals_from_events` and `join_within` on the intervals page.
 
-### The definition
+### join_asof: the definition
 
 `join_asof/6`, lines 272 to 290:
 

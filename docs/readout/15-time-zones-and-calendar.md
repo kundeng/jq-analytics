@@ -8,11 +8,24 @@ No function here reads the machine's own time zone, so a result does not depend 
 
 The examples use `parse_ts` from the types page to write a moment as text: `"2026-07-15 12:00:00" | parse_ts` is that UTC time as seconds.
 
+On this page, in the order of the file:
+
+| Function | Whose | What it is for |
+|---|---|---|
+| `tz` | Public function | The rules of one zone, looked up by name |
+| `tz_offset` | Public function | The zone's offset from UTC at one moment, in seconds |
+| `local_time` | Public function | The local clock reading of a moment in a zone, as an object with the date, the clock fields and the weekday |
+| `hours_between` | Public function | The hours from one moment to another, with no rounding; null when either is missing |
+
+---
+
 ## tz
+
+**Public function** · `tz($name)`
 
 The rules of one zone, looked up by name. A program that converts many rows calls it once and keeps the result.
 
-### The example
+### tz: the example
 
 The smallest zone is UTC: one entry, offset 0, in force from the start.
 
@@ -50,7 +63,7 @@ try tz("Mars/Olympus") catch .
 "tz: zone not in the zone tables: Mars/Olympus"
 ```
 
-### The definition
+### tz: the definition
 
 `tz/1`, lines 135 to 139:
 
@@ -68,11 +81,15 @@ Built into jq: `error`. From this library: `tz_rules`.
 - `// error(...)`: `//` gives its right-hand side when the left is null or false, so a missing zone becomes the error above.
 - It is a separate function because `tz_rules` is a large literal that jq builds again each time it is mentioned. `tz("America/Detroit") as $det` builds it once, and `$det` can then be passed to the two functions below, which accept either a name or this object.
 
+---
+
 ## tz_offset
+
+**Public function** · `tz_offset($tz)`
 
 The zone's offset from UTC at one moment, in seconds. Add it to the moment to get the local clock.
 
-### The example
+### tz_offset: the example
 
 Four moments in one zone: mid January, mid July, and the second before and the moment of the 2026 spring change.
 
@@ -92,11 +109,11 @@ Four moments in one zone: mid January, mid July, and the second before and the m
 
 Winter is -18000 seconds, five hours behind UTC, and summer is -14400, four hours behind. The change is at 07:00:00 UTC on 8 March, which is 02:00 local: one second before it the winter offset still holds.
 
-### Reading the call
+### tz_offset: reading the call
 
 The input is the moment. The argument `$tz` is a value: a zone name, or the object that `tz($name)` returned.
 
-### What happens inside, on the example
+### tz_offset: what happens inside, on the example
 
 For the July moment. Step 1: the moment as seconds, kept as `$e`.
 
@@ -152,7 +169,7 @@ tz("America/Detroit") | .t | bsearch(1772953200)
 107
 ```
 
-### The definition
+### tz_offset: the definition
 
 `tz_offset/1`, lines 141 to 146:
 
@@ -172,11 +189,15 @@ Built into jq: `bsearch`, `type`. From this library: `tz`.
 - `(.t | bsearch($e)) as $i`: step 3.
 - `.o[if $i >= 0 then $i else -2 - $i end]`: steps 4 and 5. The very large negative first `t` guarantees that the position is never below 0.
 
+---
+
 ## local_time
+
+**Public function** · `local_time($tz)`
 
 The local clock reading of a moment in a zone, as an object with the date, the clock fields and the weekday. It is SQL's `ts AT TIME ZONE 'zone'` with the parts already taken out.
 
-### The example
+### local_time: the example
 
 ```jq
 "2026-08-12 13:05:00.5" | parse_ts | local_time("America/Detroit")
@@ -199,7 +220,7 @@ The local clock reading of a moment in a zone, as an object with the date, the c
 
 13:05 UTC in August is 09:05 in that zone, four hours behind. `weekday` 3 is Wednesday, counting from Sunday as 0. The half second is kept in `second`.
 
-### What happens inside, on the example
+### local_time: what happens inside, on the example
 
 Step 1, `tz_offset($tz) as $o`: the offset at that moment. The moment itself is the first value here and the offset the second.
 
@@ -235,7 +256,7 @@ Step 3, `$l | floor | gmtime`: jq's own breakdown of a whole number of seconds i
 
 Step 4: the object is built from that array. The month gets 1 added (7 becomes 8, August), and the fraction that `floor` removed is added back to the seconds.
 
-### The definition
+### local_time: the definition
 
 `local_time/1`, lines 148 to 155:
 
@@ -258,11 +279,15 @@ Built into jq: `floor`, `gmtime`, `strftime`. From this library: `tz_offset`.
 - `second: ($g[5] + ($l - ($l | floor)))`: the whole seconds plus the fraction.
 - `offset_s` and `local_epoch` are kept so that a caller can go back to UTC, or compare two local times as numbers.
 
+---
+
 ## hours_between
+
+**Public function** · `hours_between(a; b)`
 
 The hours from one moment to another, with no rounding; null when either is missing. It is SQL's `DATE_DIFF` in hours, kept as a fraction.
 
-### The example
+### hours_between: the example
 
 Two requests, each with the moment it was opened. The first was resolved 90 minutes later. The second is still open.
 
@@ -280,11 +305,11 @@ Two requests, each with the moment it was opened. The first was resolved 90 minu
 
 90 minutes is 1.5 hours. The open request gets null, not an error and not a negative number.
 
-### Reading the call
+### hours_between: reading the call
 
 Both arguments are filters, run on the current input, which here is one row. `;` separates them: jq uses a semicolon between arguments because a comma already means "emit both values".
 
-### The definition
+### hours_between: the definition
 
 `hours_between/2`, lines 157 to 159:
 

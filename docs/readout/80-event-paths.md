@@ -15,11 +15,27 @@ flowchart TD
 
 In the calls below a `;` separates the arguments. Arguments without a `$` are filters run on each event (`.t` is "this event's time"); `{user}` is short for `{user: .user}`; `$steps`, `$within` and `$periods` are values.
 
+On this page, in the order of the file:
+
+| Function | Whose | What it is for |
+|---|---|---|
+| `_entity_key` | Internal helper, not for callers | Turns an entity key into the fields that start an output row |
+| `_funnel_check` | Internal helper, not for callers | The input check of `funnel_steps` |
+| `funnel_steps` | Public function | How far each entity gets through an ordered list of steps |
+| `funnel` | Public function | The funnel as a table |
+| `_period_pos`, `_period_idx` | Internal helpers, not for callers | Two helpers of `cohorts` and `retention` |
+| `cohorts` | Public function | One row per entity |
+| `retention` | Public function | Of the entities first seen in a period, how many have at least one event in each later period |
+
+---
+
 ## _entity_key
+
+**Internal helper, not for callers** · `_entity_key`
 
 Turns an entity key into the fields that start an output row. An object stays as it is; anything else becomes `{key: value}`. It is the rule `group_agg` applies to its key, as a named helper.
 
-### The example
+### _entity_key: the example
 
 ```jq
 [{user: "u1"}, "u1"] | map(_entity_key)
@@ -34,7 +50,7 @@ Turns an entity key into the fields that start an output row. An object stays as
 
 So `funnel_steps({user}; ...)` gives rows with a `user` column, and `funnel_steps(.user; ...)` gives rows with a `key` column.
 
-### The definition
+### _entity_key: the definition
 
 `_entity_key/0`, line 946:
 
@@ -46,11 +62,15 @@ Built into jq: `type`.
 
 One `if`: `type == "object"` decides.
 
+---
+
 ## _funnel_check
+
+**Internal helper, not for callers** · `_funnel_check(time; step; $steps)`
 
 The input check of `funnel_steps`. It passes its input through unchanged, or stops with an error when the step list is empty, a step is listed twice, or an event of a listed step has no time.
 
-### The example
+### _funnel_check: the example
 
 One good call, then the three errors:
 
@@ -68,7 +88,7 @@ One good call, then the three errors:
 "funnel: an event of step \"view\" has no time"
 ```
 
-### The definition
+### _funnel_check: the definition
 
 `_funnel_check/3`, lines 948 to 954:
 
@@ -88,11 +108,15 @@ Built into jq: `any`, `error`, `first`, `group_by`, `length`, `map`, `select`, `
 - `first(.[] | select(...) | [step]) // null` finds the first event whose step is in the list and whose time is null. The step is wrapped in an array so that a step named `false` or `null` still counts as found.
 - An event whose step is not in the list may have a null time: it is ignored later anyway.
 
+---
+
 ## funnel_steps
+
+**Public function** · `funnel_steps(entity; time; step; $steps; $within)`
 
 How far each entity gets through an ordered list of steps. An entity reaches step n when it has events for steps 1 to n in time order. One row per entity that reaches step 1: its key, `depth`, and the time of each step reached.
 
-### The example
+### funnel_steps: the example
 
 Five made-up users and the steps view, cart, pay. Every step must happen within an hour (3,600 seconds) of the user's view.
 
@@ -154,7 +178,7 @@ A later step at the same time as the one before counts as in order:
 ]
 ```
 
-### Reading the call
+### funnel_steps: reading the call
 
 | Argument | In the example | Runs on | Meaning |
 |---|---|---|---|
@@ -164,7 +188,7 @@ A later step at the same time as the one before counts as in order:
 | `$steps` | `["view", "cart", "pay"]` | nothing: a value | the steps in order |
 | `$within` | `3600` | nothing: a value | seconds allowed from the first step; null for no limit |
 
-### What happens inside, on the example
+### funnel_steps: what happens inside, on the example
 
 Step 1: `_funnel_check`, then events whose step is not listed are dropped and the rest are grouped by entity with `_groups`.
 
@@ -203,7 +227,7 @@ u4's second chain is longer than its first, so it is the one kept.
 
 Step 4: an entity with a chain gets a row: its key, the chain's length as `depth`, and the chain as `times`. u5 has no first-step time, so no chain and no row.
 
-### The definition
+### funnel_steps: the definition
 
 `funnel_steps/5`, lines 956 to 984:
 
@@ -250,11 +274,15 @@ Built into jq: `any`, `first`, `length`, `map`, `not`, `range`, `select`, `sort`
 - `if . == null or ($chain | length) > length then $chain else . end` keeps the longer chain, and the earlier one on a tie.
 - Taking the earliest usable time at every step is safe. For a fixed first event, an earlier next step leaves at least as many choices for the steps after it as a later one.
 
+---
+
 ## funnel
+
+**Public function** · `funnel(entity; time; step; $steps; $within)`
 
 The funnel as a table: one row per step with how many entities reached it, and that count as a fraction of the previous step's and of the first step's.
 
-### The example
+### funnel: the example
 
 The same events and limit as under `funnel_steps`.
 
@@ -289,7 +317,7 @@ With no events every count is 0 and every ratio is null, because the divisor is 
 ]
 ```
 
-### What happens inside, on the example
+### funnel: what happens inside, on the example
 
 Step 1, `$d`: every entity's depth, from `funnel_steps`. Step 2, `$c`: for each step position `$i`, how many depths are above `$i`, which is how many entities reached step `$i + 1`. The run prints both.
 
@@ -309,7 +337,7 @@ Step 1, `$d`: every entity's depth, from `funnel_steps`. Step 2, `$c`: for each 
 
 Step 3: one row per step from `$c`, with the two ratios.
 
-### The definition
+### funnel: the definition
 
 `funnel/5`, lines 986 to 995:
 
@@ -332,11 +360,15 @@ Built into jq: `length`, `map`, `range`, `select`. From this library: `funnel_st
 - `from_first` is `$c[$i] / $c[0]`, null where the first count is 0.
 - An entity with depth 3 is counted at steps 1, 2 and 3, so the counts never grow from one step to the next.
 
+---
+
 ## _period_pos, _period_idx
+
+**Internal helpers, not for callers** · `_period_pos`, `_period_idx(period; $pos; $who)`
 
 Two helpers of `cohorts` and `retention`. `_period_pos` turns the ordered period list into a lookup from period to position. `_period_idx` looks one event's period up in it. Positions make "earlier" and "later" mean the order of the list, not the sort order of the values, so a list such as `["Dec", "Jan", "Feb"]` works.
 
-### The example
+### _period_pos and the others: the example
 
 The lookup for three months, then two events looked up in it, one of them outside the list:
 
@@ -352,7 +384,7 @@ The lookup for three months, then two events looked up in it, one of them outsid
 
 The keys are the periods as JSON text. `"2026-03"` is at position 2. A period that is not in the list is an error under the caller's name.
 
-### The definition
+### _period_pos and the others: the definition
 
 `_period_pos/0`, line 997:
 
@@ -375,11 +407,15 @@ Built into jq: `error`, `tojson`.
 - `_period_pos`: `reduce range(0; length) as $i ({}; .[$p[$i] | tojson] = $i)` writes each period's position under its JSON text.
 - `_period_idx`: `(period) as $p` runs the caller's filter on the event; `$pos[$p | tojson]` is the position, and null means not in the list.
 
+---
+
 ## cohorts
+
+**Public function** · `cohorts(entity; period; $periods)`
 
 One row per entity: its key and `cohort`, the earliest period in which it has an event. A cohort is the group of entities that were first seen in the same period.
 
-### The example
+### cohorts: the example
 
 | user | month |
 |---|---|
@@ -405,7 +441,7 @@ One row per entity: its key and `cohort`, the earliest period in which it has an
 
 a's events are in February and January, in that order in the input; the earlier one in the period list is January. Rows come in the order the users first appear.
 
-### What happens inside, on the example
+### cohorts: what happens inside, on the example
 
 Step 1: the events grouped by entity, and each event's period replaced by its position in the list.
 
@@ -426,7 +462,7 @@ Step 1: the events grouped by entity, and each event's period replaced by its po
 
 Step 2: the smallest position of each entity, turned back into a period: 0 is `"2026-01"` for a and b, 1 is `"2026-02"` for c.
 
-### The definition
+### cohorts: the definition
 
 `cohorts/3`, lines 1002 to 1007:
 
@@ -445,11 +481,15 @@ Built into jq: `map`, `min`. From this library: `_entity_key`, `_groups`, `_peri
 - `$periods[map(_period_idx(period; $pos; "cohorts")) | min]`: the positions, their minimum, and the period at that position.
 - `$periods` is every period in order, for example `calendar(...) | map(.year_month) | unique`.
 
+---
+
 ## retention
+
+**Public function** · `retention(entity; period; $periods)`
 
 Of the entities first seen in a period, how many have at least one event in each later period. One row per cohort and period, from the cohort's own period to the last in the list.
 
-### The example
+### retention: the example
 
 | user | months with an event |
 |---|---|
@@ -475,7 +515,7 @@ Of the entities first seen in a period, how many have at least one event in each
 
 Hand check. The January cohort is a and b: 2 of 2 active in January, 1 of 2 in February (a), 2 of 2 in March. The February cohort is c: 1 of 1 in February, 0 of 1 in March. The row with 0 is there: the table is complete. Nobody was first seen in March, so there is no March cohort.
 
-### What happens inside, on the example
+### retention: what happens inside, on the example
 
 Step 1, `$e`: per entity, `c`, the position of its cohort, and `a`, the distinct positions in which it is active.
 
@@ -517,7 +557,7 @@ Step 3, `$cnt`, per cohort: how many of its entities are active at each position
 
 Step 4: for each position from the cohort's own to the last, one row with that count, or 0 when the position is missing from `$cnt`. For cohort 0 that gives 2, 1, 2 out of a cohort size of 2: the first three rows of the result.
 
-### The definition
+### retention: the definition
 
 `retention/3`, lines 1009 to 1023:
 

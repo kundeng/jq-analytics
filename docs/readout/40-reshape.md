@@ -6,11 +6,22 @@ Two definitions that are each other's opposite: `unpivot` turns columns into row
 
 A table with one column per measurement (`cpu`, `ram`) is called wide. The same data with one row per measurement, and the measurement's name in a column of its own, is called long. Grouping and joining work on long tables; reports are usually wide.
 
+On this page, in the order of the file:
+
+| Function | Whose | What it is for |
+|---|---|---|
+| `unpivot` | Public function | Wide to long |
+| `pivot` | Public function | Long to wide |
+
+---
+
 ## unpivot
+
+**Public function** · `unpivot($keep; $name; $value)`
 
 Wide to long: every column that is not kept becomes a row of its own. It is Power Query's "Unpivot Other Columns", SQL's `UNPIVOT`, and pandas' `melt`.
 
-### The example
+### unpivot: the example
 
 Two hosts with two measurements each. The second row has its fields in another order, and one null.
 
@@ -35,7 +46,7 @@ Two hosts with two measurements each. The second row has its fields in another o
 
 Two rows in, four out: one per host and measurement. `host` is repeated on each. The null `cpu` of `db01` still gets its row. Within each host the measurements come in name order, `cpu` before `ram`, whatever order the fields were written in.
 
-### Reading the call
+### unpivot: reading the call
 
 All three arguments are values (each has a `$` in the definition).
 
@@ -45,7 +56,7 @@ All three arguments are values (each has a `$` in the definition).
 | `$name` | `"metric"` | the name of the new column that holds the old column's name |
 | `$value` | `"value"` | the name of the new column that holds its value |
 
-### What happens inside, on the example
+### unpivot: what happens inside, on the example
 
 The steps run once per input row. For the first row, `{host: "web01", cpu: 0.5, ram: 16}`:
 
@@ -85,7 +96,7 @@ Step 3, `$base + {($name): .key, ($value): .value}`: each pair becomes an output
 
 The outer `[...]` collects the rows of all input rows into one array.
 
-### The definition
+### unpivot: the definition
 
 `unpivot/3`, lines 324 to 330:
 
@@ -107,11 +118,15 @@ Built into jq: `any`, `not`, `select`, `sort_by`, `to_entries`, `with_entries`.
 - `select(... | not)`: the kept fields are not unpivoted.
 - `$base + {($name): .key, ($value): .value}`: step 3. The parentheses make the field names come from the variables. No `select` on the value follows, so a null value keeps its row.
 
+---
+
 ## pivot
+
+**Public function** · `pivot($cols; rowkey; colf; valf; agg)`
 
 Long to wide: one output row per row key, and one column per name in a list the caller gives. It is a spreadsheet's pivot table, SQL's `PIVOT`, and Power Query's "Pivot Column".
 
-### The example
+### pivot: the example
 
 Five measurements in long form. `web01` has two `cpu` values. `db01` has no `cpu` and has a `disk` value.
 
@@ -140,7 +155,7 @@ The call: one row per host, columns `cpu` and `ram`, each holding the greatest v
 
 Two rows. For `web01`, `cpu` is 0.7, the greater of its two values. `db01` has no `cpu` rows, so its `cpu` is null. Its `disk` row is dropped, because `disk` is not in the list.
 
-### Reading the call
+### pivot: reading the call
 
 `pivot(["cpu", "ram"]; {host}; .metric; .v; max)` has five arguments, separated by `;`.
 
@@ -154,7 +169,7 @@ Two rows. For `web01`, `cpu` is 0.7, the greater of its two values. `db01` has n
 
 `{host}` is short for `{host: .host}`. The caller lists the columns because jq cannot know them before it has read all the data, and a fixed list gives every row the same columns in the same order.
 
-### What happens inside, on the example
+### pivot: what happens inside, on the example
 
 Step 1, `group_agg(rowkey; ...)`: the rows are grouped by `{host}`, as on the grouping page. Steps 2 and 3 run inside each group. The `web01` group is the first three rows.
 
@@ -185,7 +200,7 @@ Two values: the object after `cpu`, then after `ram`. `group_agg` puts the group
 
 For `db01`, `$cells` has `ram` and `disk`. `$cells["cpu"]` is null, so the `cpu` column is null and `max` is not called. `disk` is never asked for.
 
-### The definition
+### pivot: the definition
 
 `pivot/5`, lines 332 to 337:
 

@@ -6,11 +6,23 @@ Three small definitions for a program that carries several tables in one object,
 
 An object of tables has no row order of its own: jq and jaq print its tables in the order they were made, and gojq prints them sorted by name. The rows inside each table keep their order on every engine.
 
+On this page, in the order of the file:
+
+| Function | Whose | What it is for |
+|---|---|---|
+| `split_by` | Public function | One list of rows into an object of tables, one table per value of a tag |
+| `keep_tables` | Public function | Only the named tables of an object of tables |
+| `shape` | Public function | For each table |
+
+---
+
 ## split_by
+
+**Public function** · `split_by(tagf)`
 
 One list of rows into an object of tables, one table per value of a tag. It is the first step when several tables arrive mixed in one stream.
 
-### The example
+### split_by: the example
 
 Four rows from two sources, DHCP leases and firewall hits, with `type` saying which. One row has no type.
 
@@ -47,11 +59,11 @@ A later step then names a table and works on it. `as $t` binds the whole object 
 ["a","b"]
 ```
 
-### Reading the call
+### split_by: reading the call
 
 The one argument, `.type`, is a filter: `split_by` runs it on each row to get that row's tag. Any expression on the row will do, as for `_groups` on the grouping page.
 
-### What happens inside, on the example
+### split_by: what happens inside, on the example
 
 Step 1, `_groups(.type)`: the rows in groups, one per tag, in order of first appearance.
 
@@ -97,7 +109,7 @@ null
 
 Step 4, `map({key, value}) | from_entries`: `tag` is dropped, and `from_entries` builds the object from the `key` and `value` pairs. That is the result at the top.
 
-### What is refused
+### split_by: what is refused
 
 Groups are formed by the tag's value and tables are named by its text. The number 1 and the string `"1"` are two groups with one name, and so are a null tag and the string `"null"`. One table would replace the other, so it is an error naming both tags:
 
@@ -111,7 +123,7 @@ Groups are formed by the tag's value and tables are named by its text. The numbe
 "split_by: tags null and \"null\" give the same table name \"null\""
 ```
 
-### The definition
+### split_by: the definition
 
 `split_by/1`, lines 183 to 193:
 
@@ -136,11 +148,15 @@ Built into jq: `error`, `from_entries`, `group_by`, `length`, `map`, `select`, `
 - `if $dup != null then error(...)`: the message is built from the two clashing entries' tags and their shared key.
 - `else map({key, value}) | from_entries end`: step 4. `{key, value}` is short for `{key: .key, value: .value}`.
 
+---
+
 ## keep_tables
+
+**Public function** · `keep_tables($names)`
 
 Only the named tables of an object of tables. It is used to drop work tables before a heavy step or before output.
 
-### The example
+### keep_tables: the example
 
 Three tables, of which two are wanted. The list also names a table that does not exist.
 
@@ -154,7 +170,7 @@ Three tables, of which two are wanted. The list also names a table that does not
 
 `scratch` is gone. `missing` is not in the input and is ignored: no error, and no empty table is made for it.
 
-### The definition
+### keep_tables: the definition
 
 `keep_tables/1`, lines 195 to 196:
 
@@ -168,11 +184,15 @@ Built into jq: `any`, `select`, `with_entries`.
 - `with_entries(f)` turns the object into `{key, value}` entries, runs `f` on each, and builds an object from what is left.
 - `select(.key as $k | $names | any(. == $k))` keeps an entry when its key equals some name in `$names`. `$names` has a `$`, so it is a value: the list is passed as it is.
 
+---
+
 ## shape
+
+**Public function** · `shape`
 
 For each table: how many rows it has and which fields its rows use. It is for looking at a pipeline midway without printing the data.
 
-### The example
+### shape: the example
 
 Two tables. The rows of `lease` do not all have the same fields, and `empty` has no rows.
 
@@ -186,7 +206,7 @@ Two tables. The rows of `lease` do not all have the same fields, and `empty` has
 
 `lease` has two rows and three field names between them, sorted. The empty table has 0 rows and no fields.
 
-### What happens inside, on the example
+### shape: what happens inside, on the example
 
 `map_values(f)` runs `f` on each table. `map_values` is a jq built-in, not a function of this library: on an object it runs `f` on each value and keeps the keys. The object here is the set of tables, so inside `f` the input is one table. `f` makes `rows`, the table's `length`, and `fields`, in three steps. For `lease`: step 1, `map(keys)`, the field names of each row. Step 2, `add`, the lists joined into one. Step 3, `unique`, sorted and without repeats. The three results, in that order:
 
@@ -211,7 +231,7 @@ null
 []
 ```
 
-### The definition
+### shape: the definition
 
 `shape/0`, lines 198 to 199:
 

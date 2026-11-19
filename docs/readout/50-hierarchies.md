@@ -14,11 +14,22 @@ flowchart TD
   eng --> api
 ```
 
+On this page, in the order of the file:
+
+| Function | Whose | What it is for |
+|---|---|---|
+| `tree_paths` | Public function | Adds to every node its `ancestry`, the ids from its root down to itself, and its `depth`, 0 for a root |
+| `tree_rollup` | Public function | Adds to every node the total of a value over the node and everything below it |
+
+---
+
 ## tree_paths
+
+**Public function** · `tree_paths(id; parent)`
 
 Adds to every node its `ancestry`, the ids from its root down to itself, and its `depth`, 0 for a root. It does what a recursive query (`WITH RECURSIVE`) does in SQL, and what `PATH` does in DAX.
 
-### The example
+### tree_paths: the example
 
 The five teams as rows, each naming its parent in `boss`. The rows are not in top-down order: `web` comes before its parent `eng`.
 
@@ -47,11 +58,11 @@ The five teams as rows, each naming its parent in `boss`. The rows are not in to
 
 The same five rows in the same order, each with two new fields. `web` is two levels below the root, and its ancestry reads from the top: `ceo`, `eng`, `web`. The root's ancestry is itself alone.
 
-### Reading the call
+### tree_paths: reading the call
 
 Both arguments are filters, each run on one node: `id` gives the node's own id and `parent` gives its parent's id. `;` separates them.
 
-### What happens inside, on the example
+### tree_paths: what happens inside, on the example
 
 Step 1, the first `reduce`: `$par`, a lookup from each id to its parent. The key is the id through `tojson`, so a number and a string can never share a key. The parent is wrapped in an array, so that "this id is a node whose parent is null" (`[null]`) differs from "this id is not a node" (a missing key, which reads as null).
 
@@ -106,7 +117,7 @@ Because a walk stops at the first ancestor already done, every node is walked ov
 
 Step 3, the last line: each row gets its ancestry from the lookup, and `depth` is the ancestry's length minus one.
 
-### What is refused
+### tree_paths: what is refused
 
 Three kinds of input stop with an error: a cycle, a parent id that is not a node, and an id on two rows. With one id on two rows the lookup of step 1 would hold only one of the two parents.
 
@@ -124,7 +135,7 @@ Three kinds of input stop with an error: a cycle, a parent id that is not a node
 
 `tree_rollup` below calls `tree_paths` and so refuses the same input.
 
-### The definition
+### tree_paths: the definition
 
 `tree_paths/2`, lines 400 to 421:
 
@@ -164,11 +175,15 @@ Built into jq: `error`, `has`, `length`, `map`, `reverse`, `tojson`, `until`.
 - `reduce (.chain | reverse)[] as $c (.; .a += [$c] | .m[$c | tojson] = .a)`: the fill down.
 - `| .m) as $anc`: only the lookup is kept; the last line is step 3.
 
+---
+
 ## tree_rollup
+
+**Public function** · `tree_rollup(id; parent; value)`
 
 Adds to every node the total of a value over the node and everything below it. It answers "how many people work under each manager", or "what does each assembly cost with all its parts".
 
-### The example
+### tree_rollup: the example
 
 The same five teams, each with its own head count `n`. One is missing.
 
@@ -198,11 +213,11 @@ The same five teams, each with its own head count `n`. One is missing.
 
 Each row has the fields that `tree_paths` adds, and `subtree`. Hand check: `eng` is its own 2, plus 4 for `web` and 0 for `api`, which is 6. `ceo` is 1 + 6 + 3 = 10. A leaf's subtree is its own value, and the null counts as 0.
 
-### Reading the call
+### tree_rollup: reading the call
 
 The first two arguments are those of `tree_paths`. The third, `value`, is a filter run on one node: the number to add up.
 
-### What happens inside, on the example
+### tree_rollup: what happens inside, on the example
 
 Step 1, `tree_paths(id; parent) as $t`: the rows with their ancestries, as in the section above.
 
@@ -225,7 +240,7 @@ Five values, one per node. `ceo` grows with every node, because it is on every a
 
 Step 3, the last line: each row gets its own entry of `$sum` as `subtree`.
 
-### The definition
+### tree_rollup: the definition
 
 `tree_rollup/3`, lines 423 to 429:
 

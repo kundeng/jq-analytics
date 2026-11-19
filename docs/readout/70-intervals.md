@@ -23,11 +23,26 @@ Two of the definitions, `intervals_from_events` and `merge_intervals`, share one
 
 A `reduce` that appends each finished interval to a result array copies that array on every append, and the cost grows with the square of the output. The `foreach` avoids that.
 
+On this page, in the order of the file:
+
+| Function | Whose | What it is for |
+|---|---|---|
+| `_iv_check` | Internal helper, not for callers | The input check of `intervals_from_events` |
+| `intervals_from_events` | Public function | Builds validity intervals from an event log |
+| `join_within` | Public function | A left outer join of rows that have a time to the interval of the same key that contains that time |
+| `_iv_order_check` | Internal helper, not for callers | The input check shared by `merge_intervals` and `concurrency` |
+| `merge_intervals` | Public function | Per key, intervals that overlap or touch become one |
+| `concurrency` | Public function | How many intervals are open over time |
+
+---
+
 ## _iv_check
+
+**Internal helper, not for callers** · `_iv_check(time; kind)`
 
 The input check of `intervals_from_events`. It emits nothing; it exists to stop with an error, before any work is done, when an event's kind is not one of `open`, `hold`, `release` or null, or when an event with a kind has no time.
 
-### The example
+### _iv_check: the example
 
 Three calls: clean events, an unknown kind, and a kind with no time.
 
@@ -45,7 +60,7 @@ Three calls: clean events, an unknown kind, and a kind with no time.
 
 The first emits nothing, so the array collected around it is empty; its second event has no time, but it has no kind either and is ignored. The messages name the event by its position, counting from 0, and carry the name of the public function.
 
-### The definition
+### _iv_check: the definition
 
 `_iv_check/2`, lines 770 to 777:
 
@@ -67,13 +82,17 @@ Built into jq: `empty`, `error`, `to_entries`, `tojson`.
 - The two `elif` branches are the two errors. `else empty`: a good event emits nothing.
 - `intervals_from_events` calls it as `([_iv_check(time; kind)] | length) as $_`. Collecting the empty output forces the check to run over every event, and binding the result to `$_` leaves the input as it was.
 
+---
+
 ## intervals_from_events
+
+**Public function** · `intervals_from_events(resource; holder; time; kind; ttl)`
 
 Builds validity intervals from an event log: who held a resource (a seat, an address, a session id) and from when to when. A resource has at most one holder at a time. SQL has no single equivalent; it takes a chain of window functions.
 
 Each event says one of three things in `kind`: `open` or `hold` is evidence that the holder has the resource at that time (a grant, a renewal, a keep-alive), and `release` means the holder gives it up. `ttl` is how many seconds a hold stays valid without another one, or null when holds do not expire.
 
-### The example
+### intervals_from_events: the example
 
 Seven events on one seat:
 
@@ -114,7 +133,7 @@ Four intervals, and each ended in a different way, recorded in `ended_by`:
 
 `last` is the time of the interval's last hold, `events` the number of opens and holds in it, and `start_seen` is true only when the first event was an `open`: a first `hold` may be a renewal of something that began before the data does.
 
-### Reading the call
+### intervals_from_events: reading the call
 
 All five arguments are filters, each run on one event.
 
@@ -126,7 +145,7 @@ All five arguments are filters, each run on one event.
 | `kind` | `.k` | "open", "hold", "release", or null for an event to ignore |
 | `ttl` | `.ttl` | seconds this hold stays valid, or null for no expiry |
 
-### What happens inside, on the example
+### intervals_from_events: what happens inside, on the example
 
 Step 1: `_iv_check` runs over the events (see above).
 
@@ -162,7 +181,7 @@ Step 3: the loop, one step per event. The loop body cannot be run by itself, so 
 
 The four intervals that close in the trace are the four rows of the result.
 
-### The definition
+### intervals_from_events: the definition
 
 `intervals_from_events/5`, lines 779 to 828:
 
@@ -235,11 +254,15 @@ Each loop step, for event `$e` with time `$t`, kind `$k`, holder `$h`:
 
 At the end marker, an interval still open leaves with `ended_by: "open"` and the end its last hold gave it, which is null when that hold had no ttl. Intervals of one resource never overlap.
 
+---
+
 ## join_within
+
+**Public function** · `join_within($intervals; lkey; rkey; ltime; rstart; rend)`
 
 A left outer join of rows that have a time to the interval of the same key that contains that time. It answers "who held this at time T". In SQL: `LEFT JOIN intervals i ON i.key = l.key AND l.t >= i.start AND (i.end IS NULL OR l.t < i.end)`.
 
-### The example
+### join_within: the example
 
 Three intervals on seat s1, with a gap from 200 to 400 and no end on the last:
 
@@ -288,7 +311,7 @@ When several intervals of a key contain the time, the one that started last is t
 
 At 15 both contain the time and `short` started later. At 50 only `long` does.
 
-### Reading the call
+### join_within: reading the call
 
 | Argument | In the example | Runs on | Meaning |
 |---|---|---|---|
@@ -299,7 +322,7 @@ At 15 both contain the time and `short` started later. At 50 only `long` does.
 | `rstart` | `.start` | one interval | the interval's start |
 | `rend` | `.end` | one interval | the interval's end; null for still open |
 
-### What happens inside, on the example
+### join_within: what happens inside, on the example
 
 Step 1, the index `$ix`, built once: per key, the intervals sorted by start, with three parallel lists. `s` holds the starts. `e` holds the ends, a null end replaced by the largest number a double can hold, so an open interval contains every later time without a special case. `m` holds, for each position, the latest end among the intervals up to and including it. The run leaves out the fourth part, `rows`, the interval rows themselves.
 
@@ -347,7 +370,7 @@ Step 3: from that position, move forward while the next start is also at or befo
 
 Step 4: a left row that stopped on an interval containing its time is merged with it by `_merge`, the same helper the flat joins use: a field on both sides with different values is an error.
 
-### The definition
+### join_within: the definition
 
 `join_within/6`, lines 830 to 854:
 
@@ -387,11 +410,15 @@ Built into jq: `bsearch`, `from_entries`, `group_by`, `length`, `map`, `select`,
 - `until(. < 0 or $g.e[.] > $t or $g.m[.] <= $t; . - 1)` is the walk back. It stops at the first interval whose end is after `$t`; that interval started at or before `$t`, so it contains it. Walking back from the last start is what makes the answer "the one that started last".
 - `$g.m[.] <= $t` stops the walk as soon as no interval this far back can contain `$t`. Without `m`, a time that falls in a gap would walk to the front of the key's intervals. For intervals that do not overlap, which is what `intervals_from_events` produces, the walk is at most one step.
 
+---
+
 ## _iv_order_check
+
+**Internal helper, not for callers** · `_iv_order_check(start; fin; $who)`
 
 The input check shared by `merge_intervals` and `concurrency`. It passes its input through unchanged, or stops with an error when an interval has no start, or an end before its start. A null end is allowed.
 
-### The example
+### _iv_order_check: the example
 
 ```jq
 ([{s: 1, e: null}] | _iv_order_check(.s; .e; "merge_intervals")),
@@ -407,7 +434,7 @@ The input check shared by `merge_intervals` and `concurrency`. It passes its inp
 
 The first input is fine and comes back as it was. The other two are the two errors.
 
-### The definition
+### _iv_order_check: the definition
 
 `_iv_order_check/3`, lines 856 to 859:
 
@@ -422,11 +449,15 @@ Built into jq: `any`, `error`.
 
 `any(.[]; cond)` is true when the condition holds for at least one row. `$who` is the name of the calling function, for the message. `else .` returns the input.
 
+---
+
 ## merge_intervals
+
+**Public function** · `merge_intervals(key; start; fin)`
 
 Per key, intervals that overlap or touch become one. It turns a set of bookings into the stretches of time that are covered. In SQL this is the "gaps and islands" pattern.
 
-### The example
+### merge_intervals: the example
 
 | room | s | e |
 |---|---|---|
@@ -464,7 +495,7 @@ The key `{room}` is short for `{room: .room}` and gives the output its `room` co
 ]
 ```
 
-### What happens inside, on the example
+### merge_intervals: what happens inside, on the example
 
 Step 1: `_iv_order_check` (above).
 
@@ -494,7 +525,7 @@ Step 3: the `foreach` described at the top of the page, once per group. A hand t
 
 For room B, 7 to 8 joins because the open interval has no end.
 
-### The definition
+### merge_intervals: the definition
 
 `merge_intervals/3`, lines 861 to 880:
 
@@ -528,11 +559,15 @@ Built into jq: `max`, `sort_by`, `type`. From this library: `_groups`, `_iv_orde
 - On a join, `merged` goes up by one and the end becomes the later of the two, or null if either is null.
 - Otherwise the open interval goes to `.out` and `$r` starts a new one: `$k + {start: $s, end: $e, merged: 1}`.
 
+---
+
 ## concurrency
+
+**Public function** · `concurrency(start; fin)`
 
 How many intervals are open over time: one row `{t, open}` per moment the count changes. It answers "how many sessions were running at once".
 
-### The example
+### concurrency: the example
 
 | s | e |
 |---|---|
@@ -557,7 +592,7 @@ How many intervals are open over time: one row `{t, open}` per moment the count 
 
 Read it as a step function: 1 open from time 1, 2 from time 2, back to 1 at 5, 2 again from 7, and 1 from 9 on. The interval with no end keeps the count at 1 after 9. The second parameter is called `fin` in the code because `end` is a jq keyword.
 
-### What happens inside, on the example
+### concurrency: what happens inside, on the example
 
 Step 1: each interval becomes two small records, `+1` at its start and `-1` at its end. A null end gives no second record.
 
@@ -600,7 +635,7 @@ At 5 two intervals end and one starts: net -1.
 
 Step 3: the `foreach` keeps a running sum of the net changes, 1, 2, 1, 2, 1, and emits `{t, open}` at each moment. That is the result at the top.
 
-### The definition
+### concurrency: the definition
 
 `concurrency/2`, lines 882 to 891:
 

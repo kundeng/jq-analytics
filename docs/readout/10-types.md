@@ -4,11 +4,22 @@ Generated from `src/jq_analytics/analytics.jq` and `docs/readout/notes/types.md`
 
 Two public definitions that turn text into typed values: `parse_ts` for one timestamp, `cast_columns` for the named columns of a table. Both refuse what they cannot read. Neither returns a quiet null for a bad value.
 
+On this page, in the order of the file:
+
+| Function | Whose | What it is for |
+|---|---|---|
+| `_ts_exact`, `parse_ts` | Public functions and internal helpers | `parse_ts` turns a timestamp string into seconds since 1970-01-01 UTC, the number that every time function in the library takes |
+| `cast_columns` | Public function | Gives the named columns of a table their types |
+
+---
+
 ## _ts_exact, parse_ts
+
+**Public functions and internal helpers** · `_ts_exact($s)`, `parse_ts`
 
 `parse_ts` turns a timestamp string into seconds since 1970-01-01 UTC, the number that every time function in the library takes. It is SQL's `CAST(s AS TIMESTAMP)` followed by `EPOCH`. `_ts_exact` is its helper: it reads one exact form and refuses a date that does not exist.
 
-### The example
+### _ts_exact and the others: the example
 
 Six inputs: the same moment written three ways, a fraction of a second, an empty string and a null.
 
@@ -32,7 +43,7 @@ Six inputs: the same moment written three ways, a fraction of a second, an empty
 
 The first three give the same number, because they are the same moment. Hand check of the third: 18:35 on a clock that is 5:30 ahead of UTC is 13:05 UTC. The fourth keeps its fraction. The empty string and the null give null.
 
-### What is refused
+### _ts_exact and the others: what is refused
 
 Anything else is an error that quotes the text. That includes a wrong layout, a missing seconds part, and a date that does not exist, with or without an offset.
 
@@ -44,7 +55,7 @@ Anything else is an error that quotes the text. That includes a wrong layout, a 
 ["parse_ts: not a timestamp: \"12/08/2026\"","parse_ts: not a timestamp: \"2026-08-12 13:05\"","parse_ts: not a timestamp: \"2026-02-30 00:00:00\"","parse_ts: not a timestamp: \"2026-02-30T00:00:00+01:00\""]
 ```
 
-### What happens inside, on the example
+### _ts_exact and the others: what happens inside, on the example
 
 `parse_ts` has two paths. A string of exactly 19 characters with a space or `T` between date and time takes the short one. Every other string takes the general one.
 
@@ -139,7 +150,7 @@ Step 5, seconds plus fraction minus offset. The offset is subtracted because a c
 
 Both lines are the same number, and it is the first example's 13:05:00 plus a quarter of a second.
 
-### The definition
+### _ts_exact and the others: the definition
 
 `_ts_exact/1`, lines 82 to 87:
 
@@ -196,11 +207,15 @@ Built into jq: `capture`, `error`, `length`, `sub`, `tojson`, `tonumber`. From t
 - `elif length == 19 and (.[10:11] | . == " " or . == "T")`: the short path. It exists because the regular expression of the general path is the larger part of the cost on a big table, and most timestamps have this form. Its digits, dashes and colons are still checked, by `fromdateiso8601` inside `_ts_exact`.
 - `else`: the general path, steps 1 to 5. `$m.z == null or $m.z == "Z"` gives an offset of 0, so no zone means UTC.
 
+---
+
 ## cast_columns
+
+**Public function** · `cast_columns($schema)`
 
 Gives the named columns of a table their types: text to number, timestamp or boolean, and anything to string. It is SQL's `CAST(col AS type)` for several columns at once, and Power Query's "Changed Type" step.
 
-### The example
+### cast_columns: the example
 
 Two rows as they come from a CSV file, where every value is text. The second row has an empty `n` and a missing `t`.
 
@@ -223,11 +238,11 @@ Two rows as they come from a CSV file, where every value is text. The second row
 
 In the first row `n` is now the number 12.5, `t` is seconds since 1970 and `b` is the boolean true. In the second row the empty string became null. `other` is not in the schema and is untouched in both rows.
 
-### Reading the call
+### cast_columns: reading the call
 
 The one argument is a value, an object from column name to type name. The type names are `"number"`, `"timestamp"`, `"string"` and `"boolean"`. The input is the table.
 
-### What happens inside, on the example
+### cast_columns: what happens inside, on the example
 
 Step 1, `$schema | to_entries`: the schema as a list of column and type pairs. The `[]` after it in the code hands them to `reduce` one at a time.
 
@@ -260,7 +275,7 @@ Step 2: for each row, `reduce` starts from the row and rewrites one column per p
 
 Three tables of one row each. One more column has its type in each.
 
-### What is refused
+### cast_columns: what is refused
 
 A value that does not parse is an error naming the column and the value. A number must look like a JSON number, so a leading space is refused. A type name that is not one of the four is an error too.
 
@@ -276,7 +291,7 @@ A value that does not parse is an error naming the column and the value. A numbe
 "cast_columns: unknown type \"date\" for b"
 ```
 
-### A column the row lacks
+### cast_columns: a column the row lacks
 
 A schema column that a row does not have is added to it as null, so every row comes out with the same columns.
 
@@ -290,7 +305,7 @@ A schema column that a row does not have is added to it as null, so every row co
 ]
 ```
 
-### The definition
+### cast_columns: the definition
 
 `cast_columns/1`, lines 113 to 131:
 

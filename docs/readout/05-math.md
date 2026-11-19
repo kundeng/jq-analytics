@@ -14,11 +14,25 @@ flowchart LR
 
 Two jq reminders for this page. A bare word such as `mean` is a call to the function of that name, and it runs on the current input, which here is the list. A comma between calls (`count_nonnull, mean`) runs each on the same input and emits each result as its own value, so a run with commas prints several lines.
 
+On this page, in the order of the file:
+
+| Function | Whose | What it is for |
+|---|---|---|
+| `nonnull`, `count_nonnull`, `sum_nonnull`, `mean` | Public functions | The list without its nulls, and the count, sum and mean of what is left |
+| `min_nonnull`, `max_nonnull`, `min_by_nonnull`, `max_by_nonnull` | Public functions | The least and greatest value of a column, and the whole row that holds it |
+| `var_samp`, `var_pop`, `stddev_samp`, `stddev_pop` | Public functions | Variance and standard deviation |
+| `quantile_disc`, `quantile_cont`, `median`, `quantiles_disc`, `quantiles_cont` | Public functions | The value below which a share `$p` of the data lies, with `$p` from 0 to 1 |
+| `round_to` | Public function | A number rounded to `$d` decimal places, as SQL's and a spreadsheet's `ROUND(x, d)` |
+
+---
+
 ## nonnull, count_nonnull, sum_nonnull, mean
+
+**Public functions** · `nonnull`, `count_nonnull`, `sum_nonnull`, `mean`
 
 The list without its nulls, and the count, sum and mean of what is left. They are SQL's `COUNT(x)`, `SUM(x)` and `AVG(x)`, and a spreadsheet's `COUNT`, `SUM` and `AVERAGE`, which also skip empty cells.
 
-### The example
+### nonnull and the others: the example
 
 A column of three rows, one of them with no value. The four functions, in the order of the heading:
 
@@ -62,7 +76,7 @@ null
 null
 ```
 
-### What happens inside, on the example
+### nonnull and the others: what happens inside, on the example
 
 Each of the three starts from `nonnull` and then does one thing. For `mean`:
 
@@ -88,7 +102,7 @@ Step 2, `add / length` on that list: 4 / 2.
 2
 ```
 
-### The definition
+### nonnull and the others: the definition
 
 `nonnull/0`, lines 27 to 28:
 
@@ -132,11 +146,15 @@ Built into jq: `add`, `length`. From this library: `nonnull`.
 - `sum_nonnull`: `if length == 0 then null else add end`. jq's `add` already skips a null among numbers and gives null for an empty list, so the result rarely differs from plain `add`. The definition is here so that the sum follows the same stated rule as the others, and reads as such in a query.
 - `mean`: `add / length` after the nulls are gone (step 2), so the divisor is the number of values, not the number of rows. The `if length == 0` branch gives null for no values, where a plain division by 0 is an error.
 
+---
+
 ## min_nonnull, max_nonnull, min_by_nonnull, max_by_nonnull
+
+**Public functions** · `min_nonnull`, `max_nonnull`, `min_by_nonnull(f)`, `max_by_nonnull(f)`
 
 The least and greatest value of a column, and the whole row that holds it. They are SQL's `MIN`, `MAX`, `ARG_MIN` and `ARG_MAX`.
 
-### The example
+### min_nonnull and the others: the example
 
 Four rows. Row 1 has no x, and rows 2 and 4 share the highest x.
 
@@ -189,11 +207,11 @@ null
 null
 ```
 
-### Reading the call
+### min_nonnull and the others: reading the call
 
 `min_nonnull` takes no argument and runs on a list of values. `min_by_nonnull(.x)` runs on a list of rows, and its argument `.x` is a filter: a piece of program that the function runs on each row to get the value to compare. A field is always written with the dot; a bare `x` would be a call to a function named `x`.
 
-### What happens inside, on the example
+### min_nonnull and the others: what happens inside, on the example
 
 Step 1, `map(select((.x) != null))`: the rows whose x is null are dropped.
 
@@ -212,7 +230,7 @@ Step 1, `map(select((.x) != null))`: the rows whose x is null are dropped.
 
 Step 2, jq's `min_by(.x)` or `max_by(.x)` on those three rows gives the results above.
 
-### The definition
+### min_nonnull and the others: the definition
 
 `min_nonnull/0`, lines 40 to 42:
 
@@ -253,11 +271,15 @@ Built into jq: `map`, `max_by`, `select`.
 - `min_nonnull` and `max_nonnull` are jq's `min` and `max` after `nonnull`. Both builtins give null for an empty list, which is the "no values" rule.
 - `min_by_nonnull(f)` and `max_by_nonnull(f)` drop the rows whose `f` is null (step 1), then call `min_by(f)` or `max_by(f)` (step 2). The tie rule is the builtins' own: the first such row for `min_by`, the last for `max_by`.
 
+---
+
 ## var_samp, var_pop, stddev_samp, stddev_pop
+
+**Public functions** · `var_samp`, `var_pop`, `stddev_samp`, `stddev_pop`
 
 Variance and standard deviation: how far the values lie from their mean. The `_pop` forms divide by the number of values (SQL `VAR_POP`, `STDDEV_POP`; a spreadsheet's `VAR.P`, `STDEV.P`). The `_samp` forms divide by one less (SQL `VAR_SAMP`, `STDDEV_SAMP`; `VAR.S`, `STDEV.S`).
 
-### The example
+### var_samp and the others: the example
 
 Eight values and one null.
 
@@ -274,7 +296,7 @@ Eight values and one null.
 
 Four values, in the order of the calls. The hand check is in the steps below: the squared differences sum to 32, so the population variance is 32 / 8 = 4 and its square root is 2. The sample variance is 32 / 7.
 
-### What happens inside, on the example
+### var_samp and the others: what happens inside, on the example
 
 Step 1, `nonnull | length as $n`: the eight values, and `$n` is 8. `as $n` gives the count a name and leaves the list as the input of the next step.
 
@@ -321,7 +343,7 @@ Step 4, `add` of those, then the division: by `$n` for `var_pop`, by `$n - 1` fo
 
 Step 5, for the `stddev_` forms only: `sqrt` of the variance.
 
-### Too few values
+### var_samp and the others: too few values
 
 One value has a population variance (0) and no sample variance. No values give null everywhere.
 
@@ -337,7 +359,7 @@ null
 null
 ```
 
-### The definition
+### var_samp and the others: the definition
 
 `var_samp/0`, lines 50 to 53:
 
@@ -381,11 +403,15 @@ Built into jq: `sqrt`. From this library: `var_pop`.
 - `map((. - $m) * (. - $m)) | add`: the second pass, steps 3 and 4. It is written as a multiplication and not as `pow(.; 2)`, so there is no function call per value.
 - `stddev_samp` and `stddev_pop` are `sqrt` of the variance, with null passed through, because `null | sqrt` is an error in jq.
 
+---
+
 ## quantile_disc, quantile_cont, median, quantiles_disc, quantiles_cont
+
+**Public functions** · `quantile_disc($p)`, `quantile_cont($p)`, `median`, `quantiles_disc($ps)`, `quantiles_cont($ps)`
 
 The value below which a share `$p` of the data lies, with `$p` from 0 to 1. `quantile_disc` returns a value that is in the data (SQL `PERCENTILE_DISC`). `quantile_cont` interpolates between two neighbours (SQL `PERCENTILE_CONT`, a spreadsheet's `PERCENTILE.INC`). `median` is `quantile_cont(0.5)`.
 
-### The example
+### quantile_disc and the others: the example
 
 Four values and a null, not in order.
 
@@ -421,11 +447,11 @@ The hand check for every `$p`, with the sorted values `[10, 20, 30, 40]` and `$n
 | 0.75 | 3 | 30 | 2.25 | 30 + 0.25 × 10 = 32.5 |
 | 1 | 4 | 40 | 3 | 40 |
 
-### Reading the call
+### quantile_disc and the others: reading the call
 
 `$p` is written with a `$` in the definitions, which makes it a value: `quantile_disc(0.25)` receives the number 0.25. That differs from `min_by_nonnull(.x)` above, whose argument is a filter run on each row. The input of every function here is the list of values.
 
-### What happens inside, on the example
+### quantile_disc and the others: what happens inside, on the example
 
 Both forms start the same way. Step 1, `nonnull | sort as $x | length as $n`: the sorted values are `$x`, and `$n` is 4.
 
@@ -479,7 +505,7 @@ Step 3, `$x[$lo] + ($h - $lo) * ($x[$lo + 1] - $x[$lo])`: start at the value at 
 17.5
 ```
 
-### Edge cases
+### quantile_disc and the others: edge cases
 
 `$p = 0` gives the smallest value in both forms, and `$p = 1` the largest. With no values the single forms give null, and the plural forms give one null, not a list of nulls.
 
@@ -497,7 +523,7 @@ null
 null
 ```
 
-### The definition
+### quantile_disc and the others: the definition
 
 `quantile_disc/1`, lines 59 to 65:
 
@@ -556,11 +582,15 @@ From this library: `count_nonnull`, `quantile_cont`.
 - `median` is `quantile_cont(0.5)`.
 - The plural forms call the single form once per `$p`. `[$ps[] as $p | ...]` collects the results into a list. `if count_nonnull == 0 then null` gives a single null for no values, which is what DuckDB's list form does.
 
+---
+
 ## round_to
+
+**Public function** · `round_to($d)`
 
 A number rounded to `$d` decimal places, as SQL's and a spreadsheet's `ROUND(x, d)`. Halves go away from zero. Null stays null.
 
-### The example
+### round_to: the example
 
 Its input is one number, not a list, so the run uses `map` to round each of five inputs to two places and then to none.
 
@@ -577,7 +607,7 @@ Two lists: the first rounded to two places, the second to none. To two places 0.
 
 jaq prints a rounded whole number with a decimal point (`3.0` where jq prints `3`). The values are equal.
 
-### What happens inside, on the example
+### round_to: what happens inside, on the example
 
 For `0.125 | round_to(2)`. Step 1, `pow(10; $d) as $m`: the multiplier, 100. Step 2, `. * $m`: the decimal point moves two places right. Step 3, `round`: to a whole number. Step 4, `/ $m`: the point moves back. The four results, in that order:
 
@@ -605,7 +635,7 @@ The same steps 2 and 3 for 1.005:
 
 1.005 cannot be stored exactly as a binary number. The stored value is a little below it, so times 100 it is a little below 100.5 and rounds to 100. The rounding is of the number as stored.
 
-### The definition
+### round_to: the definition
 
 `round_to/1`, lines 76 to 78:
 

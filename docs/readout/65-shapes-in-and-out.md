@@ -18,11 +18,30 @@ flowchart TD
 
 Two jq reminders for this family. A `;` separates arguments. A parameter written `$as` is a value, here usually a field name as a string; a parameter without the `$`, such as `f` in `unnest(f; $as)`, is a filter the function runs on each row, so `.tags` there means "this row's tags".
 
+On this page, in the order of the file:
+
+| Function | Whose | What it is for |
+|---|---|---|
+| `_distinct_in_order` | Internal helper, not for callers | The distinct values of an array, in the order they first appear |
+| `_unnest_arr`, `unnest`, `unnest_outer` | Public functions and internal helpers | One row per element of an array field |
+| `_flat`, `flatten_fields` | Public functions and internal helpers | Nested objects become columns named by their path, so `{"user" |
+| `_nodes`, `nodes_from_nested` | Public functions and internal helpers | A nested tree, where each node holds its children in an array, becomes node rows, each with a `parent` field |
+| `rows_from_map` | Public function | An object keyed by id becomes rows, with the key in field `$as` |
+| `fill_grid` | Public function | Completes a time series |
+| `to_map` | Public function | Rows become an object keyed by `key`, for looking a row up by id |
+| `_nest`, `nested_from_nodes` | Public functions and internal helpers | The reverse of `nodes_from_nested` |
+| `node_link` | Public function | Edge rows become the `{nodes, links}` object that graph tools such as networkx, d3 and Cytoscape read |
+| `to_csv` | Public function | A table as CSV text |
+
+---
+
 ## _distinct_in_order
+
+**Internal helper, not for callers** · `_distinct_in_order`
 
 The distinct values of an array, in the order they first appear. jq's `unique` also removes repeats, but it sorts, which loses that order.
 
-### The example
+### _distinct_in_order: the example
 
 ```jq
 ["b", "a", "b", 1, "1", "a"] | _distinct_in_order, unique
@@ -35,7 +54,7 @@ The distinct values of an array, in the order they first appear. jq's `unique` a
 
 Two values: this function's result, then the builtin's. `b` stays first because it appeared first. The number 1 and the string `"1"` are different values and both stay.
 
-### What happens inside, on the example
+### _distinct_in_order: what happens inside, on the example
 
 Step 1, the `reduce`: one pass over the values. `s` maps each value, as JSON text, to `[position of first sighting, value]`; a value already in `s` is skipped. `n` counts the distinct values so far.
 
@@ -52,7 +71,7 @@ The keys `1` and `"\"1\""` differ because the JSON text of a number has no quote
 
 Step 2, `[.s[]] | sort_by(.[0]) | map(.[1])`: the four pairs sorted by position, then the positions dropped. That is the first result at the top.
 
-### The definition
+### _distinct_in_order: the definition
 
 `_distinct_in_order/0`, lines 658 to 662:
 
@@ -68,11 +87,15 @@ Built into jq: `map`, `sort_by`, `tojson`.
 
 The first sightings are written into an object by key and sorted once at the end. The shorter "append the value when it is new" copies the growing array on every append, so its cost grows with the square of the number of distinct values. The sort at the end is also what makes the order the same on engines that do not keep an object's key order.
 
+---
+
 ## _unnest_arr, unnest, unnest_outer
+
+**Public functions and internal helpers** · `_unnest_arr(f; $i)`, `unnest(f; $as)`, `unnest_outer(f; $as)`
 
 One row per element of an array field. `unnest` is SQL's `CROSS JOIN UNNEST(tags)`: a row with no elements disappears. `unnest_outer` is `LEFT JOIN LATERAL`: such a row is kept once, with a null. `_unnest_arr` is the helper that reads the array from one row.
 
-### The example
+### _unnest_arr and the others: the example
 
 | id | tags |
 |---|---|
@@ -102,7 +125,7 @@ A value that is neither an array nor null is refused. The error names the row's 
 "unnest: row 1 holds a string, not an array"
 ```
 
-### What happens inside, on the example
+### _unnest_arr and the others: what happens inside, on the example
 
 Step 1, `_unnest_arr(f; $i)` on each row: the array at `.tags`, with null read as an empty array. `to_entries` supplies each row's position `$i` for the error message.
 
@@ -135,7 +158,7 @@ Step 2 in `unnest_outer`: an empty array is first replaced by `[null]`, so its r
 ]
 ```
 
-### The definition
+### _unnest_arr and the others: the definition
 
 `_unnest_arr/2`, lines 664 to 668:
 
@@ -177,11 +200,15 @@ Built into jq: `length`, `to_entries`. From this library: `_unnest_arr`.
 - `($r | _unnest_arr(f; $i))[] as $x` takes the elements one at a time. `$r + {($as): $x}` is the row with the new field; `($as)` in parentheses uses the value of `$as` as the field name.
 - Elements come out in array order and rows in input order.
 
+---
+
 ## _flat, flatten_fields
+
+**Public functions and internal helpers** · `_flat($p; $sep)`, `flatten_fields($sep)`
 
 Nested objects become columns named by their path, so `{"user": {"dept": "x"}}` gives a column `user.dept`. jq's own `flatten` flattens arrays; this flattens the objects inside each row.
 
-### The example
+### _flat and the others: the example
 
 One row with an object two levels deep, an array and an empty object:
 
@@ -207,7 +234,7 @@ Two paths that flatten to the same name are refused:
 "flatten_fields: two fields flatten to the same name: [\"a.b\"]"
 ```
 
-### What happens inside, on the example
+### _flat and the others: what happens inside, on the example
 
 Step 1, `_flat(null; ".")` on the row: one `{key, value}` pair per leaf, the key being the path so far. `_flat` emits the pairs one at a time; the run collects them in an array and sorts them by key, because engines walk an object's fields in different orders.
 
@@ -226,7 +253,7 @@ Step 1, `_flat(null; ".")` on the row: one `{key, value}` pair per leaf, the key
 
 Step 2, `from_entries`: the pairs become one object, the row of the result at the top. If the object has fewer fields than there were pairs, two pairs had the same key and one replaced the other. That is the case the error reports.
 
-### The definition
+### _flat and the others: the definition
 
 `_flat/2`, lines 680 to 684:
 
@@ -263,11 +290,15 @@ Built into jq: `error`, `from_entries`, `group_by`, `length`, `map`, `select`, `
 - `[_flat(null; $sep)] as $e | ($e | from_entries) as $o` keeps both the pairs and the object built from them.
 - `if ($o | length) != ($e | length)` detects the repeated name; `group_by(.) | map(select(length > 1)[0])` finds which names repeat, for the message.
 
+---
+
 ## _nodes, nodes_from_nested
+
+**Public functions and internal helpers** · `_nodes(id; children; $p)`, `nodes_from_nested(id; children)`
 
 A nested tree, where each node holds its children in an array, becomes node rows, each with a `parent` field. That is the shape `tree_paths` and `tree_rollup` take.
 
-### The example
+### _nodes and the others: the example
 
 A small reporting tree: ceo has eng and ops under it, and eng has web.
 
@@ -286,14 +317,14 @@ A small reporting tree: ceo has eng and ops under it, and eng has web.
 
 Four rows, one per node, in depth-first order: a node, then everything under it, then its next sibling. The `reports` arrays are gone and `parent` holds the id of the node above; the root's is null.
 
-### Reading the call
+### _nodes and the others: reading the call
 
 | Argument | In the example | Runs on | Meaning |
 |---|---|---|---|
 | `id` | `.id` | one node | the node's id, written into its children's `parent` |
 | `children` | `.reports` | one node | the array of the node's children; missing means none |
 
-### What happens inside, on the example
+### _nodes and the others: what happens inside, on the example
 
 `_nodes(id; children; $p)` does the work for one node: it emits the node without its children array and with `parent` set to `$p`, then calls itself on each child with this node's id as `$p`. It emits several values, one per node. Called on the `eng` subtree with parent `"ceo"`:
 
@@ -310,7 +341,7 @@ Four rows, one per node, in depth-first order: a node, then everything under it,
 
 `nodes_from_nested` calls it on the root with a null parent and collects everything emitted into one array.
 
-### The definition
+### _nodes and the others: the definition
 
 `_nodes/3`, lines 698 to 700:
 
@@ -337,11 +368,15 @@ Built into jq: `type`. From this library: `_nodes`.
 - `(($n | children) // [])[]` takes the children one at a time; `// []` reads a missing or null children field as no children, which is how `web` and `ops` end the recursion.
 - `nodes_from_nested`: `if type == "array" then .[] else . end` accepts one root object or an array of roots.
 
+---
+
 ## rows_from_map
+
+**Public function** · `rows_from_map($as)`
 
 An object keyed by id becomes rows, with the key in field `$as`. Many APIs return a table in this form.
 
-### The example
+### rows_from_map: the example
 
 Three keys; two values are objects and one is a string.
 
@@ -369,7 +404,7 @@ A value that already has a field named `$as` is refused, because that field woul
 "rows_from_map: the value of key \"a\" already has a field \"id\""
 ```
 
-### What happens inside, on the example
+### rows_from_map: what happens inside, on the example
 
 Step 1, `to_entries | sort_by(.key)`: one `{key, value}` pair per key, in key order.
 
@@ -387,7 +422,7 @@ Step 1, `to_entries | sort_by(.key)`: one `{key, value}` pair per key, in key or
 
 Step 2: each pair becomes a row. For `db01`, `{host: "db01"} + {ram: 64}`. That gives the result at the top.
 
-### The definition
+### rows_from_map: the definition
 
 `rows_from_map/1`, lines 707 to 716:
 
@@ -411,11 +446,15 @@ Built into jq: `error`, `has`, `map`, `sort_by`, `to_entries`, `tojson`, `type`.
 - `elif ($e.value | has($as))`: the error case above.
 - `else {($as): $e.key} + $e.value`: the key first, then the value's fields.
 
+---
+
 ## fill_grid
+
+**Public function** · `fill_grid($keys; $time; $step; $fill)`
 
 Completes a time series: every combination of the key fields gets a row at every time step from the earliest time to the latest, and a missing combination gets a filler row. Without the filler rows, `lag` or `moving_mean` treats the row after a gap as the next period. In SQL this is a cross join of the keys with `generate_series`, left joined to the data.
 
-### The example
+### fill_grid: the example
 
 Readings every 60 seconds for two series, `a` and `b`, with gaps:
 
@@ -442,7 +481,7 @@ Readings every 60 seconds for two series, `a` and `b`, with gaps:
 
 Six rows: two series times three time steps (0, 60, 120). The three input rows are there unchanged; the other three are fillers with `v` 0.
 
-### Reading the call
+### fill_grid: reading the call
 
 All four arguments are values, not filters.
 
@@ -453,7 +492,7 @@ All four arguments are values, not filters.
 | `$step` | `60` | seconds between grid points |
 | `$fill` | `{v: 0}` | the fields a filler row gets besides its keys and time |
 
-### What happens inside, on the example
+### fill_grid: what happens inside, on the example
 
 Step 1: the checks, then the range. No row may lack a time, and every time must be a whole number of steps from the earliest. Here `$t0` is 0 and `$t1` is 120. The two errors:
 
@@ -507,7 +546,7 @@ Step 4: for each combination and each time 0, 60, 120, the rows found in `$ix`, 
 
 For `["a"]` at time 60 there is no entry in `$ix`, so the row is `{"g":"a"} + {"t":60} + {"v":0}`, the second row of the result.
 
-### The definition
+### fill_grid: the definition
 
 `fill_grid/4`, lines 718 to 735:
 
@@ -540,11 +579,15 @@ Built into jq: `any`, `error`, `from_entries`, `length`, `map`, `max`, `min`, `r
 - `range($t0; $t1 + 1; $step)` emits the grid times, the last one included.
 - `($ix[...] // [filler])[]` emits the found rows, or the one filler. Rows come out combination by combination, each in time order.
 
+---
+
 ## to_map
+
+**Public function** · `to_map(key)`
 
 Rows become an object keyed by `key`, for looking a row up by id. jq's own `INDEX(key)` does the same but keeps the last row when a key repeats; here a repeated key is an error.
 
-### The example
+### to_map: the example
 
 ```jq
 [{id: "web01", ram: 16}, {id: "db01", ram: 64}] | to_map(.id)
@@ -568,7 +611,7 @@ The key is turned into a string, because an object key has to be one. So a repea
 "to_map: duplicate key \"1\""
 ```
 
-### The definition
+### to_map: the definition
 
 `to_map/1`, lines 737 to 741:
 
@@ -584,11 +627,15 @@ Built into jq: `error`, `has`, `tojson`, `tostring`.
 
 `reduce .[] as $r ({}; ...)` adds one row at a time to an object that starts empty. `($r | key | tostring) as $k` runs the caller's filter on the row. `if has($k)` is the duplicate check; otherwise `.[$k] = $r`.
 
+---
+
 ## _nest, nested_from_nodes
+
+**Public functions and internal helpers** · `_nest($by; id; $as)`, `nested_from_nodes(id; parent; $as)`
 
 The reverse of `nodes_from_nested`: node rows with an id and a parent become a nested tree, each node's children in an array in field `$as`. This is the form a tree view or a JSON API wants.
 
-### The example
+### _nest and the others: the example
 
 | id | boss |
 |---|---|
@@ -622,7 +669,7 @@ A parent that is not a node, or a cycle, is refused with the error of `tree_path
 "tree_paths: cycle through \"a\""
 ```
 
-### What happens inside, on the example
+### _nest and the others: what happens inside, on the example
 
 Step 1: `tree_paths(id; parent)` runs for its checks; its result is thrown away.
 
@@ -643,7 +690,7 @@ Step 2, `$by`: the rows grouped under their parent's id, as JSON text. The root 
 
 Step 3: each root is expanded by `_nest`, which adds field `reports` holding the node's children from `$by`, each expanded the same way. For `ceo` it looks up `"\"ceo\""` and finds `eng` and `ops`; for `eng` it finds `web`; for `web` and `ops` it finds nothing and adds an empty array.
 
-### The definition
+### _nest and the others: the definition
 
 `_nest/3`, lines 743 to 744:
 
@@ -673,11 +720,15 @@ Built into jq: `from_entries`, `group_by`, `length`, `map`, `select`, `tojson`. 
 - `select((parent) == null or (parent) == "")` picks the roots: a null or empty parent.
 - `_nest`: `($by[$n | id | tojson] // [])[]` is the node's children, none when it has no entry. The recursion ends at nodes without children.
 
+---
+
 ## node_link
+
+**Public function** · `node_link(from; to)`
 
 Edge rows become the `{nodes, links}` object that graph tools such as networkx, d3 and Cytoscape read.
 
-### The example
+### node_link: the example
 
 ```jq
 [{a: "fetch", b: "compile", min: 1}, {a: "compile", b: "test", min: 2}] | node_link(.a; .b)
@@ -692,7 +743,7 @@ Edge rows become the `{nodes, links}` object that graph tools such as networkx, 
 
 `nodes` lists each end of an edge once, in order of first appearance. Each link is the edge row with `source` and `target` added, so other fields such as `min` travel along.
 
-### The definition
+### node_link: the definition
 
 `node_link/2`, lines 754 to 758:
 
@@ -709,11 +760,15 @@ Built into jq: `map`. From this library: `_distinct_in_order`.
 - `[.[] | (from), (to)] | _distinct_in_order | map({id: .})`: both ends of every edge, repeats removed, each wrapped as `{id}`.
 - `map(. + {source: (from), target: (to)})`: `from` and `to` are the caller's filters, run on each edge row.
 
+---
+
 ## to_csv
+
+**Public function** · `to_csv($cols)`
 
 A table as CSV text: a header line, then one line per row, with the columns in the order of `$cols`.
 
-### The example
+### to_csv: the example
 
 Two rows; one host name contains a comma, and one `ram` is null.
 
@@ -727,7 +782,7 @@ Two rows; one host name contains a comma, and one `ram` is null.
 
 `to_csv` emits three strings, one per line; the run collects them in an array to show them as JSON. Strings are quoted, which keeps the comma inside `"db, 01"` in one cell. The null is an empty cell. Run jq with `-r` to get the plain lines.
 
-### The definition
+### to_csv: the definition
 
 `to_csv/1`, lines 760 to 763:
 

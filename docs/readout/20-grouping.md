@@ -4,11 +4,22 @@ Generated from `src/jq_analytics/analytics.jq` and `docs/readout/notes/grouping.
 
 Two definitions. `_groups` is used all over the library (intervals, funnels, shapes); `group_agg` is the public face.
 
+On this page, in the order of the file:
+
+| Function | Whose | What it is for |
+|---|---|---|
+| `_groups` | Internal helper, not for callers | Rows into groups |
+| `group_agg` | Public function | Group a table by a key and compute something per group |
+
+---
+
 ## _groups
+
+**Internal helper, not for callers** · `_groups(f)`
 
 Rows into groups: an array of groups, each an array of rows. Groups come in the order their keys first appear; rows inside a group keep input order.
 
-### The example
+### _groups: the example
 
 Four rows; `b` appears twice, and one row has a null key.
 
@@ -26,7 +37,7 @@ Four rows; `b` appears twice, and one row has a null key.
 
 The result is one value: an array holding three groups. The `b` group is first because `b` appeared first.
 
-### What happens inside, on the example
+### _groups: what happens inside, on the example
 
 At every step the result is one value, an array, and that whole array is what the next step receives.
 
@@ -75,7 +86,7 @@ Step 3, `sort_by(.[0].key)`: the groups ordered by the position of their first r
 
 Step 4, `map(map(.value))`: the positions dropped, the rows left. This is the result at the top.
 
-### Why not the builtin alone
+### _groups: why not the builtin alone
 
 `group_by(.g)` on the same rows gives the same three groups, with the same rows in each, in a different order:
 
@@ -95,7 +106,7 @@ The builtin works by sorting on the key, so its groups come out in jq's sort ord
 
 The library wants first-appearance order for three reasons. A report then lists its groups in the order the data does, so input sorted by date gives output sorted by date without sorting again. A key that is an object, as in `group_agg({site, month}; ...)`, has no sort order a reader would expect. And every function built on `_groups` (intervals, funnels, `split_by`) inherits one stated rule, rule 3 in the README, instead of the builtin's.
 
-### The argument is a filter, run on each row
+### _groups: the argument is a filter, run on each row
 
 `_groups(.g)` does not receive a value; it receives the piece of program `.g` and runs it on every row to get that row's key. This is the first function in the library's reading order that takes such an argument, and every grouping, join and window function does the same. What can be written there, on the four rows of the example:
 
@@ -120,7 +131,7 @@ true
 
 For `_groups` the first two forms give the same result. They differ only in `group_agg` below, which copies the key into its output row and needs a column name for it.
 
-### The definition
+### _groups: the definition
 
 `_groups/1`, lines 163 to 168:
 
@@ -137,11 +148,15 @@ Built into jq: `group_by`, `map`, `sort_by`, `to_entries`.
 
 The comment says why this is not written as a `reduce` that appends each row to its group: appending inside a `reduce` copies the growing array each time, so the cost grows with the square of the group's size, and an object keyed by group would come out in a different key order on gojq.
 
+---
+
 ## group_agg
+
+**Public function** · `group_agg(keyf; aggf)`
 
 Group a table by a key and compute something per group: one output row per group, holding the key and the results. It is SQL's `SELECT site, count(*), avg(x) ... GROUP BY site`.
 
-### The example
+### group_agg: the example
 
 Five rows. Site N has three, one of them with no x; one row has no site.
 
@@ -170,7 +185,7 @@ The call: per site, how many rows, how many with an x, and the mean x.
 
 One row per site, in the order the sites first appear. Check N by hand: three rows, two of them with an x (1 and 3), mean 2.
 
-### Reading the call
+### group_agg: reading the call
 
 `group_agg({site}; map(.x) | {rows: length, n: count_nonnull, mean: mean})` has two arguments, separated by the `;`.
 
@@ -185,7 +200,7 @@ One row per site, in the order the sites first appear. Check N by hand: three ro
 
 So inside the second argument the one input value is a group, not the table and not a row. `map(.x)` takes the group's x values, and `length`, `count_nonnull` and `mean` each run on that list.
 
-### What happens inside, on the example
+### group_agg: what happens inside, on the example
 
 Step 1, `_groups({site})`: one array of three groups. The null site is a group like any other.
 
@@ -217,7 +232,7 @@ Step 2: for each group, two objects are made and merged. For the first group, th
 
 The same for S and for the null site gives the result at the top.
 
-### Other ways to write the key
+### group_agg: other ways to write the key
 
 The key is a filter run on each row, as in `_groups` above; what is new here is that the key is copied into the output row, so its form decides the column's name. `group_agg` runs the key on the group's first row and starts the output row from what comes back. `{site}` gives the object `{"site":"N"}`, which is used as it is, so the column is `site`. `.site` gives the string `"N"`, which is not an object, so it is wrapped as `{"key":"N"}` and the column is `key`.
 
@@ -257,7 +272,7 @@ The fourth is the quiet mistake: a string is the same for every row, so there is
 
 Rows 1 and 4 share the key `{"site":"N","month":"Jan"}`, so they form one group. A key field can also be computed: `{site, big: (.x > 2)}` groups by site and by whether x is above 2.
 
-### What it adds to plain jq
+### group_agg: what it adds to plain jq
 
 Not much, and that is deliberate. The same count with the builtin and with the library:
 
@@ -275,7 +290,7 @@ Not much, and that is deliberate. The same count with the builtin and with the l
 - **Order.** The builtin's groups come sorted by key (null, "N", "S"). `group_agg`'s come in the order the keys first appear ("N", "S", null), because it is built on `_groups`.
 - **The key is written once.** In plain jq the key is named twice: once to group, and once to copy it into the output row from the group's first row (`.[0].site`). `group_agg` does that copy itself.
 
-### The definition
+### group_agg: the definition
 
 `group_agg/2`, lines 170 to 175:
 
