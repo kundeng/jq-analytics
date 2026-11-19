@@ -78,5 +78,5 @@ Worked case, the test fixture: rows `{host: "db01", site: "N", site_right: "S"}`
 
 - 2026-11-19. Opened and closed the same day on the owner's word ("ok add both now").
 - 178 of 178 cases on jq 1.7.1, jq 1.8.2, gojq 0.12.20, jaq 3.1.2 and the Python package 1.13.0; 101 public names, none equal to a built-in.
-- The lines added to `analytics.jq` move every later definition down by 21 lines, so the ten read-out pages after reshape were rebuilt with new line numbers and no other change.
+- The lines added to `analytics.jq` move every later definition down by 20 lines, so the ten read-out pages after reshape were rebuilt with new line numbers and no other change.
 - Not done: no timing on a large table; no trial of the agent skill beyond the checks of `tools/skill_build.py`.
