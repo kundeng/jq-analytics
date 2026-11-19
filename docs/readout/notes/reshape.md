@@ -1,4 +1,4 @@
-Two definitions that are each other's opposite: `unpivot` turns columns into rows, and `pivot` turns rows into columns.
+Four definitions. Two are each other's opposite: `unpivot` turns columns into rows, and `pivot` turns rows into columns. The other two change only the names of the columns: `rename_fields` renames the ones listed, and `prefix_fields` puts a prefix on all of them.
 
 A table with one column per measurement (`cpu`, `ram`) is called wide. The same data with one row per measurement, and the measurement's name in a column of its own, is called long. Grouping and joining work on long tables; reports are usually wide.
 
@@ -139,3 +139,136 @@ For `db01`, `$cells` has `ram` and `disk`. `$cells["cpu"]` is null, so the `cpu`
 - `group_agg(rowkey; ...)`: step 1. The row key should be an object, such as `{host}`, so that its fields become the first columns.
 - The `$cells` expression: step 2. `tostring` is applied to the column value because the names in `$cols` are strings. Inside a group, `group_by` keeps input order, so the values reach `agg` in input order.
 - `reduce $cols[] as $c ({}; .[$c] = ($cells[$c] | if . == null then null else agg end))`: step 3. A column with no rows gives null without calling `agg`.
+
+## rename_fields/1
+<!-- code: 3887f440 -->
+
+New names for the fields listed, in every row of a table. It is SQL's `AS`, pandas' and Polars' `rename`, Power Query's "Rename Columns" and Splunk's `rename`.
+
+It is needed in three places. After a join, `site_right` says which side a value came from, and a reader wants to know what it is. Before two tables are stacked, one may say `host` where the other says `hostname`. Before a report, the columns get the names its reader expects.
+
+### The example
+
+The result of a join of hosts with an inventory, both of which had a `site`. The second host matched nothing, so it has no `site_right`. The third row is empty.
+
+| host | site | site_right |
+|---|---|---|
+| db01 | N | S |
+| web01 | N | |
+| | | |
+
+```jq run
+[{host: "db01", site: "N", site_right: "S"}, {host: "web01", site: "N"}, {}]
+| rename_fields({site_right: "site_cmdb"})
+```
+
+In the first row `site_right` is now `site_cmdb`, with the same value, in the same place. The other two rows have no `site_right` and are unchanged: no `site_cmdb` is added to them.
+
+### Reading the call
+
+The one argument, `{site_right: "site_cmdb"}`, is a value: an object with the old name as key and the new name as value. Several fields are renamed in one call, `{site_right: "site_cmdb", host: "hostname"}`. An old name that no row has is ignored.
+
+### Why not plain jq
+
+Plain jq has no rename. The usual way is to copy the field and delete the old one:
+
+```jq run
+[{host: "db01", site: "N", site_right: "S"}, {host: "web01", site: "N"}, {}]
+| map(.site_cmdb = .site_right | del(.site_right))
+```
+
+The first row is the same as before. The other two rows now have a `site_cmdb` that is null: jq reads a missing field as null and writes it back as a real one. On jq and jaq the copied field also moves to the end of its row, where `rename_fields` leaves it in place (gojq prints every object's fields sorted by name, so there the place cannot be seen).
+
+### All names change at once
+
+Each field is looked up once, under its old name. So two fields can swap names in one call, which two copy-and-delete steps cannot do without a third name:
+
+```jq run
+[{first: "a", second: "b"}] | rename_fields({first: "second", second: "first"}) | map([.first, .second])
+```
+
+`first` now holds "b" and `second` holds "a".
+
+### What happens inside, on the example
+
+Each row is handled alone. For the first row:
+
+Step 1, `to_entries`: the row as a list of `{key, value}` entries, in the row's order.
+
+Step 2, `map(.key = ($names[.key] // .key))`: each entry's key is looked up in `$names`. `$names["site_right"]` is `"site_cmdb"`, so that key is replaced. `$names["host"]` is null, and `// .key` puts the old key back. This list is `$e`.
+
+```jq run
+{site_right: "site_cmdb"} as $names
+| {host: "db01", site: "N", site_right: "S"} | to_entries | map(.key = ($names[.key] // .key))
+```
+
+Step 3, `$e | from_entries`: the entries back into an object, `$o`. That is the output row.
+
+### What is refused
+
+A new name that is already another field of the row. `from_entries` would keep one of the two values and drop the other without a word, so the two lengths are compared: three entries went in, and an object of two fields came out.
+
+```jq run
+try ([{host: "db01", site: "N", site_right: "S"}] | rename_fields({site_right: "site"})) catch .
+```
+
+The fix is to rename both, or to drop one first with `map(del(.site))`. An argument that is not an object of strings is refused too, with a message showing the form expected:
+
+```jq run
+try ([{host: "db01"}] | rename_fields({host: 1})) catch .
+```
+
+### The definition
+
+<!-- definition -->
+
+- The first `if` checks the argument: an object, all of whose values are strings.
+- `map(...)`: one row at a time.
+- `(to_entries | map(.key = ($names[.key] // .key))) as $e`: steps 1 and 2.
+- `($e | from_entries) as $o`: step 3.
+- `if ($o | length) != ($e | length)`: the check of "What is refused". The message names the first name that occurs twice in `$e`.
+
+## prefix_fields/1
+<!-- code: 35d1e120 -->
+
+A prefix in front of every field name of a table. Put on one table before a join, it makes every field of the result show which table it came from, which is how Power Query names the columns of a merged table.
+
+### The example
+
+A registry of hosts, and an empty row.
+
+```jq run
+[{host: "db01", owner: "bo", team: "dba"}, {}] | prefix_fields("reg_")
+```
+
+Every field has `reg_` in front. The values are untouched, and the empty row stays empty.
+
+### Before a join
+
+Two tables that both have `host` and `owner`. Joined as they are, the result has `owner` and `owner_right` (the joins page says why). With the registry prefixed first, no name is shared, and each field says where it came from. The right key is then `.reg_host`:
+
+```jq run
+[{host: "db01", owner: "ann"}, {host: "web01", owner: "cy"}]
+| join_left([{host: "db01", owner: "bo", team: "dba"}] | prefix_fields("reg_"); .host; .reg_host)
+```
+
+`db01` has its own owner and the registry's. Both key fields are kept, `host` and `reg_host`, because they now have different names. `web01` matched nothing and has only its own fields.
+
+To prefix all fields but one, rename that one back: `prefix_fields("reg_") | rename_fields({reg_host: "host"})`.
+
+### What is refused
+
+A prefix that is not a string:
+
+```jq run
+try ([{host: "db01"}] | prefix_fields(null)) catch .
+```
+
+Two fields cannot end up with the same name, because two different names stay different with the same text in front. So there is no clash to check, unlike `rename_fields`.
+
+### The definition
+
+<!-- definition -->
+
+- The `if` checks that the prefix is a string.
+- `map(with_entries(.key = $prefix + .key))`: for each row, `with_entries` turns the row into `{key, value}` entries, puts the prefix in front of each key, and builds the row again. On strings, `+` joins.

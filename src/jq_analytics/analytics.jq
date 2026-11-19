@@ -382,6 +382,26 @@ def pivot($cols; rowkey; colf; valf; agg):
   group_agg(rowkey; (group_by(colf | tostring) | map({key: (.[0] | colf | tostring), value: map(valf)}) | from_entries) as $cells
     | reduce $cols[] as $c ({}; .[$c] = ($cells[$c] | if . == null then null else agg end)));
 
+# rename_fields: $names is an object {old name: new name}. Every row's field with an old name gets
+# the new one and keeps its value and its place in the row; a row without the field is left as it
+# is. All names change at once, so {a: "b", b: "a"} swaps two fields. A new name that is already
+# another field of the row is an error: one of the two values would be lost.
+def rename_fields($names):
+  if ($names | type) != "object" or any($names[]; type != "string")
+  then error("rename_fields: the argument is an object of old name to new name, such as {\"host\": \"hostname\"}; got \($names | tojson)")
+  else map((to_entries | map(.key = ($names[.key] // .key))) as $e | ($e | from_entries) as $o
+    | if ($o | length) != ($e | length)   # a repeated name collapsed in from_entries
+      then error("rename_fields: a row would have two fields named \($e | map(.key) | group_by(.) | map(select(length > 1)[0])[0] | tojson)")
+      else $o end)
+  end;
+
+# prefix_fields: every field name of every row with $prefix in front ("cmdb_" turns site into
+# cmdb_site). Put on one table before a join, it makes every output field show which table it came from.
+def prefix_fields($prefix):
+  if ($prefix | type) != "string"
+  then error("prefix_fields: the prefix is a string, such as \"cmdb_\"; got \($prefix | tojson)")
+  else map(with_entries(.key = $prefix + .key)) end;
+
 # ---------------------------------------------------------------- state machines over time
 
 # Events of one entity, ordered by time, are read as a machine that is in one state at a time.

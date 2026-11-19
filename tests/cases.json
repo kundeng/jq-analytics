@@ -99,6 +99,151 @@
     "jq": "unpivot([\"id\"]; \"col\"; \"val\")"
   },
   {
+    "name": "rename_fields",
+    "input": "tests/fixtures/rename_rows.json",
+    "expect_value": [
+      {
+        "host": "db01",
+        "site": "N",
+        "site_cmdb": "S"
+      },
+      {
+        "host": "web01",
+        "site": "N"
+      },
+      {}
+    ],
+    "jq": "rename_fields({site_right: \"site_cmdb\"})"
+  },
+  {
+    "name": "rename_fields_several_and_missing",
+    "input": "tests/fixtures/rename_rows.json",
+    "expect_value": [
+      {
+        "hostname": "db01",
+        "site": "N",
+        "site_cmdb": "S"
+      },
+      {
+        "hostname": "web01",
+        "site": "N"
+      },
+      {}
+    ],
+    "jq": "rename_fields({site_right: \"site_cmdb\", host: \"hostname\", nowhere: \"x\"})"
+  },
+  {
+    "name": "rename_fields_swap",
+    "input": "tests/fixtures/rename_rows.json",
+    "expect_value": [
+      {
+        "host": "db01",
+        "site": "S",
+        "site_right": "N"
+      },
+      {
+        "host": "web01",
+        "site_right": "N"
+      },
+      {}
+    ],
+    "jq": "rename_fields({site: \"site_right\", site_right: \"site\"})"
+  },
+  {
+    "name": "rename_fields_keeps_place",
+    "input": "tests/fixtures/rename_rows.json",
+    "expect_value": [
+      [
+        "a",
+        "renamed",
+        "c"
+      ]
+    ],
+    "jq": "[{a: 1, b: 2, c: 3}] | rename_fields({b: \"renamed\"}) | map(to_entries | sort_by(.value) | map(.key))"
+  },
+  {
+    "name": "rename_fields_empty_table",
+    "input": "tests/fixtures/rename_rows.json",
+    "expect_value": [],
+    "jq": "[] | rename_fields({a: \"b\"})"
+  },
+  {
+    "name": "rename_fields_taken_name_error",
+    "input": "tests/fixtures/rename_rows.json",
+    "expect_error": "rename_fields: a row would have two fields named",
+    "jq": "rename_fields({site_right: \"site\"})"
+  },
+  {
+    "name": "rename_fields_argument_error",
+    "input": "tests/fixtures/rename_rows.json",
+    "expect_error": "rename_fields: the argument is an object of old name to new name",
+    "jq": "rename_fields({site: 1})"
+  },
+  {
+    "name": "rename_fields_argument_not_object_error",
+    "input": "tests/fixtures/rename_rows.json",
+    "expect_error": "rename_fields: the argument is an object of old name to new name",
+    "jq": "rename_fields(\"site\")"
+  },
+  {
+    "name": "prefix_fields",
+    "input": "tests/fixtures/rename_rows.json",
+    "expect_value": [
+      {
+        "reg_host": "db01",
+        "reg_site": "N",
+        "reg_site_right": "S"
+      },
+      {
+        "reg_host": "web01",
+        "reg_site": "N"
+      },
+      {}
+    ],
+    "jq": "prefix_fields(\"reg_\")"
+  },
+  {
+    "name": "prefix_fields_empty_prefix",
+    "input": "tests/fixtures/rename_rows.json",
+    "expect_value": [
+      {
+        "host": "db01",
+        "site": "N",
+        "site_right": "S"
+      },
+      {
+        "host": "web01",
+        "site": "N"
+      },
+      {}
+    ],
+    "jq": "prefix_fields(\"\")"
+  },
+  {
+    "name": "prefix_fields_before_join",
+    "input": "tests/fixtures/rename_rows.json",
+    "expect_value": [
+      {
+        "host": "db01",
+        "owner": "ann",
+        "reg_host": "db01",
+        "reg_owner": "bo",
+        "reg_team": "dba"
+      },
+      {
+        "host": "web01",
+        "owner": "cy"
+      }
+    ],
+    "jq": "[{host: \"db01\", owner: \"ann\"}, {host: \"web01\", owner: \"cy\"}] | join_left([{host: \"db01\", owner: \"bo\", team: \"dba\"}] | prefix_fields(\"reg_\"); .host; .reg_host)"
+  },
+  {
+    "name": "prefix_fields_argument_error",
+    "input": "tests/fixtures/rename_rows.json",
+    "expect_error": "prefix_fields: the prefix is a string",
+    "jq": "prefix_fields(null)"
+  },
+  {
     "name": "cast",
     "input": "tests/fixtures/raw_strings.json",
     "sql": "cast.sql",

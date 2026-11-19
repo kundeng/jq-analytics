@@ -1,6 +1,6 @@
 # analytics.jq: tables and statistics for jq
 
-`analytics.jq` is a jq module of 99 functions that let a jq program answer the questions people usually send to SQL, pandas or a graph library: hold several named tables at once, join them by key, condition and time, group and aggregate, percentiles, running and lagged values over ordered partitions, time series read as state machines, roll-ups over trees, reachability, shortest paths and dependency order in graphs, validity intervals built from events, a calendar table, funnels and retention, column profiles and table diffs, measures evaluated at several levels of a report, and local time in a named time zone. Each function states its rule in a comment beside it (how it treats nulls, ties, order and rounding), and each rule is pinned by a test whose expected answer DuckDB computes. Its time-zone tables, generated from the IANA time-zone database, are a block inside the same file.
+`analytics.jq` is a jq module of 101 functions that let a jq program answer the questions people usually send to SQL, pandas or a graph library: hold several named tables at once, join them by key, condition and time, group and aggregate, percentiles, running and lagged values over ordered partitions, time series read as state machines, roll-ups over trees, reachability, shortest paths and dependency order in graphs, validity intervals built from events, a calendar table, funnels and retention, column profiles and table diffs, measures evaluated at several levels of a report, and local time in a named time zone. Each function states its rule in a comment beside it (how it treats nulls, ties, order and rounding), and each rule is pinned by a test whose expected answer DuckDB computes. Its time-zone tables, generated from the IANA time-zone database, are a block inside the same file.
 
 It exists because plain jq leaves those rules to whoever writes the program. In one analysis of service requests, four shared jq helpers each decided a number without saying how: one dropped unresolved tickets, one used a different percentile rule, one hardcoded a single year's daylight-saving switch, one rounded before comparing with a threshold and miscounted by one. This library is one place where those rules are written down, tested against DuckDB, and the same for every analysis that loads it.
 
@@ -75,7 +75,7 @@ The library is one file, `analytics.jq`, in a directory `<dir>` below. Its time-
 | Python `jq` package | `jq.compile('include "analytics" {search: "<dir>"}; ' + program).input_value(rows).first()`; the package has no `-L` and an empty default search list, so the path goes in the program |
 | Python package `jq_analytics` | `jq_analytics.include()` returns the `include` line with this package's directory filled in |
 
-Tested on jq 1.7.1 (Apple's build), jq 1.8.2, gojq 0.12.20, jaq 3.1.2 and the `jq` Python package 1.13.0, which builds jq 1.8.2: all pass the same 166 test cases (`tests/run_tests.py`). The library uses no builtin that is missing from any of them, and it parenthesises `reduce … as` inside function arguments, which jq 1.7.1's grammar requires.
+Tested on jq 1.7.1 (Apple's build), jq 1.8.2, gojq 0.12.20, jaq 3.1.2 and the `jq` Python package 1.13.0, which builds jq 1.8.2: all pass the same 178 test cases (`tests/run_tests.py`). The library uses no builtin that is missing from any of them, and it parenthesises `reduce … as` inside function arguments, which jq 1.7.1's grammar requires.
 
 ## Names
 
@@ -779,6 +779,10 @@ Checking by hand. Hit 1 at 3000: device aa has held the address since 1000 and r
 
 **`pivot($cols; rowkey; colf; valf; agg)`**. One output row per `rowkey` (an object), one column per name in `$cols`, holding `agg` applied to the `valf` values of the rows whose `colf` is that name; null where none; values of `colf` not in `$cols` are dropped. The column list is required, as Power Query's `pivotValues` is, so the output shape never depends on the data.
 
+**`rename_fields($names)`**. `$names` is an object of old name to new name, `{site_right: "site_cmdb"}`. Each listed field gets its new name in every row and keeps its value and its place; a row without the field is left as it is, and no null field is added. All names change at once, so `{a: "b", b: "a"}` swaps two fields. A new name that is already another field of a row is an error. It is SQL's `AS` and the `rename` of pandas, Polars and Splunk; its usual place is after a join, where `site_right` gets the name that says what it is.
+
+**`prefix_fields($prefix)`**. Every field name of every row with `$prefix` in front. Put on one table before a join, it gives every output field the name of the table it came from, as Power Query's merge does; the key of that table is then written with the prefix (`.reg_host`).
+
 <!-- example: reshape -->
 ```jq
 [{id: 1, a: 10, b: null}, {id: 2, a: 11, b: 21}] | unpivot(["id"]; "col"; "val") as $long | {long: $long, wide_again: ($long | pivot(["a", "b", "c"]; {id}; .col; .val; add))}
@@ -788,6 +792,19 @@ Checking by hand. Hit 1 at 3000: device aa has held the address since 1000 and r
 {
   "long": [{"id": 1, "col": "a", "val": 10}, {"id": 1, "col": "b", "val": null}, {"id": 2, "col": "a", "val": 11}, {"id": 2, "col": "b", "val": 21}],
   "wide_again": [{"id": 1, "a": 10, "b": null, "c": null}, {"id": 2, "a": 11, "b": 21, "c": null}]
+}
+```
+<!-- /example -->
+
+<!-- example: rename -->
+```jq
+[{host: "db01", owner: "ann"}, {host: "web01", owner: "cy"}] as $hosts | [{host: "db01", owner: "bo", team: "dba"}] as $registry | {renamed_after: ($hosts | join_left($registry; .host; .host) | rename_fields({owner_right: "registry_owner"})), prefixed_before: ($hosts | join_left($registry | prefix_fields("reg_"); .host; .reg_host))}
+```
+
+```json
+{
+  "renamed_after": [{"host": "db01", "owner": "ann", "registry_owner": "bo", "team": "dba"}, {"host": "web01", "owner": "cy"}],
+  "prefixed_before": [{"host": "db01", "owner": "ann", "reg_host": "db01", "reg_owner": "bo", "reg_team": "dba"}, {"host": "web01", "owner": "cy"}]
 }
 ```
 <!-- /example -->

@@ -137,7 +137,7 @@ Three kinds of input stop with an error: a cycle, a parent id that is not a node
 
 ### tree_paths: the definition
 
-`tree_paths/2`, lines 446 to 467:
+`tree_paths/2`, lines 466 to 487:
 
 ```jq
 # tree_paths: adds to every node `ancestry` (the ids from its root down to itself) and `depth`
@@ -242,7 +242,7 @@ Step 3, the last line: each row gets its own entry of `$sum` as `subtree`.
 
 ### tree_rollup: the definition
 
-`tree_rollup/3`, lines 469 to 475:
+`tree_rollup/3`, lines 489 to 495:
 
 ```jq
 # tree_rollup: tree_paths, plus `subtree`: the node's own value plus the values of all its

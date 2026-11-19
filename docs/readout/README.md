@@ -11,7 +11,7 @@ How each definition in `src/jq_analytics/analytics.jq` is written: the code as i
 | [25](25-several-tables-at-once.md) | several tables at once | 3 |
 | [30](30-joins.md) | joins | 16 |
 | [35](35-windows.md) | windows | 7 |
-| [40](40-reshape.md) | reshape | 2 |
+| [40](40-reshape.md) | reshape | 4 |
 | [45](45-state-machines-over-time.md) | state machines over time | 6 |
 | [50](50-hierarchies.md) | hierarchies | 2 |
 | [55](55-graphs.md) | graphs | 8 |

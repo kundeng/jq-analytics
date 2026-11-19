@@ -73,7 +73,7 @@ Step 3, the round trip: the number is printed back as a date and compared with t
 
 ### _cal_bad and the others: the definition
 
-`_cal_bad/1`, line 942:
+`_cal_bad/1`, line 962:
 
 ```jq
 def _cal_bad($who): error("\($who): \(tojson) is not a date (YYYY-MM-DD)");
@@ -81,7 +81,7 @@ def _cal_bad($who): error("\($who): \(tojson) is not a date (YYYY-MM-DD)");
 
 Built into jq: `error`, `tojson`.
 
-`_cal_date/1`, lines 943 to 949:
+`_cal_date/1`, lines 963 to 969:
 
 ```jq
 # "YYYY-MM-DD" as epoch seconds of that day's midnight UTC; an impossible date (2026-02-30) is an error
@@ -126,7 +126,7 @@ Input: a year. `_cal_iso_weeks` gives the number of ISO weeks in it, 52 or 53. `
 
 ### _cal_p and the others: the definition
 
-`_cal_p/0`, line 950:
+`_cal_p/0`, line 970:
 
 ```jq
 def _cal_p: (. + (. / 4 | floor) - (. / 100 | floor) + (. / 400 | floor)) % 7;
@@ -134,7 +134,7 @@ def _cal_p: (. + (. / 4 | floor) - (. / 100 | floor) + (. / 400 | floor)) % 7;
 
 Built into jq: `floor`.
 
-`_cal_iso_weeks/0`, line 951:
+`_cal_iso_weeks/0`, line 971:
 
 ```jq
 def _cal_iso_weeks: if _cal_p == 4 or ((. - 1) | _cal_p) == 3 then 53 else 52 end;   # ISO weeks in year .
@@ -165,7 +165,7 @@ A number as text of at least two digits, for `2026-03` and `2026-W09`.
 
 ### _cal_pad2: the definition
 
-`_cal_pad2/0`, line 952:
+`_cal_pad2/0`, line 972:
 
 ```jq
 def _cal_pad2: if . < 10 then "0\(.)" else tostring end;
@@ -229,7 +229,7 @@ Step 1: the offset in force at `$m` is -18000 seconds (five hours behind), so th
 
 ### _cal_midnight: the definition
 
-`_cal_midnight/1`, lines 953 to 955:
+`_cal_midnight/1`, lines 973 to 975:
 
 ```jq
 # the moment whose local clock in zone $z reads the UTC date of the input at 00:00; the second step
@@ -367,7 +367,7 @@ Step 5: `start` is `_cal_midnight` of `$m` and `end` is `_cal_midnight` of `$m +
 
 ### calendar: the definition
 
-`calendar/3`, lines 957 to 988:
+`calendar/3`, lines 977 to 1008:
 
 ```jq
 # calendar: one row per day from $from to $to inclusive (both "YYYY-MM-DD"), ignoring its input:
@@ -406,7 +406,7 @@ def calendar($from; $to; $zone):
 
 Built into jq: `error`, `floor`, `gmtime`, `range`, `round`, `strftime`, `tojson`, `type`. From this library: `_cal_date`, `_cal_iso_weeks`, `_cal_midnight`, `_cal_pad2`, `tz`.
 
-`calendar/2`, line 989:
+`calendar/2`, line 1009:
 
 ```jq
 def calendar($from; $to): calendar($from; $to; "UTC");

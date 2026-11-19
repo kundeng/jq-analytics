@@ -304,6 +304,8 @@ moving mean of f over the current row and the $n - 1 rows before it (fewer at th
 |---|---|
 | `unpivot($keep; $name; $value)` | Wide to long: every column that is not kept becomes a row of its own |
 | `pivot($cols; rowkey; colf; valf; agg)` | Long to wide: one output row per row key, and one column per name in a list the caller gives |
+| `rename_fields($names)` | New names for the fields listed, in every row of a table |
+| `prefix_fields($prefix)` | A prefix in front of every field name of a table |
 
 `unpivot($keep; $name; $value)`
 
@@ -319,6 +321,22 @@ name, so every engine agrees (jq and jaq keep insertion order, gojq sorts keys).
 pivot: one output row per rowkey (an object) and one column per name in $cols (Power Query's
 pivotValues), holding agg applied to the array of valf values whose colf (as a string) is that
 name. A name with no matching rows gives null; colf values not in $cols are dropped.
+```
+
+`rename_fields($names)`
+
+```text
+rename_fields: $names is an object {old name: new name}. Every row's field with an old name gets
+the new one and keeps its value and its place in the row; a row without the field is left as it
+is. All names change at once, so {a: "b", b: "a"} swaps two fields. A new name that is already
+another field of the row is an error: one of the two values would be lost.
+```
+
+`prefix_fields($prefix)`
+
+```text
+prefix_fields: every field name of every row with $prefix in front ("cmdb_" turns site into
+cmdb_site). Put on one table before a join, it makes every output field show which table it came from.
 ```
 
 ## State machines over time

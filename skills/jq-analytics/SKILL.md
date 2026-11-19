@@ -86,6 +86,7 @@ Find the question; the shape tells you what one row must be; then read those fun
 | Subtotals and a grand total; share of the total; this period against the last | a fact record with dimension fields | `rollup` with `measure`, `share_of`, `measure_with` and `without_filter`, `only_filters`, `shift`, `to_date` |
 | The local time, the weekday, office hours | a record with an instant | `parse_ts`, then `local_time` with a zone name; `calendar` for a date table |
 | Wide to long, long to wide | a record | `unpivot`, `pivot` |
+| New names for fields: after a join, before stacking two tables, for a report | a table | `rename_fields({old: "new"})`; `prefix_fields("reg_")` on one table before a join |
 | An array field into rows; nested objects into columns | a nested record | `unnest`, `flatten_fields`, `rows_from_map`, `nodes_from_nested` |
 | What changed between two versions | two tables with a key | `diff_tables` |
 | Keys that almost match | two tables with a text key | clean the key first (lowercase, trim); then `join_fuzzy` inside a block; for volume, a database |
@@ -93,7 +94,7 @@ Find the question; the shape tells you what one row must be; then read those fun
 
 ## What the names do not tell you
 
-<!-- fields: from_first from_previous _right host_right t_right site_right x_right -->
+<!-- fields: from_first from_previous _right host_right t_right site_right x_right reg_ reg_host -->
 
 Facts that cost a wrong answer or a wasted run when guessed. The comment of each function in `references/functions.md` has the rest: what each argument means and which fields the result carries.
 

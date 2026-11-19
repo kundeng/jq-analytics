@@ -73,7 +73,7 @@ Step 2, `[.s[]] | sort_by(.[0]) | map(.[1])`: the four pairs sorted by position,
 
 ### _distinct_in_order: the definition
 
-`_distinct_in_order/0`, lines 704 to 708:
+`_distinct_in_order/0`, lines 724 to 728:
 
 ```jq
 # the distinct values of an array in order of first appearance (jq's unique sorts them)
@@ -160,7 +160,7 @@ Step 2 in `unnest_outer`: an empty array is first replaced by `[null]`, so its r
 
 ### _unnest_arr and the others: the definition
 
-`_unnest_arr/2`, lines 710 to 714:
+`_unnest_arr/2`, lines 730 to 734:
 
 ```jq
 # the array at f for one row: [] for null, an error naming the row for anything else
@@ -172,7 +172,7 @@ def _unnest_arr(f; $i):
 
 Built into jq: `error`, `type`.
 
-`unnest/2`, lines 716 to 721:
+`unnest/2`, lines 736 to 741:
 
 ```jq
 # unnest: one row per element of the array at f, the element in field $as. A row whose array is
@@ -185,7 +185,7 @@ def unnest(f; $as):
 
 Built into jq: `to_entries`. From this library: `_unnest_arr`.
 
-`unnest_outer/2`, lines 722 to 724:
+`unnest_outer/2`, lines 742 to 744:
 
 ```jq
 def unnest_outer(f; $as):
@@ -255,7 +255,7 @@ Step 2, `from_entries`: the pairs become one object, the row of the result at th
 
 ### _flat and the others: the definition
 
-`_flat/2`, lines 726 to 730:
+`_flat/2`, lines 746 to 750:
 
 ```jq
 # one value flattened to {key: path, value} pairs; a non-empty object recurses, anything else is a leaf
@@ -267,7 +267,7 @@ def _flat($p; $sep):
 
 Built into jq: `length`, `to_entries`, `type`.
 
-`flatten_fields/1`, lines 732 to 742:
+`flatten_fields/1`, lines 752 to 762:
 
 ```jq
 # flatten_fields: nested objects become columns named by their path joined with $sep
@@ -343,7 +343,7 @@ Four rows, one per node, in depth-first order: a node, then everything under it,
 
 ### _nodes and the others: the definition
 
-`_nodes/3`, lines 744 to 746:
+`_nodes/3`, lines 764 to 766:
 
 ```jq
 # one nested node and its descendants as rows, depth first, each with its parent's id
@@ -353,7 +353,7 @@ def _nodes(id; children; $p): . as $n
 
 Built into jq: `del`.
 
-`nodes_from_nested/2`, lines 748 to 751:
+`nodes_from_nested/2`, lines 768 to 771:
 
 ```jq
 # nodes_from_nested: a nested tree (each node holding its children in an array at `children`)
@@ -424,7 +424,7 @@ Step 2: each pair becomes a row. For `db01`, `{host: "db01"} + {ram: 64}`. That 
 
 ### rows_from_map: the definition
 
-`rows_from_map/1`, lines 753 to 762:
+`rows_from_map/1`, lines 773 to 782:
 
 ```jq
 # rows_from_map: an object keyed by id becomes rows, the key in field $as, sorted by key. A value
@@ -548,7 +548,7 @@ For `["a"]` at time 60 there is no entry in `$ix`, so the row is `{"g":"a"} + {"
 
 ### fill_grid: the definition
 
-`fill_grid/4`, lines 764 to 781:
+`fill_grid/4`, lines 784 to 801:
 
 ```jq
 # fill_grid: every combination of the $keys fields' values (in first appearance) at every time from
@@ -613,7 +613,7 @@ The key is turned into a string, because an object key has to be one. So a repea
 
 ### to_map: the definition
 
-`to_map/1`, lines 783 to 787:
+`to_map/1`, lines 803 to 807:
 
 ```jq
 # to_map: rows become an object keyed by `key` (as a string). A duplicate key is an error; jq's
@@ -692,7 +692,7 @@ Step 3: each root is expanded by `_nest`, which adds field `reports` holding the
 
 ### _nest and the others: the definition
 
-`_nest/3`, lines 789 to 790:
+`_nest/3`, lines 809 to 810:
 
 ```jq
 # one node with its children, and theirs, nested under field $as
@@ -701,7 +701,7 @@ def _nest($by; id; $as): . as $n | $n + {($as): [($by[$n | id | tojson] // [])[]
 
 Built into jq: `tojson`.
 
-`nested_from_nodes/3`, lines 792 to 798:
+`nested_from_nodes/3`, lines 812 to 818:
 
 ```jq
 # nested_from_nodes: node rows (id, parent) become a nested tree, each node's children in an array
@@ -745,7 +745,7 @@ Edge rows become the `{nodes, links}` object that graph tools such as networkx, 
 
 ### node_link: the definition
 
-`node_link/2`, lines 800 to 804:
+`node_link/2`, lines 820 to 824:
 
 ```jq
 # node_link: edge rows become the node-link form graph tools read (networkx, d3, Cytoscape):
@@ -784,7 +784,7 @@ Two rows; one host name contains a comma, and one `ram` is null.
 
 ### to_csv: the definition
 
-`to_csv/1`, lines 806 to 809:
+`to_csv/1`, lines 826 to 829:
 
 ```jq
 # to_csv: a header line, then one CSV line per row, columns in the order of $cols; a stream of
