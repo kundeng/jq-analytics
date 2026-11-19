@@ -14,9 +14,11 @@ The files: `references/functions.md` lists every public function with how it is 
 | Situation | Use |
 |---|---|
 | JSON or YAML in a shell, a pipeline step, a search command or a workflow node, up to about 200,000 rows | this library |
-| More than about 200,000 rows, or the same data answering many questions | a database such as DuckDB; the library's answers are tested against DuckDB's, so the hand-off changes speed, not results |
+| More than about 200,000 rows, or the same data answering many questions | a database such as DuckDB for grouping, windows and plain joins; an as-of join may stay here (see below) |
 | Edit distance, phonetic matching, approximate quantiles, rank correlation | a database; the library does not have them |
 | Fitting a model, forecasting, anything statistical beyond description | not jq |
+
+**Where the line is, measured.** On 200,000 rows of ten fields, seven of the library's questions took 7.8 to 20.0 seconds each in the Python `jq` package, with 0.7 to 1.0 GB of memory; at 500,000 rows, 20 to 54 seconds. DuckDB answered six of them in 0.12 to 0.17 seconds at 200,000 rows, reading the JSON included. The seventh, an as-of join, took DuckDB 149 seconds and the library 15. All answers were equal: the library is tested against DuckDB, so handing off changes the waiting time and not the result. So: past about 200,000 rows, send grouping, windows and plain joins to a database when one is at hand; an as-of join may stay in jq. The line is a judgement about waiting, not a limit; the README's "Costs and limits" has the per-function figures.
 
 ## Loading it
 
