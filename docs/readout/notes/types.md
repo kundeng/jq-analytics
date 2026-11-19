@@ -1,4 +1,4 @@
-Two public definitions that turn text into typed values: `parse_ts` for one timestamp, `cast` for the named columns of a table. Both refuse what they cannot read. Neither returns a quiet null for a bad value.
+Two public definitions that turn text into typed values: `parse_ts` for one timestamp, `cast_columns` for the named columns of a table. Both refuse what they cannot read. Neither returns a quiet null for a bad value.
 
 ## _ts_exact/1, parse_ts/0
 <!-- code: 7163a5ca -->
@@ -104,8 +104,8 @@ Both lines are the same number, and it is the first example's 13:05:00 plus a qu
 - `elif length == 19 and (.[10:11] | . == " " or . == "T")`: the short path. It exists because the regular expression of the general path is the larger part of the cost on a big table, and most timestamps have this form. Its digits, dashes and colons are still checked, by `fromdateiso8601` inside `_ts_exact`.
 - `else`: the general path, steps 1 to 5. `$m.z == null or $m.z == "Z"` gives an offset of 0, so no zone means UTC.
 
-## cast/1
-<!-- code: 57e695a0 -->
+## cast_columns/1
+<!-- code: 9b228112 -->
 
 Gives the named columns of a table their types: text to number, timestamp or boolean, and anything to string. It is SQL's `CAST(col AS type)` for several columns at once, and Power Query's "Changed Type" step.
 
@@ -120,7 +120,7 @@ Two rows as they come from a CSV file, where every value is text. The second row
 
 ```jq run
 [{n: "12.5", t: "2026-08-12 13:05:00", b: "true", other: "kept"}, {n: "", t: null, b: false, other: 1}]
-| cast({b: "boolean", n: "number", t: "timestamp"})
+| cast_columns({b: "boolean", n: "number", t: "timestamp"})
 ```
 
 In the first row `n` is now the number 12.5, `t` is seconds since 1970 and `b` is the boolean true. In the second row the empty string became null. `other` is not in the schema and is untouched in both rows.
@@ -143,7 +143,7 @@ Step 2: for each row, `reduce` starts from the row and rewrites one column per p
 
 ```jq run
 [{n: "12.5", t: "2026-08-12 13:05:00", b: "true", other: "kept"}]
-| cast({b: "boolean"}), cast({b: "boolean", n: "number"}), cast({b: "boolean", n: "number", t: "timestamp"})
+| cast_columns({b: "boolean"}), cast_columns({b: "boolean", n: "number"}), cast_columns({b: "boolean", n: "number", t: "timestamp"})
 ```
 
 Three tables of one row each. One more column has its type in each.
@@ -153,9 +153,9 @@ Three tables of one row each. One more column has its type in each.
 A value that does not parse is an error naming the column and the value. A number must look like a JSON number, so a leading space is refused. A type name that is not one of the four is an error too.
 
 ```jq run
-([{n: " 12"}] | try cast({n: "number"}) catch .),
-([{b: "yes"}] | try cast({b: "boolean"}) catch .),
-([{b: "yes"}] | try cast({b: "date"}) catch .)
+([{n: " 12"}] | try cast_columns({n: "number"}) catch .),
+([{b: "yes"}] | try cast_columns({b: "boolean"}) catch .),
+([{b: "yes"}] | try cast_columns({b: "date"}) catch .)
 ```
 
 ### A column the row lacks
@@ -163,7 +163,7 @@ A value that does not parse is an error naming the column and the value. A numbe
 A schema column that a row does not have is added to it as null, so every row comes out with the same columns.
 
 ```jq run
-[{a: "1"}] | cast({a: "number", missing: "number"})
+[{a: "1"}] | cast_columns({a: "number", missing: "number"})
 ```
 
 ### The definition

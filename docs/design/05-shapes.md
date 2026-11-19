@@ -50,16 +50,16 @@ flowchart LR
 | Shape | One row is | Example row | Families that take it |
 |---|---|---|---|
 | table | one record | `{"id": "REQ1", "site": "North", "hours": "4.5"}` | math over a list, types and time, grouping and windows, joins |
-| several tables | not a row: one object whose fields are tables | `{"dhcp": [...], "firewall": [...]}` | `split_by` makes it; `keep`, `shape` |
+| several tables | not a row: one object whose fields are tables | `{"dhcp": [...], "firewall": [...]}` | `split_by` makes it; `keep_tables`, `shape` |
 | intervals | one span of one key, from a start to an end | `{"ip": "10.0.0.5", "mac": "m1", "start": 1731900000, "end": 1731943200}` | `join_within`, `join_overlap`, `merge_intervals`, `concurrency`; made by `intervals_from_events`, `state_blocks`, `sessions` |
 | tree | one node, pointing at its parent | `{"id": "ops", "parent": "ceo"}` | `tree_paths`, `tree_rollup`, `nested_from_nodes` |
 | graph | one edge | `{"from": "web01", "to": "db01"}` | `reachable`, `hops`, `shortest_path`, `topo_order`, `components`, `node_link` |
-| star | a fact table plus dimension tables; the library builds a measure context from it | fact `{"day": "2026-03-02", "site_id": "s1", "amount": 40}`, dimension `{"id": "s1", "region": "east"}` | `lookup`; `rollup`, `measure`, `calc`, `share` and the context changes |
+| star | a fact table plus dimension tables; the library builds a measure context from it | fact `{"day": "2026-03-02", "site_id": "s1", "amount": 40}`, dimension `{"id": "s1", "region": "east"}` | `lookup`; `rollup`, `measure`, `measure_with`, `share_of` and the context changes |
 
 Three rules hold for every shape:
 
 - **Fields are read through expressions, never fixed names.** `tree_paths(.emp_id; .manager_id)` works on any node rows, and a nested field can be read in place: `group_agg(.user.dept; length)`.
-- **Values arrive as strings.** `cast` and `parse_ts` turn them into numbers and epoch seconds before anything else runs; `""` becomes null.
+- **Values arrive as strings.** `cast_columns` and `parse_ts` turn them into numbers and epoch seconds before anything else runs; `""` becomes null.
 - **Nulls behave as in SQL.** Aggregates skip them, a null join key never matches, a null group key forms one group.
 
 A calendar is both a dimension and a set of intervals: `calendar` gives one row per day with its year, quarter, month and weeks, to `lookup` by date as a dimension of a star, and each day's local `start` and `end`, so `join_within` places an event in its day.
@@ -158,11 +158,11 @@ A caller that partitions the input and runs each part separately gets the same a
 | The function's answer | Safe split | Combine by |
 |---|---|---|
 | a sum or count over rows (`sum_nonnull`, `count_nonnull`, `group_agg` with sums and counts) | anywhere | adding the parts |
-| reads only its own group's rows (`median`, `quantile_cont`, `group_agg` with any aggregate, `over` windows, `pivot`) | by the group key | concatenating |
+| reads only its own group's rows (`median`, `quantile_cont`, `group_agg` with any aggregate, `window` windows, `pivot`) | by the group key | concatenating |
 | orders one entity's rows in time (`state_blocks`, `transitions`, `sessions`, `runs`, `join_asof`, `intervals_from_events` by resource, `merge_intervals` by key) | by the entity key, each part in time order | concatenating |
 | reads two tables (`join_*`, `lookup`, `join_overlap`) | both tables by the join key | concatenating |
 | walks a tree or graph (`tree_paths`, `tree_rollup`, `reachable`, `components`) | by connected component; when components are not known in advance, do not split | concatenating |
-| totals at several levels (`rollup`, `calc`, `share`) | do not split: a subtotal reads rows of every part | |
+| totals at several levels (`rollup`, `measure_with`, `share_of`) | do not split: a subtotal reads rows of every part | |
 
 A mean is not a sum: split it as its group's rows, or carry the sum and the count and divide at the end.
 

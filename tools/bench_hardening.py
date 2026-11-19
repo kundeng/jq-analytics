@@ -16,7 +16,7 @@ import jq
 LIB = Path(__file__).resolve().parents[1] / "src" / "jq_analytics"
 WORK = [
     ("rank_by, one partition", [2000, 4000, 8000],
-     '[range({n}) | {{g: 1, x: (. % 97)}}] | over(.g; .x; "r"; rank_by(.x)) | length'),
+     '[range({n}) | {{g: 1, x: (. % 97)}}] | window(.g; .x; "r"; rank_by(.x)) | length'),
     ("pivot, one cell", [20000, 40000, 80000],
      '[range({n}) | {{k: 1, c: "a", v: .}}] | pivot(["a"]; {{k}}; .c; .v; length) | length'),
     ("retention, 365 periods", [20000, 40000],

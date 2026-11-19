@@ -129,12 +129,14 @@ def split_by(tagf):
     else map({key, value}) | from_entries end;
 ```
 
+Built into jq: `error`, `from_entries`, `group_by`, `length`, `map`, `select`, `tojson`, `tostring`. From this library: `_groups`.
+
 - The first line is steps 1 and 2.
 - The `$dup` line is step 3. `map(select(length > 1))` keeps the groups of two or more entries, and `[0]` takes the first, or null when there is none.
 - `if $dup != null then error(...)`: the message is built from the two clashing entries' tags and their shared key.
 - `else map({key, value}) | from_entries end`: step 4. `{key, value}` is short for `{key: .key, value: .value}`.
 
-## keep
+## keep_tables
 
 Only the named tables of an object of tables. It is used to drop work tables before a heavy step or before output.
 
@@ -143,7 +145,7 @@ Only the named tables of an object of tables. It is used to drop work tables bef
 Three tables, of which two are wanted. The list also names a table that does not exist.
 
 ```jq
-{lease: [{ip: "a"}, {ip: "b"}], hit: [{ip: "a"}], scratch: [{n: 1}]} | keep(["lease", "hit", "missing"])
+{lease: [{ip: "a"}, {ip: "b"}], hit: [{ip: "a"}], scratch: [{n: 1}]} | keep_tables(["lease", "hit", "missing"])
 ```
 
 ```json
@@ -154,12 +156,14 @@ Three tables, of which two are wanted. The list also names a table that does not
 
 ### The definition
 
-`keep/1`, lines 195 to 196:
+`keep_tables/1`, lines 195 to 196:
 
 ```jq
 # keep only the named tables (drop the rest before a heavy step or before output)
-def keep($names): with_entries(select(.key as $k | $names | any(. == $k)));
+def keep_tables($names): with_entries(select(.key as $k | $names | any(. == $k)));
 ```
+
+Built into jq: `any`, `select`, `with_entries`.
 
 - `with_entries(f)` turns the object into `{key, value}` entries, runs `f` on each, and builds an object from what is left.
 - `select(.key as $k | $names | any(. == $k))` keeps an entry when its key equals some name in `$names`. `$names` has a `$`, so it is a value: the list is passed as it is.
@@ -215,6 +219,8 @@ null
 # for checking a pipeline midway: each table's row count and field names (sorted)
 def shape: map_values({rows: length, fields: (map(keys) | add // [] | unique)});
 ```
+
+Built into jq: `add`, `keys`, `length`, `map`, `map_values`, `unique`.
 
 - `map_values({rows: length, fields: (...)})`: one small object per table, under the table's name.
 - `map(keys) | add // [] | unique`: steps 1 to 3.

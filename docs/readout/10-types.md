@@ -2,7 +2,7 @@
 
 Generated from `src/jq_analytics/analytics.jq` and `docs/readout/notes/types.md`. Do not edit.
 
-Two public definitions that turn text into typed values: `parse_ts` for one timestamp, `cast` for the named columns of a table. Both refuse what they cannot read. Neither returns a quiet null for a bad value.
+Two public definitions that turn text into typed values: `parse_ts` for one timestamp, `cast_columns` for the named columns of a table. Both refuse what they cannot read. Neither returns a quiet null for a bad value.
 
 ## _ts_exact, parse_ts
 
@@ -152,6 +152,8 @@ def _ts_exact($s):
   | if $e == null or ($e | todate) != $iso then error("parse_ts: not a timestamp: \($s | tojson)") else $e end;
 ```
 
+Built into jq: `error`, `fromdateiso8601`, `todate`, `tojson`.
+
 `parse_ts/0`, lines 89 to 111:
 
 ```jq
@@ -180,6 +182,8 @@ def parse_ts:
   end;
 ```
 
+Built into jq: `capture`, `error`, `length`, `sub`, `tojson`, `tonumber`. From this library: `_ts_exact`.
+
 `_ts_exact($s)`:
 
 - `. as $iso` keeps the input text under a name; `as` binds a name and leaves the input as it is.
@@ -192,7 +196,7 @@ def parse_ts:
 - `elif length == 19 and (.[10:11] | . == " " or . == "T")`: the short path. It exists because the regular expression of the general path is the larger part of the cost on a big table, and most timestamps have this form. Its digits, dashes and colons are still checked, by `fromdateiso8601` inside `_ts_exact`.
 - `else`: the general path, steps 1 to 5. `$m.z == null or $m.z == "Z"` gives an offset of 0, so no zone means UTC.
 
-## cast
+## cast_columns
 
 Gives the named columns of a table their types: text to number, timestamp or boolean, and anything to string. It is SQL's `CAST(col AS type)` for several columns at once, and Power Query's "Changed Type" step.
 
@@ -207,7 +211,7 @@ Two rows as they come from a CSV file, where every value is text. The second row
 
 ```jq
 [{n: "12.5", t: "2026-08-12 13:05:00", b: "true", other: "kept"}, {n: "", t: null, b: false, other: 1}]
-| cast({b: "boolean", n: "number", t: "timestamp"})
+| cast_columns({b: "boolean", n: "number", t: "timestamp"})
 ```
 
 ```json
@@ -245,7 +249,7 @@ Step 2: for each row, `reduce` starts from the row and rewrites one column per p
 
 ```jq
 [{n: "12.5", t: "2026-08-12 13:05:00", b: "true", other: "kept"}]
-| cast({b: "boolean"}), cast({b: "boolean", n: "number"}), cast({b: "boolean", n: "number", t: "timestamp"})
+| cast_columns({b: "boolean"}), cast_columns({b: "boolean", n: "number"}), cast_columns({b: "boolean", n: "number", t: "timestamp"})
 ```
 
 ```json
@@ -261,15 +265,15 @@ Three tables of one row each. One more column has its type in each.
 A value that does not parse is an error naming the column and the value. A number must look like a JSON number, so a leading space is refused. A type name that is not one of the four is an error too.
 
 ```jq
-([{n: " 12"}] | try cast({n: "number"}) catch .),
-([{b: "yes"}] | try cast({b: "boolean"}) catch .),
-([{b: "yes"}] | try cast({b: "date"}) catch .)
+([{n: " 12"}] | try cast_columns({n: "number"}) catch .),
+([{b: "yes"}] | try cast_columns({b: "boolean"}) catch .),
+([{b: "yes"}] | try cast_columns({b: "date"}) catch .)
 ```
 
 ```json
-"cast: n = \" 12\" is not a number"
-"cast: b = \"yes\" is not a boolean"
-"cast: unknown type \"date\" for b"
+"cast_columns: n = \" 12\" is not a number"
+"cast_columns: b = \"yes\" is not a boolean"
+"cast_columns: unknown type \"date\" for b"
 ```
 
 ### A column the row lacks
@@ -277,7 +281,7 @@ A value that does not parse is an error naming the column and the value. A numbe
 A schema column that a row does not have is added to it as null, so every row comes out with the same columns.
 
 ```jq
-[{a: "1"}] | cast({a: "number", missing: "number"})
+[{a: "1"}] | cast_columns({a: "number", missing: "number"})
 ```
 
 ```json
@@ -288,7 +292,7 @@ A schema column that a row does not have is added to it as null, so every row co
 
 ### The definition
 
-`cast/1`, lines 113 to 131:
+`cast_columns/1`, lines 113 to 131:
 
 ```jq
 # cast the named columns of every row. $schema = {column: "number" | "timestamp" | "string" | "boolean"}.
@@ -296,21 +300,23 @@ A schema column that a row does not have is added to it as null, so every row co
 # (Power Query's rule), never a null. Numbers must look like JSON numbers: jq 1.7.1's tonumber
 # accepts " 12" and jq 1.8's refuses it, so the pattern decides instead of the version.
 # A schema column that a row lacks is added to it as null, so every row comes out with the same columns.
-def cast($schema):
+def cast_columns($schema):
   map(reduce ($schema | to_entries[]) as $c (.;
     .[$c.key] |= (
       if . == null or . == "" then null
       elif $c.value == "number" then
         (if type == "number" then .
          elif type == "string" and test("^-?[0-9]+([.][0-9]+)?([eE][-+]?[0-9]+)?$") then tonumber
-         else error("cast: \($c.key) = \(tojson) is not a number") end)
+         else error("cast_columns: \($c.key) = \(tojson) is not a number") end)
       elif $c.value == "timestamp" then parse_ts
       elif $c.value == "string" then tostring
       elif $c.value == "boolean" then
         (if . == true or . == "true" then true elif . == false or . == "false" then false
-         else error("cast: \($c.key) = \(tojson) is not a boolean") end)
-      else error("cast: unknown type \($c.value | tojson) for \($c.key)") end)));
+         else error("cast_columns: \($c.key) = \(tojson) is not a boolean") end)
+      else error("cast_columns: unknown type \($c.value | tojson) for \($c.key)") end)));
 ```
+
+Built into jq: `error`, `map`, `test`, `to_entries`, `tojson`, `tonumber`, `tostring`, `type`. From this library: `parse_ts`.
 
 - `map(reduce ($schema | to_entries[]) as $c (.; ...))`: steps 1 and 2, for each row.
 - `.[$c.key] |= (...)`: rewrites that one column in place. `|=` runs the expression on the column's current value and stores the result. On a column the row lacks, the current value is null and the column is created.

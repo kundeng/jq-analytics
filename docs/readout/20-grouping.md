@@ -133,6 +133,8 @@ For `_groups` the first two forms give the same result. They differ only in `gro
 def _groups(f): to_entries | group_by(.value | f) | sort_by(.[0].key) | map(map(.value));
 ```
 
+Built into jq: `group_by`, `map`, `sort_by`, `to_entries`.
+
 The comment says why this is not written as a `reduce` that appends each row to its group: appending inside a `reduce` copies the growing array each time, so the cost grows with the square of the group's size, and an object keyed by group would come out in a different key order on gojq.
 
 ## group_agg
@@ -285,6 +287,8 @@ Not much, and that is deliberate. The same count with the builtin and with the l
 def group_agg(keyf; aggf):
   _groups(keyf) | map((.[0] | keyf | if type == "object" then . else {key: .} end) + aggf);
 ```
+
+Built into jq: `map`, `type`. From this library: `_groups`.
 
 With the example in mind, clause by clause. `keyf` is the first argument (`{site}`), `aggf` the second.
 

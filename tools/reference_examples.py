@@ -48,8 +48,8 @@ EXAMPLES: dict[str, tuple[str, bool, bool]] = {
     "quantiles": ("[40, 10, null, 30, 20] | {disc: quantiles_disc([0.1, 0.25, 0.5, 0.9]), cont: quantiles_cont([0.1, 0.25, 0.5, 0.9]), median: median, none: ([null] | quantiles_disc([0.5]))}", False, True),
     "round": ("[1.005, 2.675, 0.125, -0.5, 1.5, null] | map(round_to(2)), map(round_to(0))", False, True),
     "parse_ts": ('["2026-08-12 13:05:00", "2026-08-12T13:05:00Z", "2026-08-12T09:05:00-04:00", "2026-08-12T18:35:00+0530", "2026-08-12 13:05:00.250", "", null] | map(parse_ts | if . == null then null else {epoch: ., utc: (floor | todate)} end)', False, True),
-    "cast": ('[{n: "12.5", t: "2026-08-12 13:05:00", b: "true"}, {n: "", t: "", b: "false"}, {n: "1e3", t: null, b: null}] | cast({n: "number", t: "timestamp", b: "boolean"})', False, True),
-    "cast_error": ('[{n: " 12"}] | try cast({n: "number"}) catch .', False, True),
+    "cast": ('[{n: "12.5", t: "2026-08-12 13:05:00", b: "true"}, {n: "", t: "", b: "false"}, {n: "1e3", t: null, b: null}] | cast_columns({n: "number", t: "timestamp", b: "boolean"})', False, True),
+    "cast_error": ('[{n: " 12"}] | try cast_columns({n: "number"}) catch .', False, True),
     "local_time": ('tz("America/Detroit") as $det | ["2026-03-08 06:59:59", "2026-03-08 07:00:00", "2026-11-01 05:59:59", "2026-11-01 06:00:00"] | map(parse_ts | local_time($det) | {date, hour, minute, weekday, offset_s})', False, True),
     "group_agg": ('[{g: "a", x: 1}, {g: "b", x: 5}, {g: null, x: 7}, {g: "a", x: null}, {g: "a", x: 3}] | group_agg({g}; map(.x) | {rows: length, n: count_nonnull, mean: mean})', False, True),
     "joins": (LEFT + " as $l | " + RIGHT + " as $r | {inner: ($l | join_inner($r; .k; .rk) | map([.id, .rv])), left: ($l | join_left($r; .k; .rk) | map([.id, .rv])), full: ($l | join_full($r; .k; .rk) | map([.id, .rv])), semi: ($l | join_semi($r; .k; .rk) | map(.id)), anti: ($l | join_anti($r; .k; .rk) | map(.id))}", False, True),
@@ -63,7 +63,7 @@ EXAMPLES: dict[str, tuple[str, bool, bool]] = {
     "state_others": ("[{ticket: \"T1\", t: 0, status: \"New\"}, {ticket: \"T1\", t: 600, status: \"Open\"}, {ticket: \"T1\", t: 4200, status: \"Open\"}, {ticket: \"T1\", t: 6000, status: \"InReview\"}, {ticket: \"T1\", t: 9600, status: \"Closed\"}] | {transitions: transitions({ticket}; .t; .status), sessions: sessions({ticket}; .t; 3000), runs: (map(.status) | runs(.))}", False, True),
     "tree_rollup": ("[{id: 1, parent: null, name: \"CEO\", cost: 100}, {id: 2, parent: 1, name: \"Engineering\", cost: 50}, {id: 3, parent: 1, name: \"Sales\", cost: 40}, {id: 4, parent: 2, name: \"Backend\", cost: 30}, {id: 5, parent: 2, name: \"Frontend\", cost: 20}, {id: 6, parent: 4, name: \"Platform\", cost: 10}] | tree_rollup(.id; .parent; .cost) | map({name, depth, ancestry, subtree})", False, True),
     "graphs": ("[{a: 1, b: 2}, {a: 2, b: 3}, {a: 3, b: 1}, {a: 4, b: 5}] | {reachable_from_1: reachable(.a; .b; 1), components: components(.a; .b)}", False, True),
-    "windows": ('[{i: 1, g: "a", t: 3, v: 5}, {i: 2, g: "a", t: 1, v: 2}, {i: 3, g: "a", t: 3, v: 7}, {i: 4, g: "a", t: 2, v: null}, {i: 5, g: "b", t: 1, v: 4}] | over(.g; .t; "rn"; row_number) | over(.g; .t; "rank"; rank_by(.t)) | over(.g; .t; "prev_v"; lag(.v; 1)) | over(.g; .t; "running"; running_sum(.v)) | over(.g; .t; "mean2"; moving_mean(.v; 2)) | map({i, g, t, v, rn, rank, prev_v, running, mean2})', False, True),
+    "windows": ('[{i: 1, g: "a", t: 3, v: 5}, {i: 2, g: "a", t: 1, v: 2}, {i: 3, g: "a", t: 3, v: 7}, {i: 4, g: "a", t: 2, v: null}, {i: 5, g: "b", t: 1, v: 4}] | window(.g; .t; "rn"; row_number) | window(.g; .t; "rank"; rank_by(.t)) | window(.g; .t; "prev_v"; lag(.v; 1)) | window(.g; .t; "running"; running_sum(.v)) | window(.g; .t; "mean2"; moving_mean(.v; 2)) | map({i, g, t, v, rn, rank, prev_v, running, mean2})', False, True),
     "reshape": ('[{id: 1, a: 10, b: null}, {id: 2, a: 11, b: 21}] | unpivot(["id"]; "col"; "val") as $long | {long: $long, wide_again: ($long | pivot(["a", "b", "c"]; {id}; .col; .val; add))}', False, True),
 }
 
@@ -103,7 +103,7 @@ SALES_GAP = '[{region: "east", month: "2026-01", amount: 30}, {region: "east", m
 CALENDAR_EXAMPLES: dict[str, tuple[str, bool, bool]] = {
     "calendar_new_year": ('calendar("2020-12-31"; "2021-01-04") | map({date, weekday, iso_year_week, us_week, year_quarter})', False, True),
     "calendar_days": ('calendar("2026-03-07"; "2026-03-09"; "America/Detroit") as $days | {hours: ($days | map({date, hours: ((.end - .start) / 3600)})), events_by_day: ([{id: 1, at: "2026-03-08 04:30:00"}, {id: 2, at: "2026-03-08 05:30:00"}, {id: 3, at: "2026-03-09 03:59:59"}] | map(.t = (.at | parse_ts) | .zone = "x") | join_within($days | map({zone: "x", date, start, end}); .zone; .zone; .t; .start; .end) | map({id, at, date}))}', False, True),
-    "calendar_previous": ("def revenue: map(.amount) | add; " + SALES_GAP + ' | (calendar("2025-12-01"; "2026-03-31") | map(.year_month) | unique) as $months | rollup(["month"]; {revenue: measure(revenue), previous_with_rows: calc(revenue; shift("month"; -1)), previous_month: calc(revenue; on_calendar("month"; $months) | shift("month"; -1))}) | map(select(.level == "month") | del(.level))', False, True),
+    "calendar_previous": ("def revenue: map(.amount) | add; " + SALES_GAP + ' | (calendar("2025-12-01"; "2026-03-31") | map(.year_month) | unique) as $months | rollup(["month"]; {revenue: measure(revenue), previous_with_rows: measure_with(revenue; shift("month"; -1)), previous_month: measure_with(revenue; on_calendar("month"; $months) | shift("month"; -1))}) | map(select(.level == "month") | del(.level))', False, True),
 }
 EXAMPLES.update(CALENDAR_EXAMPLES)
 
@@ -137,8 +137,8 @@ FUZZY_EXAMPLES: dict[str, tuple[str, bool, bool]] = {
 EXAMPLES.update(FUZZY_EXAMPLES)
 
 CONTEXT_EXAMPLES: dict[str, tuple[str, bool, bool]] = {
-    "context_rollup": (REVENUE + SALES + ' | rollup(["region", "product"]; {revenue: measure(revenue), share_of_region: share(revenue; without("product")), share_of_all: share(revenue; keep_only([]))})', False, True),
-    "context_time": (REVENUE + SALES + ' | rollup(["month"]; {revenue: measure(revenue), prior: calc(revenue; shift("month"; -1)), to_date: calc(revenue; to_date("month")), east_only: calc(revenue; with_filter({region: "east"}))})', False, True),
+    "context_rollup": (REVENUE + SALES + ' | rollup(["region", "product"]; {revenue: measure(revenue), share_of_region: share_of(revenue; without_filter("product")), share_of_all: share_of(revenue; only_filters([]))})', False, True),
+    "context_time": (REVENUE + SALES + ' | rollup(["month"]; {revenue: measure(revenue), prior: measure_with(revenue; shift("month"; -1)), to_date: measure_with(revenue; to_date("month")), east_only: measure_with(revenue; with_filter({region: "east"}))})', False, True),
     "context_levels": (REVENUE + SALES + ' | rollup_levels([["region"], ["product"], []]; {revenue: measure(revenue), rows: measure(length)})', False, True),
     "context_cell": (REVENUE + SALES + ' | rollup(["region"]; {context_at: .at, context_level: .level, rows_here: (.rows | length), rows_in_all: (.all | length), months_known: .members})', False, True),
 }

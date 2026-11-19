@@ -52,6 +52,8 @@ Events that all have a time pass through unchanged. One event with no time is th
 def _time_check(time; $who): if any(.[]; (time) == null) then error("\($who): an event has no time") else . end;
 ```
 
+Built into jq: `any`, `error`.
+
 - `any(.[]; (time) == null)`: true when the `time` filter gives null on at least one event.
 - `error("\($who): an event has no time")`: the message starts with the caller's name, which is the value `$who`.
 - `else . end`: otherwise the input goes on as it is, so the guard can be the first step of a pipeline.
@@ -143,6 +145,8 @@ def _blocks(time; state):
         duration: (if $t1 == null then null else $t1 - $t0 end),
         events: ((if $nx == null then $n else $nx end) - $i)}];
 ```
+
+Built into jq: `length`, `range`, `select`.
 
 - `. as $a | length as $n`: the events and their count, under names.
 - The `$st` line: step 1.
@@ -254,6 +258,8 @@ def state_blocks(entity; time; state):
   | [.[] | del(.blocks) as $k | .blocks[] | $k + .];
 ```
 
+Built into jq: `del`, `sort_by`. From this library: `_blocks`, `_time_check`, `group_agg`.
+
 The three lines are steps 1, 2 and 3. `sort_by` is stable, so two events of one entity with the same time keep their input order.
 
 ## transitions
@@ -308,6 +314,8 @@ def transitions(entity; time; state):
   | [.[] | del(.blocks) as $k | .blocks as $b | range(1; $b | length) as $i
      | $k + {from: $b[$i - 1].state, to: $b[$i].state, at: $b[$i].start}];
 ```
+
+Built into jq: `del`, `length`, `range`, `sort_by`. From this library: `_blocks`, `_time_check`, `group_agg`.
 
 - The first two lines are the same as in `state_blocks`, with the function's own name in the time check.
 - `range(1; $b | length) as $i`: from 1, because the first block has nothing before it.
@@ -400,6 +408,8 @@ def sessions(entity; time; $gap):
   | [.[] | del(.sessions) as $k | .sessions[] | $k + .];
 ```
 
+Built into jq: `del`, `length`, `range`, `select`, `sort_by`. From this library: `_time_check`, `group_agg`.
+
 - `_time_check(time; "sessions")`: the guard. Without it the subtraction in step 3 would fail on a null.
 - `group_agg(entity; {sessions: (sort_by(time) | ...)})`: one row per entity.
 - The `$st` line: step 3.
@@ -468,6 +478,8 @@ def runs(f):
   | [range($st | length) as $j | $st[$j] as $i
      | {value: ($a[$i] | f), start: $i, n: ((if $j + 1 < ($st | length) then $st[$j + 1] else $n end) - $i)}];
 ```
+
+Built into jq: `length`, `range`, `select`.
 
 - The `$st` line: step 1, the same cut as in `_blocks`.
 - The object: `value` is `f` on the run's first item, `start` its position counting from 0, and `n` step 2.

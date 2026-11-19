@@ -41,11 +41,11 @@ Every function takes rows, an array of objects. What differs is which fields a r
 | Shape | One row is | Example row | Functions |
 |---|---|---|---|
 | table | one record | `{"id": "REQ1", "site": "North", "hours": "4.5"}` | math over a list, types and time, grouping and windows, joins |
-| several tables | not a row: one object whose fields are tables | `{"dhcp": [...], "firewall": [...]}` | `split_by` makes it; `keep`, `shape` |
+| several tables | not a row: one object whose fields are tables | `{"dhcp": [...], "firewall": [...]}` | `split_by` makes it; `keep_tables`, `shape` |
 | intervals | one span of one key, from a start to an end | `{"ip": "10.0.0.5", "mac": "m1", "start": 1731900000, "end": 1731943200}` | `join_within`, `join_overlap`, `merge_intervals`, `concurrency`; made by `intervals_from_events`, `state_blocks`, `sessions` |
 | tree | one node, pointing at its parent | `{"id": "ops", "parent": "ceo"}` | `tree_paths`, `tree_rollup`; `nodes_from_nested` makes it |
 | graph | one edge | `{"from": "web01", "to": "db01"}` | `reachable`, `hops`, `shortest_path`, `topo_order`, `components`; `node_link` exports it |
-| star | a fact table plus dimension tables | fact `{"site_id": "s1", "amount": 40}`, dimension `{"id": "s1", "region": "east"}` | `lookup`; `rollup`, `measure`, `calc`, `share` |
+| star | a fact table plus dimension tables | fact `{"site_id": "s1", "amount": 40}`, dimension `{"id": "s1", "region": "east"}` | `lookup`; `rollup`, `measure`, `measure_with`, `share_of` |
 
 An event log is not a shape: its rows are a table, and the question decides whether it becomes intervals, a tree, a graph or a star. Nested documents, objects keyed by id and YAML are sources that have to become rows first: see [Shapes in and out](#shapes-in-and-out). [docs/design/05-shapes.md](docs/design/05-shapes.md) defines each shape and source, draws the conversions between them, and traces one nested export through three shapes.
 
@@ -77,6 +77,32 @@ The library is one file, `analytics.jq`, in a directory `<dir>` below. Its time-
 
 Tested on jq 1.7.1 (Apple's build), jq 1.8.2, gojq 0.12.20, jaq 3.1.2 and the `jq` Python package 1.13.0, which builds jq 1.8.2: all pass the same 150 test cases (`tests/run_tests.py`). The library uses no builtin that is missing from any of them, and it parenthesises `reduce … as` inside function arguments, which jq 1.7.1's grammar requires.
 
+## Names
+
+How to tell whose function a name is, and how to keep the library's names apart from your own.
+
+| A name that | is | Example |
+|---|---|---|
+| starts with `_` | an internal helper of this library; it may change without notice | `_groups` |
+| has an entry in the Reference below | a public function of this library | `group_agg` |
+| is neither | jq's own built-in | `map_values`, `group_by`, `to_entries` |
+
+Public names carry no library prefix. A prefix marks a family (`join_*`, `tz_*`, `tree_*`), and a suffix marks a variant of one function (`*_nonnull`, `quantile_cont` and `quantile_disc`). No public name equals a built-in of any tested engine; `tests/check_names.py` fails the run if one ever does.
+
+To keep the names apart from your own, load the library under a namespace: `import "analytics" as a;` and then call `a::mean`, `a::group_agg(...)`. A `mean` of your own and `a::mean` then live side by side, on all five engines. With the plain `include`, a function you define afterwards under a library name changes only your own code: the library goes on calling its own.
+
+Seven names changed in 0.10.0, because the old ones did not say what they act on. The old names are gone.
+
+| Before 0.10.0 | Now | What it does |
+|---|---|---|
+| `cast` | `cast_columns` | turn the named columns into numbers, instants, strings or booleans |
+| `keep` | `keep_tables` | from a set of tables, keep the named ones |
+| `over` | `window` | run a window function over partitions of a table |
+| `calc` | `measure_with` | a measure in a changed context |
+| `share` | `share_of` | a measure here divided by the same measure in a changed context |
+| `without` | `without_filter` | context change: remove one filter |
+| `keep_only` | `only_filters` | context change: keep only the named filters |
+
 ## Rules that hold everywhere
 
 These are the rules a reader can rely on without reading each function; a function that differs says so in its own entry.
@@ -94,15 +120,15 @@ The functions whose input is not a table:
 |---|---|
 | a table: an array of rows | every function not listed below |
 | a list of values: an array of numbers, strings or nulls | `mean`, `median`, `quantile_disc`, `quantile_cont`, `quantiles_disc`, `quantiles_cont`, `var_samp`, `var_pop`, `stddev_samp`, `stddev_pop`, `sum_nonnull`, `count_nonnull`, `min_nonnull`, `max_nonnull`, `nonnull`, `mode`, `value_counts`, `histogram` |
-| one sorted partition, inside `over` | `row_number`, `rank_by`, `lag`, `lead`, `running_sum`, `moving_mean` |
+| one sorted partition, inside `window` | `row_number`, `rank_by`, `lag`, `lead`, `running_sum`, `moving_mean` |
 | a single value | `parse_ts` (a string), `round_to` (a number), `tz_offset` and `local_time` (epoch seconds) |
 | anything: the function reads only its arguments | `hours_between`, `similarity`, `tz`, `calendar`, `bin_edges`, `tzdata_version` |
-| an object whose fields are tables | `keep`, `shape` (`split_by` makes that object) |
+| an object whose fields are tables | `keep_tables`, `shape` (`split_by` makes that object) |
 | an object keyed by id | `rows_from_map` |
 | a nested tree: one root object or an array of roots | `nodes_from_nested` |
-| a measure context, inside a cell of `rollup` or `rollup_levels` | `measure`, `calc`, `share`, `without`, `keep_only`, `with_filter`, `shift`, `on_calendar`, `to_date` |
+| a measure context, inside a cell of `rollup` or `rollup_levels` | `measure`, `measure_with`, `share_of`, `without_filter`, `only_filters`, `with_filter`, `shift`, `on_calendar`, `to_date` |
 
-What happens when the rule is broken (as of 0.9.2; the library does not check its input's type yet). Given one row where a table is expected, most functions stop, but with jq's own message, which names neither the function nor the cause: `group_agg`, the joins, `over`, `state_blocks`, `tree_paths`, `rollup` and `to_map` say `Cannot index string with string "g"`; `profile` and `unpivot` say `string ("b") has no keys`. Three do not stop: `mode`, `value_counts` and `count_nonnull` treat the row's field values as the list and answer about them. `[{"g":"b","x":1}][] | count_nonnull` is 2, the number of fields, not the number of rows.
+What happens when the rule is broken (as of 0.9.2; the library does not check its input's type yet). Given one row where a table is expected, most functions stop, but with jq's own message, which names neither the function nor the cause: `group_agg`, the joins, `window`, `state_blocks`, `tree_paths`, `rollup` and `to_map` say `Cannot index string with string "g"`; `profile` and `unpivot` say `string ("b") has no keys`. Three do not stop: `mode`, `value_counts` and `count_nonnull` treat the row's field values as the list and answer about them. `[{"g":"b","x":1}][] | count_nonnull` is 2, the number of fields, not the number of rows.
 
 ## Tracing the question
 
@@ -270,7 +296,7 @@ The input is an array of numbers that may contain nulls.
 
 The first questions asked of a table: which values are common, how a number is spread, whether two numbers move together, what each column holds, and what changed since the last export.
 
-**`mode`.** Over a list: the most frequent non-null value; among equally frequent values the smallest in jq's sort order; null when there is none. **`value_counts`.** One row per distinct non-null value, `{value, count, share}`, most frequent first, ties by value; `share` is of the non-null values.
+**`mode`.** Over a list: the most frequent non-null value; among equally frequent values the smallest in jq's sort order; null when there is none. **`value_counts`.** One row per distinct non-null value, `{value, count, share}`, most frequent first, ties by value; `share_of` is of the non-null values.
 
 **`bin_edges($lo; $hi; $n)`** gives the `$n + 1` edges of `$n` equal bins. **`histogram($edges)`**, over a list of numbers, gives one row per bin, `{from, to, count}`: a bin holds `from <= v < to`, and the last bin also holds `v == to`, as numpy's histogram does. Nulls are skipped. A value outside the edges is an error, never a dropped value.
 
@@ -340,11 +366,11 @@ The two values of 64 fall in the last bin because it includes its upper edge.
 ```
 <!-- /example -->
 
-**`cast($schema)`**. Converts named columns of every row: `$schema` maps a column to `"number"`, `"timestamp"` (via `parse_ts`), `"string"` or `"boolean"`. `""` and null become null; a value that does not convert is an error naming the column and value, as in Power Query's `Table.TransformColumnTypes`. A number must look like a JSON number, because jq 1.7.1's `tonumber` accepts `" 12"` and jq 1.8's rejects it. A schema column that a row lacks is added to it as null, so every row comes out with the same columns.
+**`cast_columns($schema)`**. Converts named columns of every row: `$schema` maps a column to `"number"`, `"timestamp"` (via `parse_ts`), `"string"` or `"boolean"`. `""` and null become null; a value that does not convert is an error naming the column and value, as in Power Query's `Table.TransformColumnTypes`. A number must look like a JSON number, because jq 1.7.1's `tonumber` accepts `" 12"` and jq 1.8's rejects it. A schema column that a row lacks is added to it as null, so every row comes out with the same columns.
 
 <!-- example: cast -->
 ```jq
-[{n: "12.5", t: "2026-08-12 13:05:00", b: "true"}, {n: "", t: "", b: "false"}, {n: "1e3", t: null, b: null}] | cast({n: "number", t: "timestamp", b: "boolean"})
+[{n: "12.5", t: "2026-08-12 13:05:00", b: "true"}, {n: "", t: "", b: "false"}, {n: "1e3", t: null, b: null}] | cast_columns({n: "number", t: "timestamp", b: "boolean"})
 ```
 
 ```json
@@ -358,11 +384,11 @@ The two values of 64 fall in the last bin because it includes its upper edge.
 
 <!-- example: cast_error -->
 ```jq
-[{n: " 12"}] | try cast({n: "number"}) catch .
+[{n: " 12"}] | try cast_columns({n: "number"}) catch .
 ```
 
 ```json
-"cast: n = \" 12\" is not a number"
+"cast_columns: n = \" 12\" is not a number"
 ```
 <!-- /example -->
 
@@ -446,7 +472,7 @@ Event 2, at 05:30 UTC on 8 March, is 00:30 in Detroit on the 8th; event 1, an ho
 
 Name each table with `as $name` and refer to it by that name in any later step, as SPL2 names its searches and Python names its variables. No other structure is needed.
 
-**`split_by(tagf)`, `keep($names)`, `shape`.** Some steps make several tables at once; they return one object whose fields are the tables, such as `{dhcp: [...], firewall: [...]}`, and the next steps take `.dhcp` and `.firewall` out of it. `split_by` turns one stream of rows into such an object, one table per value of `tagf` (the value as a string names the table). This is how several tables reach a Splunk search command: a search appends them into one stream with a field saying which table each row belongs to. `keep` drops every table not named. `shape` gives each table's row count and sorted field names, for checking a step's output. From the jq command line a second table arrives with `--slurpfile`, from Python with `args=`; see Loading it. Two different tags that give the same table name as text, such as the number 1 and the string `"1"`, are an error.
+**`split_by(tagf)`, `keep_tables($names)`, `shape`.** Some steps make several tables at once; they return one object whose fields are the tables, such as `{dhcp: [...], firewall: [...]}`, and the next steps take `.dhcp` and `.firewall` out of it. `split_by` turns one stream of rows into such an object, one table per value of `tagf` (the value as a string names the table). This is how several tables reach a Splunk search command: a search appends them into one stream with a field saying which table each row belongs to. `keep_tables` drops every table not named. `shape` gives each table's row count and sorted field names, for checking a step's output. From the jq command line a second table arrives with `--slurpfile`, from Python with `args=`; see Loading it. Two different tags that give the same table name as text, such as the number 1 and the string `"1"`, are an error.
 
 <!-- example: several_tables -->
 ```jq
@@ -714,11 +740,11 @@ Checking by hand. Hit 1 at 3000: device aa has held the address since 1000 and r
 
 ### Windows
 
-**`over(part; ord; $col; wf)`**, with the window functions `row_number`, `rank_by(f)`, `lag(f; $k)`, `lead(f; $k)`, `running_sum(f)`, `moving_mean(f; $n)`. `over` splits the rows into partitions by `part`, sorts each by `ord` (stable), hands each sorted partition to `wf`, and writes the i-th value `wf` returns into field `$col` of the i-th row; rows come back in input order. The window functions take a sorted partition and return one value per row. `rank_by` gives tied values the same rank, with gaps (SQL `RANK`). `running_sum` skips nulls and is null until the first non-null. `moving_mean(f; $n)` averages the current and $n − 1 previous rows. Frames are ROWS frames, each row on its own; SQL's default RANGE frame gives tied rows the same running total. Matches DuckDB `… OVER (PARTITION BY … ORDER BY … ROWS …)`; Power Query has no window functions.
+**`window(part; ord; $col; wf)`**, with the window functions `row_number`, `rank_by(f)`, `lag(f; $k)`, `lead(f; $k)`, `running_sum(f)`, `moving_mean(f; $n)`. `window` splits the rows into partitions by `part`, sorts each by `ord` (stable), hands each sorted partition to `wf`, and writes the i-th value `wf` returns into field `$col` of the i-th row; rows come back in input order. The window functions take a sorted partition and return one value per row. `rank_by` gives tied values the same rank, with gaps (SQL `RANK`). `running_sum` skips nulls and is null until the first non-null. `moving_mean(f; $n)` averages the current and $n − 1 previous rows. Frames are ROWS frames, each row on its own; SQL's default RANGE frame gives tied rows the same running total. Matches DuckDB `… OVER (PARTITION BY … ORDER BY … ROWS …)`; Power Query has no window functions.
 
 <!-- example: windows -->
 ```jq
-[{i: 1, g: "a", t: 3, v: 5}, {i: 2, g: "a", t: 1, v: 2}, {i: 3, g: "a", t: 3, v: 7}, {i: 4, g: "a", t: 2, v: null}, {i: 5, g: "b", t: 1, v: 4}] | over(.g; .t; "rn"; row_number) | over(.g; .t; "rank"; rank_by(.t)) | over(.g; .t; "prev_v"; lag(.v; 1)) | over(.g; .t; "running"; running_sum(.v)) | over(.g; .t; "mean2"; moving_mean(.v; 2)) | map({i, g, t, v, rn, rank, prev_v, running, mean2})
+[{i: 1, g: "a", t: 3, v: 5}, {i: 2, g: "a", t: 1, v: 2}, {i: 3, g: "a", t: 3, v: 7}, {i: 4, g: "a", t: 2, v: null}, {i: 5, g: "b", t: 1, v: 4}] | window(.g; .t; "rn"; row_number) | window(.g; .t; "rank"; rank_by(.t)) | window(.g; .t; "prev_v"; lag(.v; 1)) | window(.g; .t; "running"; running_sum(.v)) | window(.g; .t; "mean2"; moving_mean(.v; 2)) | map({i, g, t, v, rn, rank, prev_v, running, mean2})
 ```
 
 ```json
@@ -1013,11 +1039,11 @@ Every level must already be a field on the row. Compute it first (`map(. + {mont
 
 **`measure(f)`.** Inside a cell: `f` on the cell's own rows.
 
-**`calc(f; change)`.** Inside a cell: `f` on the rows of a changed context. **`share(f; change)`** is `measure(f)` divided by `calc(f; change)`, null when that is null or 0.
+**`measure_with(f; change)`.** Inside a cell: `f` on the rows of a changed context. **`share_of(f; change)`** is `measure(f)` divided by `measure_with(f; change)`, null when that is null or 0.
 
 <!-- example: context_rollup -->
 ```jq
-def revenue: map(.amount) | add; [{region: "east", product: "A", month: "2026-01", amount: 30}, {region: "east", product: "A", month: "2026-02", amount: 50}, {region: "east", product: "B", month: "2026-01", amount: 20}, {region: "west", product: "A", month: "2026-02", amount: 60}, {region: "west", product: "B", month: "2026-01", amount: 40}] | rollup(["region", "product"]; {revenue: measure(revenue), share_of_region: share(revenue; without("product")), share_of_all: share(revenue; keep_only([]))})
+def revenue: map(.amount) | add; [{region: "east", product: "A", month: "2026-01", amount: 30}, {region: "east", product: "A", month: "2026-02", amount: 50}, {region: "east", product: "B", month: "2026-01", amount: 20}, {region: "west", product: "A", month: "2026-02", amount: 60}, {region: "west", product: "B", month: "2026-01", amount: 40}] | rollup(["region", "product"]; {revenue: measure(revenue), share_of_region: share_of(revenue; without_filter("product")), share_of_all: share_of(revenue; only_filters([]))})
 ```
 
 ```json
@@ -1037,8 +1063,8 @@ The changes, each taking a context and returning one; pipe them to combine:
 
 | change | effect | DAX |
 |---|---|---|
-| `without($dim)` | remove one filter | `ALL(column)`, `REMOVEFILTERS` |
-| `keep_only($dims)` | remove every filter except these; `keep_only([])` is the grand total | `ALLEXCEPT` |
+| `without_filter($dim)` | remove one filter | `ALL(column)`, `REMOVEFILTERS` |
+| `only_filters($dims)` | remove every filter except these; `only_filters([])` is the grand total | `ALLEXCEPT` |
 | `with_filter($at)` | add or replace filters; a value is equality, `{from, to}` a closed range | a filter argument of `CALCULATE` |
 | `shift($dim; $k)` | move to the k-th neighbouring value of that field present in the data; -1 is the previous one; an error when the field is not a level of the report and `on_calendar` was not used | none by itself; after `on_calendar`, `PREVIOUSMONTH` and `DATEADD` by whole periods |
 | `to_date($dim)` | everything up to and including this value, other filters kept | a running total; `DATESYTD` only when every period has rows |
@@ -1048,7 +1074,7 @@ The changes, each taking a context and returning one; pipe them to combine:
 
 <!-- example: calendar_previous -->
 ```jq
-def revenue: map(.amount) | add; [{region: "east", month: "2026-01", amount: 30}, {region: "east", month: "2026-03", amount: 40}] | (calendar("2025-12-01"; "2026-03-31") | map(.year_month) | unique) as $months | rollup(["month"]; {revenue: measure(revenue), previous_with_rows: calc(revenue; shift("month"; -1)), previous_month: calc(revenue; on_calendar("month"; $months) | shift("month"; -1))}) | map(select(.level == "month") | del(.level))
+def revenue: map(.amount) | add; [{region: "east", month: "2026-01", amount: 30}, {region: "east", month: "2026-03", amount: 40}] | (calendar("2025-12-01"; "2026-03-31") | map(.year_month) | unique) as $months | rollup(["month"]; {revenue: measure(revenue), previous_with_rows: measure_with(revenue; shift("month"; -1)), previous_month: measure_with(revenue; on_calendar("month"; $months) | shift("month"; -1))}) | map(select(.level == "month") | del(.level))
 ```
 
 ```json
@@ -1064,7 +1090,7 @@ March's `previous_with_rows` is January's 30, a two-month step reported as if it
 
 <!-- example: context_time -->
 ```jq
-def revenue: map(.amount) | add; [{region: "east", product: "A", month: "2026-01", amount: 30}, {region: "east", product: "A", month: "2026-02", amount: 50}, {region: "east", product: "B", month: "2026-01", amount: 20}, {region: "west", product: "A", month: "2026-02", amount: 60}, {region: "west", product: "B", month: "2026-01", amount: 40}] | rollup(["month"]; {revenue: measure(revenue), prior: calc(revenue; shift("month"; -1)), to_date: calc(revenue; to_date("month")), east_only: calc(revenue; with_filter({region: "east"}))})
+def revenue: map(.amount) | add; [{region: "east", product: "A", month: "2026-01", amount: 30}, {region: "east", product: "A", month: "2026-02", amount: 50}, {region: "east", product: "B", month: "2026-01", amount: 20}, {region: "west", product: "A", month: "2026-02", amount: 60}, {region: "west", product: "B", month: "2026-01", amount: 40}] | rollup(["month"]; {revenue: measure(revenue), prior: measure_with(revenue; shift("month"; -1)), to_date: measure_with(revenue; to_date("month")), east_only: measure_with(revenue; with_filter({region: "east"}))})
 ```
 
 ```json
@@ -1078,7 +1104,7 @@ def revenue: map(.amount) | add; [{region: "east", product: "A", month: "2026-01
 
 Rules:
 
-- **`shift` moves to the previous value that has rows anywhere in the table**, not the previous calendar period. If March has no rows at all, April's previous month is February. A cell with no filter on that field (a total row), or no such neighbour, has no context: `calc` returns null without running the measure.
+- **`shift` moves to the previous value that has rows anywhere in the table**, not the previous calendar period. If March has no rows at all, April's previous month is February. A cell with no filter on that field (a total row), or no such neighbour, has no context: `measure_with` returns null without running the measure.
 - **A measure on no rows returns what its definition says.** `length` gives 0, `map(.amount) | add` gives null. This happens when the neighbour exists in the table but not for this cell's other filters.
 - **A row missing a level's field forms its own group** with null for that field. A range filter never matches a null.
 - **No input rows give no output rows**, not even a total row.
@@ -1127,7 +1153,7 @@ Measured on a table of 3,796 service requests and copies of it up to 379,600 row
 - **Join with the join functions, never by scanning.** `$right[] | select(.k == $l.k)` per left row took 4.98 s for 3,796 rows; `join_inner` took 0.06 s, because the right table is indexed once.
 - **Group with `group_agg` or the builtin `group_by`; never append rows to a group inside a `reduce`.** The append grows with the square of the group's size: 40 times the time for 10 times the rows.
 - **Carrying several tables in one object costs nothing extra.** Holding a table inside an object and adding three small tables beside it cost the same time and memory as the bare table.
-- **In a report, make every field a `calc` changes into a level.** A changed context that is one of the report's levels is read from an index built once; any other filter scans every row once per cell. At 379,600 rows and 77 cells, share of total took 3.1 s on jq 1.8.2 and a filter on a field outside the levels took 75 s. Add the field to `rollup_levels` if you need it.
+- **In a report, make every field a `measure_with` changes into a level.** A changed context that is one of the report's levels is read from an index built once; any other filter scans every row once per cell. At 379,600 rows and 77 cells, share of total took 3.1 s on jq 1.8.2 and a filter on a field outside the levels took 75 s. Add the field to `rollup_levels` if you need it.
 - **Look a zone up once**: `tz("America/Detroit") as $det`, then `local_time($det)`.
 - **Compare first, round last**, and never rely on the order of an object's keys (gojq sorts them).
 
@@ -1140,14 +1166,14 @@ A caller that partitions the input and runs each part separately gets the same a
 | a sum or count over rows (`sum_nonnull`, `count_nonnull`, `group_agg` with sums and counts, `histogram`, `value_counts` counts) | anywhere | adding the parts |
 | compares two tables by key (`diff_tables`) | both tables by the key | concatenating |
 | needs every value (`mode`, `corr`, `profile`) | do not split, or carry counts and sums per part and combine them yourself | |
-| reads only its own group's rows (`median`, `quantile_cont`, `group_agg` with any aggregate, `over` windows, `pivot`) | by the group key | concatenating |
+| reads only its own group's rows (`median`, `quantile_cont`, `group_agg` with any aggregate, `window` windows, `pivot`) | by the group key | concatenating |
 | follows one entity through its events (`funnel_steps`, `cohorts`) | by the entity key | concatenating |
 | counts entities (`funnel`, `retention`) | by the entity key: run `funnel_steps` or `cohorts` on the parts, concatenate, then count once | counting after concatenating |
 | orders one entity's rows in time (`state_blocks`, `transitions`, `sessions`, `runs`, `join_asof`, `intervals_from_events` by resource, `merge_intervals` by key) | by the entity key, each part in time order | concatenating |
 | reads two tables (`join_*`, `lookup`, `join_overlap`, `join_within`; `join_fuzzy` by its blocking key) | both tables by the join key | concatenating |
 | walks a tree or graph (`tree_paths`, `tree_rollup`, `reachable`, `components`) | by connected component, when the components are known in advance; otherwise do not split | concatenating |
 | counts across every key (`concurrency`) | do not split: the count at a moment reads every interval | |
-| totals at several levels (`rollup`, `calc`, `share`) | do not split: a subtotal reads rows of every part | |
+| totals at several levels (`rollup`, `measure_with`, `share_of`) | do not split: a subtotal reads rows of every part | |
 
 A mean is not a sum: split it with its group's rows, or carry the sum and the count and divide at the end. The library does not run the parts; that is the caller's job.
 

@@ -115,20 +115,20 @@ def parse_ts:
 # (Power Query's rule), never a null. Numbers must look like JSON numbers: jq 1.7.1's tonumber
 # accepts " 12" and jq 1.8's refuses it, so the pattern decides instead of the version.
 # A schema column that a row lacks is added to it as null, so every row comes out with the same columns.
-def cast($schema):
+def cast_columns($schema):
   map(reduce ($schema | to_entries[]) as $c (.;
     .[$c.key] |= (
       if . == null or . == "" then null
       elif $c.value == "number" then
         (if type == "number" then .
          elif type == "string" and test("^-?[0-9]+([.][0-9]+)?([eE][-+]?[0-9]+)?$") then tonumber
-         else error("cast: \($c.key) = \(tojson) is not a number") end)
+         else error("cast_columns: \($c.key) = \(tojson) is not a number") end)
       elif $c.value == "timestamp" then parse_ts
       elif $c.value == "string" then tostring
       elif $c.value == "boolean" then
         (if . == true or . == "true" then true elif . == false or . == "false" then false
-         else error("cast: \($c.key) = \(tojson) is not a boolean") end)
-      else error("cast: unknown type \($c.value | tojson) for \($c.key)") end)));
+         else error("cast_columns: \($c.key) = \(tojson) is not a boolean") end)
+      else error("cast_columns: unknown type \($c.value | tojson) for \($c.key)") end)));
 
 # ---------------------------------------------------------------- time zones and calendar
 
@@ -178,7 +178,7 @@ def group_agg(keyf; aggf):
 
 # Name each table with `as $name` and refer to it later by that name, as SPL2 names its searches:
 #   split_by(.event_type) as $by_type | ($by_type.dhcp | map(...)) as $leases | ...
-# split_by, keep and shape below work on an object of tables: {dhcp: [...], firewall: [...]}.
+# split_by, keep_tables and shape below work on an object of tables: {dhcp: [...], firewall: [...]}.
 
 # split a stream of rows into an object of tables by a tag: rows with the same tagf value form one table,
 # named by that value as a string (a null tag gives the table "null"). A host that can pass only one
@@ -193,7 +193,7 @@ def split_by(tagf):
     else map({key, value}) | from_entries end;
 
 # keep only the named tables (drop the rest before a heavy step or before output)
-def keep($names): with_entries(select(.key as $k | $names | any(. == $k)));
+def keep_tables($names): with_entries(select(.key as $k | $names | any(. == $k)));
 
 # for checking a pipeline midway: each table's row count and field names (sorted)
 def shape: map_values({rows: length, fields: (map(keys) | add // [] | unique)});
@@ -297,7 +297,7 @@ def join_asof($right; lkey; rkey; ltime; rtime): join_asof($right; lkey; rkey; l
 # return an array of the same length, and write its i-th value into field $col of the i-th row.
 # Rows come back in input order. Frames are ROWS frames (each row by itself), not SQL's default
 # RANGE frame, which gives tied rows the same running value.
-def over(part; ord; $col; wf):
+def window(part; ord; $col; wf):
   . as $rows
   | [to_entries | map({i: .key, r: .value}) | group_by(.r | part)[]
      | sort_by(.r | ord) | (map(.r) | wf) as $v | to_entries[] | {i: .value.i, v: $v[.key]}]
@@ -601,19 +601,19 @@ def rollup($dims; cell): rollup_levels([range($dims | length; -1; -1) as $n | $d
 def measure(f): .rows | f;
 
 # inside a cell: measure f on the rows of a changed context (DAX's CALCULATE). change is one or
-# more of without, keep_only, with_filter, shift, to_date, piped. A shift past the first or last
-# value has no context, and calc returns null without running f.
-def calc(f; change): (change) as $c | if $c.void then null else ($c | _ctx_rows | f) end;
+# more of without_filter, only_filters, with_filter, shift, to_date, piped. A shift past the first or last
+# value has no context, and measure_with returns null without running f.
+def measure_with(f; change): (change) as $c | if $c.void then null else ($c | _ctx_rows | f) end;
 
 # inside a cell: measure f here divided by f in the changed context; null when that is null or 0
-def share(f; change): measure(f) as $a | calc(f; change) as $b
+def share_of(f; change): measure(f) as $a | measure_with(f; change) as $b
   | if $a == null or $b == null or $b == 0 then null else $a / $b end;
 
 # context changes. Each takes a context and returns one.
 # remove one filter (ALL, REMOVEFILTERS). Written as .at |= del(...), not del(.at[$dim]): gojq's del
 # copies the whole context, every row included, which cost 0.03 s per cell at 37,960 rows.
-def without($dim): .at |= del(.[$dim]);
-def keep_only($dims): .at |= with_entries(select(.key as $k | $dims | any(. == $k)));   # ALLEXCEPT
+def without_filter($dim): .at |= del(.[$dim]);
+def only_filters($dims): .at |= with_entries(select(.key as $k | $dims | any(. == $k)));   # ALLEXCEPT
 def with_filter($at): .at += $at;                     # add or replace filters; a value or {from, to}
 
 # By themselves shift and to_date follow the values present in the data, sorted as values: a month
@@ -636,7 +636,7 @@ def shift($dim; $k):
     end;
 
 # on_calendar: make shift and to_date on $dim step through $values, in the order given, instead of
-# through the values present in the data: calc(revenue; on_calendar("month"; $months) | shift("month"; -1))
+# through the values present in the data: measure_with(revenue; on_calendar("month"; $months) | shift("month"; -1))
 # is the previous calendar month even when it has no rows (the measure then runs on no rows).
 # $values is every period in order, for example calendar(...) | map(.year_month) | unique. A cell
 # whose own value is not in $values has no context after a shift. to_date compares values, so the

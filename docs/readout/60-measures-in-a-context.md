@@ -78,6 +78,8 @@ def _where($at): map(select(. as $r | $at | to_entries | all(
     else $x == $v end)));
 ```
 
+Built into jq: `all`, `map`, `select`, `to_entries`, `type`.
+
 - `map(select(...))` keeps the rows for which the test is true. `. as $r` names the row, because the next step changes the input to the filter object.
 - `$at | to_entries | all(...)` turns `{r: "E", rev: {from: 15}}` into one `{key, value}` pair per filter and requires the test to hold for every pair. With no pairs, `all` is true.
 - `$r[$k] as $x` is the row's value for the filter's field.
@@ -86,7 +88,7 @@ def _where($at): map(select(. as $r | $at | to_entries | all(
 
 ## _ctx_rows
 
-Input: a context. Output: the rows that its filters (`.at`) stand for. `calc` calls it after a context change, when `.rows` no longer matches `.at`. It reads the rows from the report's index when it can and scans with `_where` when it cannot.
+Input: a context. Output: the rows that its filters (`.at`) stand for. `measure_with` calls it after a context change, when `.rows` no longer matches `.at`. It reads the rows from the report's index when it can and scans with `_where` when it cannot.
 
 ### The example
 
@@ -113,7 +115,7 @@ Now three changed contexts per cell, each passed to `_ctx_rows`. To keep the out
 [["E", "2026-01", 10], ["E", "2026-01", 20], ["E", "2026-03", 10], ["W", "2026-01", 30], ["W", "2026-03", 30]]
 | map({region: .[0], month: .[1], rev: .[2]})
 | rollup_levels([["region", "month"], ["region"]];
-    {no_month: (without("month") | _ctx_rows | map(.rev)),
+    {no_month: (without_filter("month") | _ctx_rows | map(.rev)),
      up_to_here: (to_date("month") | _ctx_rows | map(.rev)),
      rev_20_up: (with_filter({rev: {from: 20}}) | _ctx_rows | map(.rev))})
 ```
@@ -140,7 +142,7 @@ def look: {at, ks: (.at | keys), ranges: (.at | to_entries | map(select(.value |
 [["E", "2026-01", 10], ["E", "2026-01", 20], ["E", "2026-03", 10], ["W", "2026-01", 30], ["W", "2026-03", 30]]
 | map({region: .[0], month: .[1], rev: .[2]})
 | rollup_levels([["region", "month"], ["region"]];
-    {no_month: (without("month") | look), up_to_here: (to_date("month") | look), rev_20_up: (with_filter({rev: {from: 20}}) | look)})
+    {no_month: (without_filter("month") | look), up_to_here: (to_date("month") | look), rev_20_up: (with_filter({rev: {from: 20}}) | look)})
 | .[1] | .no_month, .up_to_here, .rev_20_up
 ```
 
@@ -179,6 +181,8 @@ def _ctx_rows:
          | . as $m | $ix[[($c.at + {($d): $m})[$ks[]]] | tojson][]?]
     end;
 ```
+
+Built into jq: `keys`, `length`, `map`, `select`, `to_entries`, `tojson`, `type`. From this library: `_where`.
 
 - `$c.index[$ks | tojson]` is the index entry for the filter's set of fields, or null when no level of the report has exactly those fields.
 - `if $ix == null or ($ranges | length) > 1`: no entry, or more than one range, scans every row.
@@ -310,8 +314,10 @@ def rollup_levels($levels; cell):
      | .at + {level: (if $lvl == [] then "all" else ($lvl | join("/")) end)} + cell];
 ```
 
+Built into jq: `add`, `from_entries`, `group_by`, `has`, `join`, `keys`, `map`, `sort_by`, `tojson`, `unique`.
+
 - `$levels | add // [] | unique` is every field named in any level, once.
-- `(reduce $lvl[] as $d ({}; .[$d] = 1)) | keys` is the level's fields sorted and without repeats, so `["region", "month"]` and `["month", "region"]` share one index entry. `if has(...) then .` skips a set already built. `$levels + [[]]` makes sure the empty set is there, which `keep_only([])` needs.
+- `(reduce $lvl[] as $d ({}; .[$d] = 1)) | keys` is the level's fields sorted and without repeats, so `["region", "month"]` and `["month", "region"]` share one index entry. `if has(...) then .` skips a set already built. `$levels + [[]]` makes sure the empty set is there, which `only_filters([])` needs.
 - `group_by([.[$ks[]]])` groups the rows by the level's values; a row missing a field has null there.
 - `sort_by([.at[$lvl[]]])` orders a level's groups by its values, in the order the caller listed the fields.
 - `.at + {level: ...} + cell`: a cell field named like a level field, or named `level`, would overwrite it.
@@ -368,11 +374,13 @@ The one step before `rollup_levels` is the list of levels:
 def rollup($dims; cell): rollup_levels([range($dims | length; -1; -1) as $n | $dims[0:$n]]; cell);
 ```
 
+Built into jq: `length`, `range`. From this library: `rollup_levels`.
+
 `range($dims | length; -1; -1)` counts down from the number of fields to 0, here 2, 1, 0. `$dims[0:$n]` is the first `$n` fields. The list goes to `rollup_levels` with the same `cell`.
 
-## measure, calc, share
+## measure, measure_with, share_of
 
-The three functions a cell is written with. `measure(f)` runs measure `f` on the cell's own rows. `calc(f; change)` runs it on the rows of a changed context, which is DAX's `CALCULATE`. `share(f; change)` divides the first by the second.
+The three functions a cell is written with. `measure(f)` runs measure `f` on the cell's own rows. `measure_with(f; change)` runs it on the rows of a changed context, which is DAX's `CALCULATE`. `share_of(f; change)` divides the first by the second.
 
 ### The example
 
@@ -383,9 +391,9 @@ At the region with month level: the cell's revenue, its region's revenue, its sh
 | map({region: .[0], month: .[1], rev: .[2]})
 | rollup_levels([["region", "month"]];
     {rev: measure(map(.rev) | sum_nonnull),
-     region_rev: calc(map(.rev) | sum_nonnull; without("month")),
-     of_region: share(map(.rev) | sum_nonnull; without("month")),
-     of_all: share(map(.rev) | sum_nonnull; keep_only([]))})
+     region_rev: measure_with(map(.rev) | sum_nonnull; without_filter("month")),
+     of_region: share_of(map(.rev) | sum_nonnull; without_filter("month")),
+     of_all: share_of(map(.rev) | sum_nonnull; only_filters([]))})
 ```
 
 ```json
@@ -404,16 +412,16 @@ Hand check on the first row: E in January is 10 + 20 = 30. E in all months is 40
 | Argument | In the example | Runs on | Meaning |
 |---|---|---|---|
 | `f` | `map(.rev)` then `sum_nonnull` | an array of rows: the cell's, or the changed context's | the measure |
-| `change` | `without("month")`, `keep_only([])` | the cell's context | returns the context to measure in; several changes can be piped |
+| `change` | `without_filter("month")`, `only_filters([])` | the cell's context | returns the context to measure in; several changes can be piped |
 
 ### What happens inside, on the example
 
-For `calc(map(.rev) | sum_nonnull; without("month"))` in the first cell, E in January. Step 1, the change: the context's `at` loses its month.
+For `measure_with(map(.rev) | sum_nonnull; without_filter("month"))` in the first cell, E in January. Step 1, the change: the context's `at` loses its month.
 
 ```jq
 [["E", "2026-01", 10], ["E", "2026-01", 20], ["E", "2026-03", 10], ["W", "2026-01", 30], ["W", "2026-03", 30]]
 | map({region: .[0], month: .[1], rev: .[2]})
-| rollup_levels([["region", "month"]]; {before: .at, after: (without("month") | .at)}) | .[0] | .before, .after
+| rollup_levels([["region", "month"]]; {before: .at, after: (without_filter("month") | .at)}) | .[0] | .before, .after
 ```
 
 ```json
@@ -426,7 +434,7 @@ Step 2, `_ctx_rows` finds the rows of the changed context, and step 3 runs the m
 ```jq
 [["E", "2026-01", 10], ["E", "2026-01", 20], ["E", "2026-03", 10], ["W", "2026-01", 30], ["W", "2026-03", 30]]
 | map({region: .[0], month: .[1], rev: .[2]})
-| rollup_levels([["region", "month"]]; {found: (without("month") | _ctx_rows), measured: (without("month") | _ctx_rows | map(.rev) | sum_nonnull)})
+| rollup_levels([["region", "month"]]; {found: (without_filter("month") | _ctx_rows), measured: (without_filter("month") | _ctx_rows | map(.rev) | sum_nonnull)})
 | .[0] | .found, .measured
 ```
 
@@ -435,14 +443,14 @@ Step 2, `_ctx_rows` finds the rows of the changed context, and step 3 runs the m
 40
 ```
 
-`share` then divides the cell's own 30 by this 40.
+`share_of` then divides the cell's own 30 by this 40.
 
-A change can leave no context: `shift` past the first value marks the context `void`. `calc` then returns null without running `f`, and `share` returns null. At the region level there is no month to move from:
+A change can leave no context: `shift` past the first value marks the context `void`. `measure_with` then returns null without running `f`, and `share_of` returns null. At the region level there is no month to move from:
 
 ```jq
 [["E", "2026-01", 10], ["E", "2026-01", 20], ["E", "2026-03", 10], ["W", "2026-01", 30], ["W", "2026-03", 30]]
 | map({region: .[0], month: .[1], rev: .[2]})
-| rollup_levels([["region"]]; {prev: calc(length; shift("month"; -1)), vs_prev: share(length; shift("month"; -1))})
+| rollup_levels([["region"]]; {prev: measure_with(length; shift("month"; -1)), vs_prev: share_of(length; shift("month"; -1))})
 ```
 
 ```json
@@ -461,30 +469,34 @@ A change can leave no context: `shift` past the first value marks the context `v
 def measure(f): .rows | f;
 ```
 
-`calc/2`, lines 603 to 606:
+`measure_with/2`, lines 603 to 606:
 
 ```jq
 # inside a cell: measure f on the rows of a changed context (DAX's CALCULATE). change is one or
-# more of without, keep_only, with_filter, shift, to_date, piped. A shift past the first or last
-# value has no context, and calc returns null without running f.
-def calc(f; change): (change) as $c | if $c.void then null else ($c | _ctx_rows | f) end;
+# more of without_filter, only_filters, with_filter, shift, to_date, piped. A shift past the first or last
+# value has no context, and measure_with returns null without running f.
+def measure_with(f; change): (change) as $c | if $c.void then null else ($c | _ctx_rows | f) end;
 ```
 
-`share/2`, lines 608 to 610:
+From this library: `_ctx_rows`.
+
+`share_of/2`, lines 608 to 610:
 
 ```jq
 # inside a cell: measure f here divided by f in the changed context; null when that is null or 0
-def share(f; change): measure(f) as $a | calc(f; change) as $b
+def share_of(f; change): measure(f) as $a | measure_with(f; change) as $b
   | if $a == null or $b == null or $b == 0 then null else $a / $b end;
 ```
 
+From this library: `measure`, `measure_with`.
+
 - `measure(f)` is `.rows | f`.
-- `calc`: `(change) as $c` runs the change on the cell's context. `if $c.void then null` is the no-context case. Otherwise `$c | _ctx_rows | f`.
-- `share`: `measure(f) as $a | calc(f; change) as $b` binds both numbers without changing the input. The result is null when either is null or the divisor is 0, and `$a / $b` otherwise.
+- `measure_with`: `(change) as $c` runs the change on the cell's context. `if $c.void then null` is the no-context case. Otherwise `$c | _ctx_rows | f`.
+- `share_of`: `measure(f) as $a | measure_with(f; change) as $b` binds both numbers without changing the input. The result is null when either is null or the divisor is 0, and `$a / $b` otherwise.
 
-## without, keep_only, with_filter
+## without_filter, only_filters, with_filter
 
-Three context changes that edit `.at`, the filter object, and nothing else. `without` removes one filter (DAX's `ALL` or `REMOVEFILTERS` on one column), `keep_only` drops all but the listed ones (`ALLEXCEPT`), `with_filter` adds or replaces filters.
+Three context changes that edit `.at`, the filter object, and nothing else. `without_filter` removes one filter (DAX's `ALL` or `REMOVEFILTERS` on one column), `only_filters` drops all but the listed ones (`ALLEXCEPT`), `with_filter` adds or replaces filters.
 
 ### The example
 
@@ -492,7 +504,7 @@ A context is an object, so the changes can be tried on a hand-made one that has 
 
 ```jq
 {at: {region: "E", month: "2026-01"}}
-| without("month"), keep_only(["month"]), keep_only([]), with_filter({month: "2026-03", rev: {from: 20}})
+| without_filter("month"), only_filters(["month"]), only_filters([]), with_filter({month: "2026-03", rev: {from: 20}})
 ```
 
 ```json
@@ -502,24 +514,28 @@ A context is an object, so the changes can be tried on a hand-made one that has 
 {"at":{"region":"E","month":"2026-03","rev":{"from":20}}}
 ```
 
-Four contexts. `without("month")` leaves the region. `keep_only(["month"])` leaves the month. `keep_only([])` leaves no filter, which is the grand total. `with_filter` replaces the month and adds a range on `rev`.
+Four contexts. `without_filter("month")` leaves the region. `only_filters(["month"])` leaves the month. `only_filters([])` leaves no filter, which is the grand total. `with_filter` replaces the month and adds a range on `rev`.
 
 ### The definition
 
-`without/1`, lines 612 to 615:
+`without_filter/1`, lines 612 to 615:
 
 ```jq
 # context changes. Each takes a context and returns one.
 # remove one filter (ALL, REMOVEFILTERS). Written as .at |= del(...), not del(.at[$dim]): gojq's del
 # copies the whole context, every row included, which cost 0.03 s per cell at 37,960 rows.
-def without($dim): .at |= del(.[$dim]);
+def without_filter($dim): .at |= del(.[$dim]);
 ```
 
-`keep_only/1`, line 616:
+Built into jq: `del`.
+
+`only_filters/1`, line 616:
 
 ```jq
-def keep_only($dims): .at |= with_entries(select(.key as $k | $dims | any(. == $k)));   # ALLEXCEPT
+def only_filters($dims): .at |= with_entries(select(.key as $k | $dims | any(. == $k)));   # ALLEXCEPT
 ```
+
+Built into jq: `any`, `select`, `with_entries`.
 
 `with_filter/1`, line 617:
 
@@ -527,8 +543,8 @@ def keep_only($dims): .at |= with_entries(select(.key as $k | $dims | any(. == $
 def with_filter($at): .at += $at;                     # add or replace filters; a value or {from, to}
 ```
 
-- `without`: `.at |= del(.[$dim])` deletes one key of `.at`. It is written with `|=` and not as `del(.at[$dim])` because on gojq the second form copies the whole context, every row included, on each call.
-- `keep_only`: `with_entries(select(...))` keeps the entries of `.at` whose key is in `$dims`.
+- `without_filter`: `.at |= del(.[$dim])` deletes one key of `.at`. It is written with `|=` and not as `del(.at[$dim])` because on gojq the second form copies the whole context, every row included, on each call.
+- `only_filters`: `with_entries(select(...))` keeps the entries of `.at` whose key is in `$dims`.
 - `with_filter`: `.at += $at` merges the new filters in; a field already filtered takes the new value.
 
 ## shift
@@ -550,14 +566,14 @@ A hand-made context for E in March, in a report whose months are January and Mar
 {"at":{"region":"E"},"members":{"month":["2026-01","2026-03"]},"void":true}
 ```
 
-The first moves to January. That is the previous month that has rows; February is skipped because it is not in `members`. The second would step past the last value, and the third has no month to move from: both come back marked `void`, which makes `calc` return null.
+The first moves to January. That is the previous month that has rows; February is skipped because it is not in `members`. The second would step past the last value, and the third has no month to move from: both come back marked `void`, which makes `measure_with` return null.
 
 In a report, the previous month's revenue beside the cell's own:
 
 ```jq
 [["E", "2026-01", 10], ["E", "2026-01", 20], ["E", "2026-03", 10], ["W", "2026-01", 30], ["W", "2026-03", 30]]
 | map({region: .[0], month: .[1], rev: .[2]})
-| rollup_levels([["region", "month"]]; {rev: measure(map(.rev) | sum_nonnull), prev: calc(map(.rev) | sum_nonnull; shift("month"; -1))})
+| rollup_levels([["region", "month"]]; {rev: measure(map(.rev) | sum_nonnull), prev: measure_with(map(.rev) | sum_nonnull; shift("month"; -1))})
 ```
 
 ```json
@@ -573,7 +589,7 @@ A field with a filter but no member list is refused. Here the report's only leve
 
 ```jq
 [["E", "2026-01", 10], ["E", "2026-03", 10]] | map({region: .[0], month: .[1], rev: .[2]})
-| try rollup_levels([["region"]]; {prev: calc(length; with_filter({month: "2026-03"}) | shift("month"; -1))}) catch .
+| try rollup_levels([["region"]]; {prev: measure_with(length; with_filter({month: "2026-03"}) | shift("month"; -1))}) catch .
 ```
 
 ```json
@@ -599,6 +615,8 @@ def shift($dim; $k):
       else .at[$dim] = .members[$dim][$i + $k] end
     end;
 ```
+
+Built into jq: `error`, `has`, `index`, `length`, `not`, `tojson`, `type`.
 
 - `.at[$dim] as $v` is the current value of the filter.
 - First branch: no filter on `$dim` (a total row), a null value, or a range. There is nothing to move from, so `.void = true`.
@@ -634,8 +652,8 @@ In a report, both kinds of "previous month" side by side:
 | ["2026-01", "2026-02", "2026-03"] as $months
 | rollup_levels([["region", "month"], ["region"]];
     {rev: measure(map(.rev) | sum_nonnull),
-     prev_with_rows: calc(map(.rev) | sum_nonnull; shift("month"; -1)),
-     prev_calendar: calc(map(.rev) | sum_nonnull; on_calendar("month"; $months) | shift("month"; -1))})
+     prev_with_rows: measure_with(map(.rev) | sum_nonnull; shift("month"; -1)),
+     prev_calendar: measure_with(map(.rev) | sum_nonnull; on_calendar("month"; $months) | shift("month"; -1))})
 ```
 
 ```json
@@ -657,7 +675,7 @@ For E in March, the previous month that has rows is January (30). The previous c
 
 ```jq
 # on_calendar: make shift and to_date on $dim step through $values, in the order given, instead of
-# through the values present in the data: calc(revenue; on_calendar("month"; $months) | shift("month"; -1))
+# through the values present in the data: measure_with(revenue; on_calendar("month"; $months) | shift("month"; -1))
 # is the previous calendar month even when it has no rows (the measure then runs on no rows).
 # $values is every period in order, for example calendar(...) | map(.year_month) | unique. A cell
 # whose own value is not in $values has no context after a shift. to_date compares values, so the
@@ -694,7 +712,7 @@ In a report:
 ```jq
 [["E", "2026-01", 10], ["E", "2026-01", 20], ["E", "2026-03", 10], ["W", "2026-01", 30], ["W", "2026-03", 30]]
 | map({region: .[0], month: .[1], rev: .[2]})
-| rollup(["region", "month"]; {rev: measure(map(.rev) | sum_nonnull), to_date: calc(map(.rev) | sum_nonnull; to_date("month"))})
+| rollup(["region", "month"]; {rev: measure(map(.rev) | sum_nonnull), to_date: measure_with(map(.rev) | sum_nonnull; to_date("month"))})
 ```
 
 ```json
@@ -723,6 +741,8 @@ def to_date($dim):
   elif .at[$dim] == null then .void = true
   else .at[$dim] = {to: .at[$dim]} end;
 ```
+
+Built into jq: `has`, `not`.
 
 - `if (.at | has($dim) | not) then .`: no filter on the field, nothing to do.
 - `elif .at[$dim] == null then .void = true`: a null value has no "up to".

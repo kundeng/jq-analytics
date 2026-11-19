@@ -74,6 +74,8 @@ Step 3, `min | .[1]`: arrays compare element by element, so the smallest pair is
 def mode: nonnull | if length == 0 then null else group_by(.) | map([-length, .[0]]) | min | .[1] end;
 ```
 
+Built into jq: `group_by`, `length`, `map`, `min`. From this library: `nonnull`.
+
 One `min` does both the "most frequent" and the tie rule, because the size is negated. `if length == 0 then null` covers the empty case before grouping.
 
 ## value_counts
@@ -106,6 +108,8 @@ Four non-null values. `a` appears twice, a share of 2 / 4 = 0.5. `b` and `c` tie
 def value_counts:
   nonnull | length as $n | group_by(.) | map({value: .[0], count: length, share: (length / $n)}) | sort_by([-.count, .value]);
 ```
+
+Built into jq: `group_by`, `length`, `map`, `sort_by`. From this library: `nonnull`.
 
 - `nonnull | length as $n` drops nulls and remembers how many values are left. `as` binds `$n` without changing the input.
 - `group_by(.) | map({value: .[0], count: length, share: (length / $n)})`: one row per group of equal values.
@@ -182,6 +186,8 @@ def bin_edges($lo; $hi; $n):
   else [range(0; $n + 1) | $lo + ($hi - $lo) * . / $n] end;
 ```
 
+Built into jq: `error`, `not`, `range`.
+
 `histogram/1`, lines 1041 to 1058:
 
 ```jq
@@ -204,6 +210,8 @@ def histogram($edges):
     | [range(0; $k - 1) | {from: $edges[.], to: $edges[. + 1], count: ($c[tostring] // 0)}]
     end;
 ```
+
+Built into jq: `any`, `bsearch`, `error`, `length`, `range`, `select`, `tojson`, `tostring`, `type`. From this library: `nonnull`.
 
 - `bin_edges`: `$lo + ($hi - $lo) * . / $n` computes each edge from the two ends, so the last edge is exactly `$hi`.
 - `[range(1; $k) | select($edges[.] <= $edges[. - 1])] | length) > 0` finds an edge that is not above the one before.
@@ -299,6 +307,8 @@ def corr(x; y):
     end;
 ```
 
+Built into jq: `add`, `length`, `map`, `select`, `sqrt`.
+
 - `if $n < 2 then null`: one pair has no spread to compare.
 - `$mx`, `$my` are the means of step 2.
 - `if $s[1] == 0 or $s[2] == 0 then null`: a sum of squares of 0 means that side never varies, and the division would be by 0.
@@ -386,6 +396,8 @@ def profile:
         min: (if $ts == ["number"] or $ts == ["string"] then ($nn | min) else null end),
         max: (if $ts == ["number"] or $ts == ["string"] then ($nn | max) else null end)}];
 ```
+
+Built into jq: `from_entries`, `group_by`, `has`, `keys`, `length`, `map`, `max`, `min`, `select`, `type`, `unique`.
 
 - `nulls` is all rows minus the non-null values, so an absent field counts as null.
 - `types` groups `$pv` by jq type name and counts, nulls included.
@@ -486,6 +498,8 @@ def _diff_index(key; $who):
       else .[$k | tojson] = $r end);
 ```
 
+Built into jq: `error`, `has`, `tojson`.
+
 `diff_tables/2`, lines 1097 to 1114:
 
 ```jq
@@ -508,6 +522,8 @@ def diff_tables($old; key):
              old: $b, new: $a}
        end];
 ```
+
+Built into jq: `empty`, `has`, `keys`, `map`, `select`, `tojson`, `unique`. From this library: `_diff_index`.
 
 - `_diff_index`: a `reduce` that writes each row under its key's JSON text. `if $k == null` and `elif has($k | tojson)` are the two errors; `$who` is "new" or "old".
 - `$n[$j] as $a | $o[$j] as $b`: the new and old row for a key, null when that table lacks it.

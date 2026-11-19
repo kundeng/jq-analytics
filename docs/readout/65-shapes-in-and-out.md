@@ -64,6 +64,8 @@ def _distinct_in_order: reduce .[] as $x ({n: 0, s: {}}; ($x | tojson) as $k
   | if .s[$k] then . else .s[$k] = [.n, $x] | .n += 1 end) | [.s[]] | sort_by(.[0]) | map(.[1]);
 ```
 
+Built into jq: `map`, `sort_by`, `tojson`.
+
 The first sightings are written into an object by key and sorted once at the end. The shorter "append the value when it is new" copies the growing array on every append, so its cost grows with the square of the number of distinct values. The sort at the end is also what makes the order the same on engines that do not keep an object's key order.
 
 ## _unnest_arr, unnest, unnest_outer
@@ -145,6 +147,8 @@ def _unnest_arr(f; $i):
     else error("unnest: row \($i) holds a \($a | type), not an array") end;
 ```
 
+Built into jq: `error`, `type`.
+
 `unnest/2`, lines 670 to 675:
 
 ```jq
@@ -156,6 +160,8 @@ def unnest(f; $as):
   [to_entries[] | .key as $i | .value as $r | ($r | _unnest_arr(f; $i))[] as $x | $r + {($as): $x}];
 ```
 
+Built into jq: `to_entries`. From this library: `_unnest_arr`.
+
 `unnest_outer/2`, lines 676 to 678:
 
 ```jq
@@ -163,6 +169,8 @@ def unnest_outer(f; $as):
   [to_entries[] | .key as $i | .value as $r
    | ($r | _unnest_arr(f; $i) | if length == 0 then [null] else . end)[] as $x | $r + {($as): $x}];
 ```
+
+Built into jq: `length`, `to_entries`. From this library: `_unnest_arr`.
 
 - `_unnest_arr`: `(f) as $a` runs the caller's filter on the row. Null gives `[]`, an array is returned as it is, anything else is the error.
 - `to_entries[] | .key as $i | .value as $r` walks the rows with their positions. `as` binds a name without changing the input.
@@ -230,6 +238,8 @@ def _flat($p; $sep):
   else {key: $p, value: .} end;
 ```
 
+Built into jq: `length`, `to_entries`, `type`.
+
 `flatten_fields/1`, lines 686 to 696:
 
 ```jq
@@ -245,6 +255,8 @@ def flatten_fields($sep):
           else $o end
       end);
 ```
+
+Built into jq: `error`, `from_entries`, `group_by`, `length`, `map`, `select`, `tojson`. From this library: `_flat`.
 
 - `_flat($p; $sep)`: a non-empty object recurses into each field, with the path extended by the field's name (`$p + $sep + $k`, or `$k` at the top where `$p` is null). Anything else, a scalar, an array or an empty object, is a leaf and is emitted as `{key: $p, value: .}`.
 - `flatten_fields`: `if length == 0 then {}` passes an empty row through.
@@ -308,6 +320,8 @@ def _nodes(id; children; $p): . as $n
   | ($n | del(children) + {parent: $p}), ((($n | children) // [])[] | _nodes(id; children; ($n | id)));
 ```
 
+Built into jq: `del`.
+
 `nodes_from_nested/2`, lines 702 to 705:
 
 ```jq
@@ -316,6 +330,8 @@ def _nodes(id; children; $p): . as $n
 # array removed. The input is one root object or an array of roots. Rows are in depth-first order.
 def nodes_from_nested(id; children): [(if type == "array" then .[] else . end) | _nodes(id; children; null)];
 ```
+
+Built into jq: `type`. From this library: `_nodes`.
 
 - `$n | del(children) + {parent: $p}` is the node's own row.
 - `(($n | children) // [])[]` takes the children one at a time; `// []` reads a missing or null children field as no children, which is how `web` and `ops` end the recursion.
@@ -387,6 +403,8 @@ def rows_from_map($as):
       then error("rows_from_map: the value of key \($e.key | tojson) already has a field \($as | tojson)")
       else {($as): $e.key} + $e.value end);
 ```
+
+Built into jq: `error`, `has`, `map`, `sort_by`, `to_entries`, `tojson`, `type`.
 
 - `sort_by(.key)`: gojq does not keep the order an object's keys were written in, so sorted order is the one order every engine can agree on.
 - `if ($e.value | type) != "object"`: a value that is not an object becomes `{($as): key, value: v}`.
@@ -514,6 +532,8 @@ def fill_grid($keys; $time; $step; $fill):
   end;
 ```
 
+Built into jq: `any`, `error`, `from_entries`, `length`, `map`, `max`, `min`, `range`, `select`, `tojson`, `transpose`. From this library: `_distinct_in_order`.
+
 - `if length == 0 then []`: no rows in, no rows out.
 - `(map(select(...)) | if length > 0 then error(...) else . end) as $_` runs the grid check for its error only; `$_` is not used again.
 - `.[[$r[$keys[]], $r[$time]] | tojson] += [$r]`: several rows with the same keys and time are all kept, under one index entry.
@@ -559,6 +579,8 @@ def to_map(key):
   reduce .[] as $r ({}; ($r | key | tostring) as $k
     | if has($k) then error("to_map: duplicate key \($k | tojson)") else .[$k] = $r end);
 ```
+
+Built into jq: `error`, `has`, `tojson`, `tostring`.
 
 `reduce .[] as $r ({}; ...)` adds one row at a time to an object that starts empty. `($r | key | tostring) as $k` runs the caller's filter on the row. `if has($k)` is the duplicate check; otherwise `.[$k] = $r`.
 
@@ -630,6 +652,8 @@ Step 3: each root is expanded by `_nest`, which adds field `reports` holding the
 def _nest($by; id; $as): . as $n | $n + {($as): [($by[$n | id | tojson] // [])[] | _nest($by; id; $as)]};
 ```
 
+Built into jq: `tojson`.
+
 `nested_from_nodes/3`, lines 746 to 752:
 
 ```jq
@@ -641,6 +665,8 @@ def nested_from_nodes(id; parent; $as):
   | (group_by(parent) | map({key: (.[0] | parent | tojson), value: .}) | from_entries) as $by
   | [.[] | select((parent) == null or (parent) == "") | _nest($by; id; $as)];
 ```
+
+Built into jq: `from_entries`, `group_by`, `length`, `map`, `select`, `tojson`. From this library: `_nest`, `tree_paths`.
 
 - `(tree_paths(id; parent) | length) as $_` forces `tree_paths` to run; `$_` is not used again.
 - `group_by(parent)` keeps the children of one parent in input order.
@@ -677,6 +703,8 @@ def node_link(from; to):
   {nodes: ([.[] | (from), (to)] | _distinct_in_order | map({id: .})),
    links: map(. + {source: (from), target: (to)})};
 ```
+
+Built into jq: `map`. From this library: `_distinct_in_order`.
 
 - `[.[] | (from), (to)] | _distinct_in_order | map({id: .})`: both ends of every edge, repeats removed, each wrapped as `{id}`.
 - `map(. + {source: (from), target: (to)})`: `from` and `to` are the caller's filters, run on each edge row.

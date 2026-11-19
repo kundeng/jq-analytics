@@ -99,6 +99,8 @@ def unpivot($keep; $name; $value):
    | $base + {($name): .key, ($value): .value}];
 ```
 
+Built into jq: `any`, `not`, `select`, `sort_by`, `to_entries`, `with_entries`.
+
 - `[.[] as $r | ...]`: one pass per input row `$r`.
 - The `$base` line: step 1. `any(. == $k)` asks whether the field's name is in `$keep`.
 - `$r | to_entries | sort_by(.key)[]`: step 2. jq and jaq keep fields in the order they were written and gojq sorts them, so sorting here is what makes every engine give the same row order.
@@ -195,6 +197,8 @@ def pivot($cols; rowkey; colf; valf; agg):
   group_agg(rowkey; (group_by(colf | tostring) | map({key: (.[0] | colf | tostring), value: map(valf)}) | from_entries) as $cells
     | reduce $cols[] as $c ({}; .[$c] = ($cells[$c] | if . == null then null else agg end)));
 ```
+
+Built into jq: `from_entries`, `group_by`, `map`, `tostring`. From this library: `group_agg`.
 
 - `group_agg(rowkey; ...)`: step 1. The row key should be an object, such as `{host}`, so that its fields become the first columns.
 - The `$cells` expression: step 2. `tostring` is applied to the column value because the names in `$cols` are strings. Inside a group, `group_by` keeps input order, so the values reach `agg` in input order.

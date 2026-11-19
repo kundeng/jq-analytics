@@ -2,7 +2,7 @@
 
 Generated from `src/jq_analytics/analytics.jq` and `docs/readout/notes/windows.md`. Do not edit.
 
-Seven definitions. `over` does what SQL's `OVER (PARTITION BY ... ORDER BY ...)` does. The other six are window functions: each takes one sorted partition and computes one value per row of it. They are passed to `over` as its last argument.
+Seven definitions. `window` does what SQL's `OVER (PARTITION BY ... ORDER BY ...)` does. The other six are window functions: each takes one sorted partition and computes one value per row of it. They are passed to `window` as its last argument.
 
 ```mermaid
 flowchart TD
@@ -13,7 +13,7 @@ flowchart TD
 
 A partition is the set of rows that share a value, such as all rows of one site. A window function sees one partition at a time, as an array of rows already in order.
 
-## over
+## window
 
 Adds one column to a table, computed per partition in a chosen order, and returns the rows in the order they came in. It is SQL's `SELECT *, f(...) OVER (PARTITION BY part ORDER BY ord) AS col`.
 
@@ -32,7 +32,7 @@ The call: per site, in day order, the running sum of x, in a new column `sum`.
 
 ```jq
 [{day: 2, site: "N", x: 5}, {day: 1, site: "N", x: 3}, {day: 1, site: "S", x: 9}, {day: 3, site: "N", x: null}]
-| over(.site; .day; "sum"; running_sum(.x))
+| window(.site; .day; "sum"; running_sum(.x))
 ```
 
 ```json
@@ -48,7 +48,7 @@ The same four rows in the same order, each with `sum`. Check site N by hand: in 
 
 ### Reading the call
 
-`over(.site; .day; "sum"; running_sum(.x))` has four arguments, separated by `;`.
+`window(.site; .day; "sum"; running_sum(.x))` has four arguments, separated by `;`.
 
 | Argument | In the example | Runs on | Meaning |
 |---|---|---|---|
@@ -57,7 +57,7 @@ The same four rows in the same order, each with `sum`. Check site N by hand: in 
 | `$col` | `"sum"` | nothing: it is a value | the name of the new column |
 | `wf` | `running_sum(.x)` | one sorted partition: an array of rows | an array with one value per row |
 
-`part`, `ord` and `wf` are filters: pieces of program that `over` runs later, on an input it chooses. `$col` has a `$` in the definition and is a plain value. Inside `wf` the input is a partition, so `.x` inside `running_sum(.x)` is run by `running_sum` on each row of that partition.
+`part`, `ord` and `wf` are filters: pieces of program that `window` runs later, on an input it chooses. `$col` has a `$` in the definition and is a plain value. Inside `wf` the input is a partition, so `.x` inside `running_sum(.x)` is run by `running_sum` on each row of that partition.
 
 ### What happens inside, on the example
 
@@ -150,7 +150,7 @@ Each call adds one column, so several windows are written as a chain. The row nu
 
 ```jq
 [{day: 2, site: "N", x: 5}, {day: 1, site: "N", x: 3}, {day: 1, site: "S", x: 9}, {day: 3, site: "N", x: null}]
-| over(.site; .day; "n"; row_number) | over(.site; .day; "sum"; running_sum(.x)) | over(.site; .day; "prev"; lag(.x; 1))
+| window(.site; .day; "n"; row_number) | window(.site; .day; "sum"; running_sum(.x)) | window(.site; .day; "prev"; lag(.x; 1))
 ```
 
 ```json
@@ -169,7 +169,7 @@ The first row is day 2 of site N: second in its partition, running sum 3 + 5, pr
 Two rows with the same `ord` keep their input order, because the sort is stable. Rows with a null `part` form one partition. The running values are per row: two rows that tie on `ord` get different running sums, where SQL's default frame would give both the same.
 
 ```jq
-[{site: null, day: 1, x: 1}, {site: null, day: 1, x: 2}] | over(.site; .day; "sum"; running_sum(.x))
+[{site: null, day: 1, x: 1}, {site: null, day: 1, x: 2}] | window(.site; .day; "sum"; running_sum(.x))
 ```
 
 ```json
@@ -181,7 +181,7 @@ Two rows with the same `ord` keep their input order, because the sort is stable.
 
 ### The definition
 
-`over/4`, lines 295 to 305:
+`window/4`, lines 295 to 305:
 
 ```jq
 # Window over partitions: split rows by part (first appearance), sort each partition by ord
@@ -189,13 +189,15 @@ Two rows with the same `ord` keep their input order, because the sort is stable.
 # return an array of the same length, and write its i-th value into field $col of the i-th row.
 # Rows come back in input order. Frames are ROWS frames (each row by itself), not SQL's default
 # RANGE frame, which gives tied rows the same running value.
-def over(part; ord; $col; wf):
+def window(part; ord; $col; wf):
   . as $rows
   | [to_entries | map({i: .key, r: .value}) | group_by(.r | part)[]
      | sort_by(.r | ord) | (map(.r) | wf) as $v | to_entries[] | {i: .value.i, v: $v[.key]}]
   | sort_by(.i) | map(.v) as $vals
   | [$rows | to_entries[] | .value + {($col): $vals[.key]}];
 ```
+
+Built into jq: `group_by`, `map`, `sort_by`, `to_entries`.
 
 - `. as $rows`: the input table, kept for the last line.
 - `to_entries | map({i: .key, r: .value})`: step 1.
@@ -222,7 +224,7 @@ A partition of three rows. Only their number matters, so the rows can be anythin
 [1,2,3]
 ```
 
-Inside `over` the partition is already sorted, so this numbers the rows of each site by day; the chain under `over` above shows it as column `n`.
+Inside `window` the partition is already sorted, so this numbers the rows of each site by day; the chain under `window` above shows it as column `n`.
 
 ### The definition
 
@@ -232,6 +234,8 @@ Inside `over` the partition is already sorted, so this numbers the rows of each 
 # window value functions: input is one sorted partition (array of rows)
 def row_number: [range(1; length + 1)];
 ```
+
+Built into jq: `length`, `range`.
 
 `range(1; length + 1)` emits the whole numbers from 1 up to the number of rows, and the brackets collect them into an array.
 
@@ -253,11 +257,11 @@ Four rows sorted by x, two of them tied at 20.
 
 The two 20s share rank 2. The 30 is rank 4, not 3: three rows come before it.
 
-Inside `over`, the partition has to be sorted by the same value that is ranked. That is the caller's job, done by passing it as `ord`:
+Inside `window`, the partition has to be sorted by the same value that is ranked. That is the caller's job, done by passing it as `ord`:
 
 ```jq
 [{site: "N", host: "web01", x: 20}, {site: "N", host: "db01", x: 10}, {site: "N", host: "app07", x: 20}, {site: "S", host: "web02", x: 5}]
-| over(.site; .x; "rank"; rank_by(.x))
+| window(.site; .x; "rank"; rank_by(.x))
 ```
 
 ```json
@@ -329,6 +333,8 @@ def rank_by(f):
   | sort_by(.i) | map(.r);
 ```
 
+Built into jq: `group_by`, `map`, `sort_by`, `to_entries`.
+
 - `[to_entries | group_by(.value | f)[] | to_entries[] | {...}]`: steps 1 to 3, collected into one array of `{i, r}`.
 - `sort_by(.i) | map(.r)`: step 4.
 - Grouping once gives every row its count of earlier equal rows. The cost follows the sort inside `group_by`, not the square of the partition.
@@ -364,11 +370,15 @@ The first argument, `.x`, is a filter run on the row that is `$k` places away. T
 def lag(f; $k): . as $a | [range(length) as $i | if $i - $k >= 0 then ($a[$i - $k] | f) else null end];
 ```
 
+Built into jq: `length`, `range`.
+
 `lead/2`, line 316:
 
 ```jq
 def lead(f; $k): . as $a | length as $n | [range($n) as $i | if $i + $k < $n then ($a[$i + $k] | f) else null end];
 ```
+
+Built into jq: `length`, `range`.
 
 - `. as $a`: the partition under a name, so rows can be read by position.
 - `[range(length) as $i | ...]`: one value per position `$i`, from 0.
@@ -478,6 +488,8 @@ Step 3, `mean` of each list. It is the library's own `mean` from the math page, 
 # moving mean of f over the current row and the $n - 1 rows before it (fewer at the start); nulls skipped
 def moving_mean(f; $n): . as $a | [range(length) as $i | [$a[([$i - $n + 1, 0] | max):($i + 1)][] | f] | mean];
 ```
+
+Built into jq: `length`, `max`, `range`. From this library: `mean`.
 
 - `[$i - $n + 1, 0] | max`: the window's first position, never below 0, which is why the first rows have shorter windows.
 - `$a[first:($i + 1)]`: a slice; the end position is not included, so `$i + 1` makes the current row the last one.

@@ -153,6 +153,8 @@ def tree_paths(id; parent):
   | map(. + ($anc[id | tojson] | {ancestry: ., depth: (length - 1)}));
 ```
 
+Built into jq: `error`, `has`, `length`, `map`, `reverse`, `tojson`, `until`.
+
 - The first `reduce`: step 1. `if has($k) then error(...)` is the check for an id on two rows.
 - `if .m[$i | tojson] != null then .`: a node already done is skipped.
 - `.chain = [$i] | .on = {...} | .cur = $i`: the start of a walk. `.on` holds the same ids as `.chain`, as an object, so the cycle test is one lookup.
@@ -236,6 +238,8 @@ def tree_rollup(id; parent; value):
        | reduce $n.ancestry[] as $a (.; .[$a | tojson] += ($v // 0)))) as $sum
   | $t | map(. + {subtree: $sum[id | tojson]});
 ```
+
+Built into jq: `map`, `tojson`. From this library: `tree_paths`.
 
 - `tree_paths(id; parent) as $t`: step 1, with its errors.
 - `reduce $t[] as $n ({}; ($n | value) as $v | reduce $n.ancestry[] as $a (.; .[$a | tojson] += ($v // 0)))`: step 2. `$v // 0` counts a null value as 0. The keys go through `tojson`, as in `tree_paths`.

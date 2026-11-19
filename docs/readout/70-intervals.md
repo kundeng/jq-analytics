@@ -60,6 +60,8 @@ def _iv_check(time; kind):
     else empty end;
 ```
 
+Built into jq: `empty`, `error`, `to_entries`, `tojson`.
+
 - `to_entries[] | .key as $i | .value` walks the events with their position, so the message can say which event is wrong.
 - `if $k == null then empty`: an event with no kind is skipped here, as the builder skips it.
 - The two `elif` branches are the two errors. `else empty`: a good event emits nothing.
@@ -216,6 +218,8 @@ def intervals_from_events(resource; holder; time; kind; ttl):
            end;
          .out[])];
 ```
+
+Built into jq: `length`, `map`, `max`, `select`, `sort_by`. From this library: `_groups`, `_iv_check`.
 
 Before the loop:
 
@@ -375,6 +379,8 @@ def join_within($intervals; lkey; rkey; ltime; rstart; rend):
        end];
 ```
 
+Built into jq: `bsearch`, `from_entries`, `group_by`, `length`, `map`, `select`, `sort_by`, `tojson`, `until`. From this library: `_merge`.
+
 - `select((rkey) != null and (rstart) != null)`: intervals with no key or no start are left out of the index.
 - `if $k == null or $t == null or $ix[$k | tojson] == null then $l`: a left row with no key, no time, or a key with no intervals comes back alone.
 - `until(. + 1 >= ($g.s | length) or $g.s[. + 1] > $t; . + 1)` is the move forward to the last start at or before `$t`.
@@ -411,6 +417,8 @@ def _iv_order_check(start; fin; $who):
   if any(.[]; (start) == null) then error("\($who): an interval has no start")
   elif any(.[]; (fin) != null and (fin) < (start)) then error("\($who): an interval ends before it starts") else . end;
 ```
+
+Built into jq: `any`, `error`.
 
 `any(.[]; cond)` is true when the condition holds for at least one row. `$who` is the name of the calling function, for the message. `else .` returns the input.
 
@@ -513,6 +521,8 @@ def merge_intervals(key; start; fin):
          .out[])];
 ```
 
+Built into jq: `max`, `sort_by`, `type`. From this library: `_groups`, `_iv_order_check`.
+
 - `$k` is the key as fields for the output row: the key itself when it is an object, otherwise `{key: value}`.
 - `if .cur != null and (.cur.end == null or $s <= .cur.end)`: the join test. `<=`, not `<`, so an interval that starts exactly where the open one ends is merged with it.
 - On a join, `merged` goes up by one and the end becomes the later of the two, or null if either is null.
@@ -606,6 +616,8 @@ def concurrency(start; fin):
        ($g | map(.d) | add) as $net | {open: (.open + $net), t: $g[0].t, net: $net};
        select(.net != 0) | {t, open})];
 ```
+
+Built into jq: `add`, `empty`, `group_by`, `map`, `select`. From this library: `_iv_order_check`.
 
 - An interval counts from its start up to, not including, its end, because the `-1` lands exactly at the end.
 - The `foreach` state is `{open, t, net}`; the first part of its body computes `$net` for the moment's group.

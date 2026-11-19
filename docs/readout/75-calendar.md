@@ -65,6 +65,8 @@ Step 3, the round trip: the number is printed back as a date and compared with t
 def _cal_bad($who): error("\($who): \(tojson) is not a date (YYYY-MM-DD)");
 ```
 
+Built into jq: `error`, `tojson`.
+
 `_cal_date/1`, lines 896 to 902:
 
 ```jq
@@ -76,6 +78,8 @@ def _cal_date($who):
     | if $e == null or ($e | gmtime | strftime("%Y-%m-%d")) != $s then ($s | _cal_bad($who)) else $e end
     end;
 ```
+
+Built into jq: `fromdateiso8601`, `gmtime`, `not`, `strftime`, `test`, `type`. From this library: `_cal_bad`.
 
 - `type != "string" or (test(...) | not)` is step 1.
 - `try (...) catch null`: an engine that refuses an impossible date in `fromdateiso8601` gives null here; the others give a number. `$e == null or (... != $s)` treats both the same way, which makes the result equal on every engine.
@@ -110,11 +114,15 @@ Input: a year. `_cal_iso_weeks` gives the number of ISO weeks in it, 52 or 53. `
 def _cal_p: (. + (. / 4 | floor) - (. / 100 | floor) + (. / 400 | floor)) % 7;
 ```
 
+Built into jq: `floor`.
+
 `_cal_iso_weeks/0`, line 904:
 
 ```jq
 def _cal_iso_weeks: if _cal_p == 4 or ((. - 1) | _cal_p) == 3 then 53 else 52 end;   # ISO weeks in year .
 ```
+
+From this library: `_cal_p`.
 
 - `_cal_p` is `(y + y/4 - y/100 + y/400) mod 7`, each division rounded down. One weekday step per year, and one more per leap year.
 - An ISO week runs Monday to Sunday and belongs to the year that holds its Thursday. A year has 53 of them when it ends on a Thursday (`_cal_p == 4`) or starts on one, which is the same as the year before ending on a Wednesday (`(. - 1) | _cal_p == 3`).
@@ -140,6 +148,8 @@ A number as text of at least two digits, for `2026-03` and `2026-W09`.
 ```jq
 def _cal_pad2: if . < 10 then "0\(.)" else tostring end;
 ```
+
+Built into jq: `tostring`.
 
 `"0\(.)"` is string interpolation: the text `0` followed by the input. A number of 10 or more goes through `tostring`.
 
@@ -200,6 +210,8 @@ Step 1: the offset in force at `$m` is -18000 seconds (five hours behind), so th
 # corrects a first guess that fell on the other side of a clock change
 def _cal_midnight($z): . as $m | ($m - ($m | tz_offset($z))) as $e | $m - ($e | tz_offset($z));
 ```
+
+From this library: `tz_offset`.
 
 - `($m - ($m | tz_offset($z))) as $e` is the guess. `$m - ($e | tz_offset($z))` is the answer, using the offset at the guess.
 - The second step changes the answer only when a clock change falls between `$m` and the guess. In the example the change is at 2 in the morning local time, after local midnight, so the guess is already right. The step keeps the function right for a zone that changes closer to midnight.
@@ -361,6 +373,8 @@ def calendar($from; $to; $zone):
         start: ($m | _cal_midnight($z)), end: (($m + 86400) | _cal_midnight($z))}]
     end;
 ```
+
+Built into jq: `error`, `floor`, `gmtime`, `range`, `round`, `strftime`, `tojson`, `type`. From this library: `_cal_date`, `_cal_iso_weeks`, `_cal_midnight`, `_cal_pad2`, `tz`.
 
 `calendar/2`, line 942:
 

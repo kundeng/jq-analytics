@@ -1,6 +1,6 @@
 # Feature matrix
 
-What the library does, family by family, and how far each part is carried: the functions in `analytics.jq`, the test cases, the answer key, and the README. Counts are as of version 0.9.4 and come from `tests/cases.json` and the library file.
+What the library does, family by family, and how far each part is carried: the functions in `analytics.jq`, the test cases, the answer key, and the README. Counts are as of version 0.10.0 and come from `tests/cases.json` and the library file.
 
 ```mermaid
 flowchart LR

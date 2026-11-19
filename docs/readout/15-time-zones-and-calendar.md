@@ -62,6 +62,8 @@ try tz("Mars/Olympus") catch .
 def tz($name): tz_rules[$name] // error("tz: zone not in the zone tables: \($name)");
 ```
 
+Built into jq: `error`. From this library: `tz_rules`.
+
 - `tz_rules[$name]`: the zone's entry in the tables, or null when the name is not a key.
 - `// error(...)`: `//` gives its right-hand side when the left is null or false, so a missing zone becomes the error above.
 - It is a separate function because `tz_rules` is a large literal that jq builds again each time it is mentioned. `tz("America/Detroit") as $det` builds it once, and `$det` can then be passed to the two functions below, which accept either a name or this object.
@@ -163,6 +165,8 @@ def tz_offset($tz):
   | .o[if $i >= 0 then $i else -2 - $i end];
 ```
 
+Built into jq: `bsearch`, `type`. From this library: `tz`.
+
 - `. as $e`: the moment, kept under a name, because the next line replaces the input with the zone's rules.
 - `$tz | if type == "string" then tz(.) else . end`: step 2. A name is looked up; an object is taken to be the rules already.
 - `(.t | bsearch($e)) as $i`: step 3.
@@ -245,6 +249,8 @@ def local_time($tz):
      hour: $g[3], minute: $g[4], second: ($g[5] + ($l - ($l | floor))), weekday: $g[6],
      offset_s: $o, local_epoch: $l};
 ```
+
+Built into jq: `floor`, `gmtime`, `strftime`. From this library: `tz_offset`.
 
 - `tz_offset($tz) as $o | (. + $o) as $l | ($l | floor | gmtime) as $g`: steps 1 to 3. `floor` comes first because the fraction is handled separately.
 - `date: ($g | strftime("%Y-%m-%d"))`: the local date as text, for grouping by day.

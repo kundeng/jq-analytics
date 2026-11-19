@@ -82,6 +82,8 @@ def _bigrams:
   else explode as $c | [range(0; ($c | length) - 1) | $c[.:. + 2] | implode] | unique end;
 ```
 
+Built into jq: `error`, `explode`, `implode`, `length`, `range`, `tojson`, `type`, `unique`.
+
 `_dice/2`, lines 1129 to 1131:
 
 ```jq
@@ -89,6 +91,8 @@ def _dice($x; $y):
   if ($x | length) == 0 or ($y | length) == 0 then 0
   else 2 * (($x - ($x - $y)) | length) / (($x | length) + ($y | length)) end;
 ```
+
+Built into jq: `length`.
 
 - `_bigrams`: the error message says `similarity` because that is the public function a caller used.
 - `_dice`: `if ($x | length) == 0 or ($y | length) == 0 then 0` avoids a division by 0 and scores a string with no bigrams as unlike everything.
@@ -148,6 +152,8 @@ def similarity(a; b):
     elif $a == $b then 1
     else _dice($a | _bigrams; $b | _bigrams) end;
 ```
+
+Built into jq: `type`. From this library: `_bigrams`, `_dice`.
 
 - `(a) as $a | (b) as $b` runs both filters once and names the results.
 - `if $a == null or $b == null then null`.
@@ -265,6 +271,8 @@ def join_fuzzy($right; lblock; rblock; lstr; rstr; $min; $as):
          end) as $m
       | $l + {($as): $m});
 ```
+
+Built into jq: `from_entries`, `group_by`, `map`, `select`, `tojson`. From this library: `_bigrams`, `_dice`.
 
 - `select((rblock) != null and (rstr) != null)`: a right row with no block or no string is left out of the index. Storing `g` in the index means each right row's bigrams are computed once, however many left rows it is compared with.
 - `if $bk == null or $s == null then null`: a left row with no block or no string gets null.

@@ -117,6 +117,8 @@ def _merge($l; $r):
     else .[$e.key] = $e.value end);
 ```
 
+Built into jq: `error`, `has`, `to_entries`, `tojson`.
+
 - `reduce ($r | to_entries[]) as $e ($l; ...)`: steps 1 and 2. `$l` and `$r` have a `$`, so they are values: the two rows themselves.
 - `if has($e.key) and .[$e.key] != $e.value then error(...)`: the row built so far already has this field, with another value.
 - `else .[$e.key] = $e.value`: a new field is added. A field with the same value on both sides is set to what it already is, which is how the join key ends up in the output once.
@@ -241,6 +243,8 @@ def _matches($right; lkey; rkey; cond):
      | {l: $l, m: [(if $k == null then empty else $ix[$k | tojson][]? end)
                    | select(.value as $r | {l: $l, r: $r} | cond)]}];
 ```
+
+Built into jq: `empty`, `from_entries`, `group_by`, `map`, `select`, `to_entries`, `tojson`.
 
 - The first two lines build `$ix`: steps 1 to 3. Dropping the null group is half of the rule "a null key never matches".
 - `[.[] as $l | ($l | lkey) as $k | {l: $l, m: [...]}]`: step 4, one entry per left row.
@@ -432,6 +436,8 @@ def join_on($right; lkey; rkey; cond; $kind):
     else error("join_on: unknown kind \($kind | tojson)") end;
 ```
 
+Built into jq: `error`, `from_entries`, `length`, `not`, `select`, `to_entries`, `tojson`, `tostring`. From this library: `_matches`, `_merge`.
+
 - `_matches(...) as $rows`: step 1.
 - `"inner"`: `.m[] | _merge($l; .value)` gives one row per match and nothing for an entry with no matches.
 - `"left"`: step 2.
@@ -484,11 +490,15 @@ Request 1 matches the second record. Request 2 matches neither.
 def join_inner($right; lkey; rkey): join_on($right; lkey; rkey; true; "inner");
 ```
 
+From this library: `join_on`.
+
 `join_left/3`, line 247:
 
 ```jq
 def join_left($right; lkey; rkey): join_on($right; lkey; rkey; true; "left");
 ```
+
+From this library: `join_on`.
 
 `join_full/3`, line 248:
 
@@ -496,17 +506,23 @@ def join_left($right; lkey; rkey): join_on($right; lkey; rkey; true; "left");
 def join_full($right; lkey; rkey): join_on($right; lkey; rkey; true; "full");
 ```
 
+From this library: `join_on`.
+
 `join_semi/3`, line 249:
 
 ```jq
 def join_semi($right; lkey; rkey): join_on($right; lkey; rkey; true; "semi");
 ```
 
+From this library: `join_on`.
+
 `join_anti/3`, line 250:
 
 ```jq
 def join_anti($right; lkey; rkey): join_on($right; lkey; rkey; true; "anti");
 ```
+
+From this library: `join_on`.
 
 Each line passes its three arguments through to `join_on` and adds `true` and the kind.
 
@@ -561,6 +577,8 @@ Step 1: `_matches`, as shown in its own section. Step 2, on the entry of request
 def join_nest($right; lkey; rkey; cond; $as):
   [_matches($right; lkey; rkey; cond)[] | .l + {($as): [.m[].value]}];
 ```
+
+From this library: `_matches`.
 
 - `[_matches(...)[] | ...]`: one output row per entry, so one per left row.
 - `.l + {($as): [.m[].value]}`: step 2. The parentheses in `{($as): ...}` make the field name come from the variable. A left row that already has a field of that name gets it replaced.
@@ -663,6 +681,8 @@ def lookup($dim; lkey; dkey; $as):
   | map(. as $l | ($l | lkey) as $k | $l + {($as): (if $k == null then null else $ix[$k | tojson] end)});
 ```
 
+Built into jq: `error`, `from_entries`, `group_by`, `length`, `map`, `select`, `tojson`.
+
 - `$dim | group_by(dkey)`: step 1.
 - `select((.[0] | dkey) != null)`: dimension rows with a null key are left out of the index.
 - `if length > 1 then error(...)`: the duplicate-key error.
@@ -733,6 +753,8 @@ Two values, one per pair. Both halves are true for the backup job. For the repor
 def join_overlap($right; lkey; rkey; lstart; lend; rstart; rend):
   join_on($right; lkey; rkey; (.l | lstart) < (.r | rend) and (.r | rstart) < (.l | lend); "inner");
 ```
+
+From this library: `join_on`.
 
 - `(.l | lstart) < (.r | rend) and (.r | rstart) < (.l | lend)`: each interval starts before the other ends. The `<` and not `<=` is what makes the end open.
 - The condition is checked only for pairs with the same key, so the cost follows the number of same-key pairs.
@@ -905,6 +927,8 @@ def join_asof($right; lkey; rkey; ltime; rtime; $max_age):
        | if $j < 0 or ($max_age != null and $t - $g.t[$j] > $max_age) then $l else _merge($l; $g.rows[$j]) end
        end];
 ```
+
+Built into jq: `bsearch`, `from_entries`, `group_by`, `map`, `select`, `sort_by`, `tojson`, `until`. From this library: `_merge`.
 
 `join_asof/5`, line 291:
 

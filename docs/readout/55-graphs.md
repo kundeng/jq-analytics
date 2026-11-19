@@ -101,6 +101,8 @@ Step 3, `from_entries`: the pairs become one object, the result at the top.
 def _adj(from; to): group_by(from) | map({key: (.[0] | from | tojson), value: map(to)}) | from_entries;
 ```
 
+Built into jq: `from_entries`, `group_by`, `map`, `tojson`.
+
 - `group_by(from)` gathers each node's edges. Nothing is appended edge by edge.
 - `.[0] | from | tojson` takes the node from the group's first edge; every edge of a group starts at the same node.
 - `map(to)` runs `to` on each edge of the group.
@@ -184,6 +186,8 @@ def _search($adj; $start):
   | [.seen[]] | sort_by(.[0]) | map({node: .[1], hops: .[2], via: .[3]});
 ```
 
+Built into jq: `length`, `map`, `sort_by`, `to_entries`, `tojson`, `tonumber`, `tostring`, `until`.
+
 - The first line is the starting state: the start is seen at position 0 with 0 hops and no `via`.
 - `until((.frontier | length) == 0; ...)` repeats the round until a round finds nothing new.
 - `$f[] as $u | $adj[$u | tojson][]? | [$u, .]` emits one `[from, to]` pair per edge out of the frontier. The `?` covers a node with no key in `$adj`, such as `package`.
@@ -231,6 +235,8 @@ Two values. From `compile` the build can go on to `test` and then `package`. Fro
 def reachable(from; to; $start): _adj(from; to) as $adj | _search($adj; $start) | .[1:] | map(.node);
 ```
 
+Built into jq: `map`. From this library: `_adj`, `_search`.
+
 `hops/3`, lines 458 to 461:
 
 ```jq
@@ -239,6 +245,8 @@ def reachable(from; to; $start): _adj(from; to) as $adj | _search($adj; $start) 
 # first, and within one distance in the order the search meets them.
 def hops(from; to; $start): _adj(from; to) as $adj | _search($adj; $start) | map({node, hops});
 ```
+
+Built into jq: `map`. From this library: `_adj`, `_search`.
 
 Both run `_adj` and then `_search`, and differ in what they keep of the search result:
 
@@ -318,6 +326,8 @@ def shortest_path(from; to; $start; $goal):
     else {path: ([$goal | recurse($ix[tojson].via | select(. != null))] | reverse), cost: $ix[$goal | tojson].hops}
     end;
 ```
+
+Built into jq: `recurse`, `reverse`, `select`, `tojson`. From this library: `_adj`, `_search`.
 
 - `reduce _search(...)[] as $r ({}; ...)` builds `$ix`, one entry per node the search met.
 - `if $ix[$goal | tojson] == null then null`: a goal the search never met has no route.
@@ -442,6 +452,8 @@ def shortest_path(from; to; weight; $start; $goal):
     end;
 ```
 
+Built into jq: `del`, `error`, `first`, `from_entries`, `group_by`, `length`, `map`, `min_by`, `recurse`, `reverse`, `select`, `tojson`, `type`, `until`.
+
 - `first(.[] | (weight) | select(type != "number" or . < 0) | [.]) // null` finds the first bad weight. It is wrapped in an array so that a weight of `null` or `false` is still found.
 - Each entry of `d` and `open` is `[cost, order found, node, via]`.
 - `min_by([.[0], .[1]])` picks the lowest cost, and on a tie the node found earliest. So among routes of equal cost the result is the one found first.
@@ -544,6 +556,8 @@ def topo_order(from; to):
     else [.out[][]] | sort_by([.level, .node]) end;
 ```
 
+Built into jq: `error`, `length`, `map`, `select`, `sort`, `sort_by`, `tojson`, `tostring`, `unique`, `until`. From this library: `_adj`.
+
 - `[.[] | (from), (to)] | unique` is `$nodes`. `$deg0` starts every node at 0 and adds one per edge to the edge's target.
 - `left` counts the nodes with no level yet. `out` collects each round's rows under the round number, for the same reason `_search` writes to objects.
 - `.frontier = ([.next[]] | sort)`: the next frontier in sorted order, so the result does not depend on the order of the input edges.
@@ -626,6 +640,8 @@ def components(a; b):
       end)
   | [.parts[][]] | sort_by(.node);
 ```
+
+Built into jq: `from_entries`, `group_by`, `map`, `sort_by`, `tojson`, `tostring`, `unique`. From this library: `_search`.
 
 - `[.[] | [(a), (b)], [(b), (a)]]` emits each edge twice, once per direction, before grouping.
 - `reduce $nodes[] as $n (...)` visits the nodes in sorted order. `if .seen[$n | tojson] then .` skips a node that an earlier search met.

@@ -80,8 +80,8 @@ Groups are formed by the tag's value and tables are named by its text. The numbe
 - `if $dup != null then error(...)`: the message is built from the two clashing entries' tags and their shared key.
 - `else map({key, value}) | from_entries end`: step 4. `{key, value}` is short for `{key: .key, value: .value}`.
 
-## keep/1
-<!-- code: 23493c55 -->
+## keep_tables/1
+<!-- code: cf8264d7 -->
 
 Only the named tables of an object of tables. It is used to drop work tables before a heavy step or before output.
 
@@ -90,7 +90,7 @@ Only the named tables of an object of tables. It is used to drop work tables bef
 Three tables, of which two are wanted. The list also names a table that does not exist.
 
 ```jq run
-{lease: [{ip: "a"}, {ip: "b"}], hit: [{ip: "a"}], scratch: [{n: 1}]} | keep(["lease", "hit", "missing"])
+{lease: [{ip: "a"}, {ip: "b"}], hit: [{ip: "a"}], scratch: [{n: 1}]} | keep_tables(["lease", "hit", "missing"])
 ```
 
 `scratch` is gone. `missing` is not in the input and is ignored: no error, and no empty table is made for it.

@@ -72,7 +72,7 @@
     "name": "windows",
     "input": "tests/fixtures/window.json",
     "sql": "windows.sql",
-    "jq": "over(.g; .t; \"rn\"; row_number) | over(.g; .t; \"lag1\"; lag(.v; 1)) | over(.g; .t; \"rs\"; running_sum(.v)) | over(.g; .t; \"rk\"; rank_by(.t)) | over(.g; .t; \"mm\"; moving_mean(.v; 2)) | map({i, rn, lag1, rs, rk, mm})"
+    "jq": "window(.g; .t; \"rn\"; row_number) | window(.g; .t; \"lag1\"; lag(.v; 1)) | window(.g; .t; \"rs\"; running_sum(.v)) | window(.g; .t; \"rk\"; rank_by(.t)) | window(.g; .t; \"mm\"; moving_mean(.v; 2)) | map({i, rn, lag1, rs, rk, mm})"
   },
   {
     "name": "unpivot",
@@ -102,13 +102,13 @@
     "name": "cast",
     "input": "tests/fixtures/raw_strings.json",
     "sql": "cast.sql",
-    "jq": "cast({n: \"number\", t: \"timestamp\", b: \"boolean\"}) | map({i, n, t, b})"
+    "jq": "cast_columns({n: \"number\", t: \"timestamp\", b: \"boolean\"}) | map({i, n, t, b})"
   },
   {
     "name": "cast_error",
     "input": "tests/fixtures/bad_number.json",
     "expect_error": "is not a number",
-    "jq": "cast({n: \"number\"})"
+    "jq": "cast_columns({n: \"number\"})"
   },
   {
     "name": "split_by_shape",
@@ -128,7 +128,7 @@
         "user"
       ]
     },
-    "jq": "split_by(.event_type) | keep([\"firewall\"]) | shape | map_values(.fields)"
+    "jq": "split_by(.event_type) | keep_tables([\"firewall\"]) | shape | map_values(.fields)"
   },
   {
     "name": "join_on_range_left",
@@ -293,19 +293,19 @@
     "name": "context_sales_levels",
     "input": "tests/fixtures/sales.json",
     "sql": "context_sales_levels.sql",
-    "jq": "def revenue: map(.qty * .price) | add; rollup_levels([[\"region\", \"product\"], [\"region\"], [\"product\"], []]; {revenue: measure(revenue), share_of_region: (share(revenue; without(\"product\")) | round_to(4)), share_of_all: (share(revenue; keep_only([])) | round_to(4)), a_revenue: calc(revenue; with_filter({product: \"A\"}))}) | map(del(.level) | {region: null, product: null} + .)"
+    "jq": "def revenue: map(.qty * .price) | add; rollup_levels([[\"region\", \"product\"], [\"region\"], [\"product\"], []]; {revenue: measure(revenue), share_of_region: (share_of(revenue; without_filter(\"product\")) | round_to(4)), share_of_all: (share_of(revenue; only_filters([])) | round_to(4)), a_revenue: measure_with(revenue; with_filter({product: \"A\"}))}) | map(del(.level) | {region: null, product: null} + .)"
   },
   {
     "name": "context_sales_time",
     "input": "tests/fixtures/sales.json",
     "sql": "context_sales_time.sql",
-    "jq": "def revenue: map(.qty * .price) | add; rollup([\"region\", \"month\"]; {revenue: measure(revenue), prior: calc(revenue; shift(\"month\"; -1)), to_date: calc(revenue; to_date(\"month\"))}) | map(del(.level) | {region: null, month: null} + .)"
+    "jq": "def revenue: map(.qty * .price) | add; rollup([\"region\", \"month\"]; {revenue: measure(revenue), prior: measure_with(revenue; shift(\"month\"; -1)), to_date: measure_with(revenue; to_date(\"month\"))}) | map(del(.level) | {region: null, month: null} + .)"
   },
   {
     "name": "context_scan_fallback",
     "input": "tests/fixtures/sales.json",
     "sql": "context_scan_fallback.sql",
-    "jq": "def revenue: map(.qty * .price) | add; rollup_levels([[\"region\", \"product\"]]; {share_of_region: (share(revenue; without(\"product\")) | round_to(4)), months_to_feb: calc(length; with_filter({month: {from: \"2026-01\", to: \"2026-02\"}}))}) | map(del(.level))"
+    "jq": "def revenue: map(.qty * .price) | add; rollup_levels([[\"region\", \"product\"]]; {share_of_region: (share_of(revenue; without_filter(\"product\")) | round_to(4)), months_to_feb: measure_with(length; with_filter({month: {from: \"2026-01\", to: \"2026-02\"}}))}) | map(del(.level))"
   },
   {
     "name": "context_empty_input",
@@ -341,7 +341,7 @@
         "upto": 3
       }
     ],
-    "jq": "[{g: \"a\", x: 1}, {x: 2}, {g: \"a\", x: 3}] | rollup([\"g\"]; {n: measure(length), all: calc(length; without(\"g\")), next: calc(length; shift(\"g\"; 1)), upto: calc(length; to_date(\"g\"))})"
+    "jq": "[{g: \"a\", x: 1}, {x: 2}, {g: \"a\", x: 3}] | rollup([\"g\"]; {n: measure(length), all: measure_with(length; without_filter(\"g\")), next: measure_with(length; shift(\"g\"; 1)), upto: measure_with(length; to_date(\"g\"))})"
   },
   {
     "name": "made_up_resolved_summary",
@@ -369,7 +369,7 @@
     "input": "tests/fixtures/made_up_incidents.json",
     "view": "made_up_incidents.sql",
     "sql": "lag_within_day.sql",
-    "jq": "tz(\"America/Detroit\") as $det | map(.opened = (.opened_at | parse_ts) | .day = (.opened | local_time($det) | .date)) | over(.day; .opened; \"prev\"; lag(.opened; 1)) | over(.day; .opened; \"rn\"; row_number) | map(if .prev == null then null else (.opened - .prev) / 3600 end) as $g | {days: (map(.day) | unique | length), gaps: ($g | count_nonnull), median: ($g | quantile_cont(0.5) | round_to(4)), p90: ($g | quantile_disc(0.9) | round_to(4)), max_rn: (map(.rn) | max)}"
+    "jq": "tz(\"America/Detroit\") as $det | map(.opened = (.opened_at | parse_ts) | .day = (.opened | local_time($det) | .date)) | window(.day; .opened; \"prev\"; lag(.opened; 1)) | window(.day; .opened; \"rn\"; row_number) | map(if .prev == null then null else (.opened - .prev) / 3600 end) as $g | {days: (map(.day) | unique | length), gaps: ($g | count_nonnull), median: ($g | quantile_cont(0.5) | round_to(4)), p90: ($g | quantile_disc(0.9) | round_to(4)), max_rn: (map(.rn) | max)}"
   },
   {
     "name": "made_up_asof_last_resolution",
@@ -390,13 +390,13 @@
     "input": "tests/fixtures/made_up_incidents.json",
     "view": "made_up_incidents.sql",
     "sql": "context_months.sql",
-    "jq": "def requests: length; def share_within_day: if length == 0 then null else (map(select(.hours != null and .hours <= 24)) | length) / length end; def open_at($d): map(select(.day <= $d and (.resolved_day == null or .resolved_day > $d))) | length; map(. + {month: .opened_at[0:7], day: .opened_at[0:10], resolved_day: (if .resolved_at == \"\" then null else .resolved_at[0:10] end), hours: hours_between(.opened_at | parse_ts; .resolved_at | parse_ts)}) | rollup([\"month\"]; {requests: measure(requests), share_of_all: (share(requests; without(\"month\")) | round_to(4)), within_day: (measure(share_within_day) | round_to(4)), prior_within_day: (calc(share_within_day; shift(\"month\"; -1)) | round_to(4)), median_hours: (measure(map(.hours) | median) | round_to(2)), requests_to_date: calc(requests; to_date(\"month\")), open_at_end: ((.rows | map(.day) | max) as $d | .all | open_at($d))}) | map(del(.level) | {month: null} + .)"
+    "jq": "def requests: length; def share_within_day: if length == 0 then null else (map(select(.hours != null and .hours <= 24)) | length) / length end; def open_at($d): map(select(.day <= $d and (.resolved_day == null or .resolved_day > $d))) | length; map(. + {month: .opened_at[0:7], day: .opened_at[0:10], resolved_day: (if .resolved_at == \"\" then null else .resolved_at[0:10] end), hours: hours_between(.opened_at | parse_ts; .resolved_at | parse_ts)}) | rollup([\"month\"]; {requests: measure(requests), share_of_all: (share_of(requests; without_filter(\"month\")) | round_to(4)), within_day: (measure(share_within_day) | round_to(4)), prior_within_day: (measure_with(share_within_day; shift(\"month\"; -1)) | round_to(4)), median_hours: (measure(map(.hours) | median) | round_to(2)), requests_to_date: measure_with(requests; to_date(\"month\")), open_at_end: ((.rows | map(.day) | max) as $d | .all | open_at($d))}) | map(del(.level) | {month: null} + .)"
   },
   {
     "name": "made_up_context_two_levels",
     "input": "tests/fixtures/made_up_incidents.json",
     "sql": "made_up_two_levels.sql",
-    "jq": "map(. + {month: .opened_at[0:7]}) | rollup([\"month\", \"state\"]; {requests: measure(length), share_of_month: (if .at | has(\"month\") then share(length; without(\"state\")) | round_to(4) else null end)}) | map(del(.level) | {month: null, state: null} + .) | sort_by(.month == null, .month, .state == null, .state)"
+    "jq": "map(. + {month: .opened_at[0:7]}) | rollup([\"month\", \"state\"]; {requests: measure(length), share_of_month: (if .at | has(\"month\") then share_of(length; without_filter(\"state\")) | round_to(4) else null end)}) | map(del(.level) | {month: null, state: null} + .) | sort_by(.month == null, .month, .state == null, .state)"
   },
   {
     "name": "malloy_nest",
@@ -408,7 +408,7 @@
     "name": "malloy_all_exclude",
     "input": "tests/fixtures/sales.json",
     "sql": "malloy_all_exclude.sql",
-    "jq": "def rev: map(.qty * .price) | add; rollup_levels([[\"region\", \"product\"]]; {revenue: measure(rev), total: calc(rev; keep_only([])), region_total: calc(rev; keep_only([\"region\"])), product_total: calc(rev; without(\"region\"))}) | map(del(.level))"
+    "jq": "def rev: map(.qty * .price) | add; rollup_levels([[\"region\", \"product\"]]; {revenue: measure(rev), total: measure_with(rev; only_filters([])), region_total: measure_with(rev; only_filters([\"region\"])), product_total: measure_with(rev; without_filter(\"region\"))}) | map(del(.level))"
   },
   {
     "name": "unnest",
@@ -657,7 +657,7 @@
     "name": "lead",
     "input": "tests/fixtures/window.json",
     "sql": "lead.sql",
-    "jq": "over(.g; .t; \"lead1\"; lead(.v; 1)) | over(.g; .t; \"lead2\"; lead(.v; 2)) | map({i, lead1, lead2})"
+    "jq": "window(.g; .t; \"lead1\"; lead(.v; 1)) | window(.g; .t; \"lead2\"; lead(.v; 2)) | map({i, lead1, lead2})"
   },
   {
     "name": "tz_offset",
@@ -934,13 +934,13 @@
     "name": "on_calendar",
     "input": "tests/fixtures/sales_gap.json",
     "sql": "on_calendar.sql",
-    "jq": "def revenue: map(.amount) | add; (calendar(\"2025-12-01\"; \"2026-04-30\") | map(.year_month) | unique) as $months | rollup([\"region\", \"month\"]; {revenue: measure(revenue), prior: calc(revenue; on_calendar(\"month\"; $months) | shift(\"month\"; -1)), to_date: calc(revenue; on_calendar(\"month\"; $months) | to_date(\"month\"))}) | map(select(.level == \"region/month\") | del(.level))"
+    "jq": "def revenue: map(.amount) | add; (calendar(\"2025-12-01\"; \"2026-04-30\") | map(.year_month) | unique) as $months | rollup([\"region\", \"month\"]; {revenue: measure(revenue), prior: measure_with(revenue; on_calendar(\"month\"; $months) | shift(\"month\"; -1)), to_date: measure_with(revenue; on_calendar(\"month\"; $months) | to_date(\"month\"))}) | map(select(.level == \"region/month\") | del(.level))"
   },
   {
     "name": "on_calendar_dax",
     "input": "tests/fixtures/sales_gap.json",
     "sql": "on_calendar_dax.sql",
-    "jq": "def revenue: map(.amount) | add; (calendar(\"2025-12-01\"; \"2026-04-30\") | map(.year_month) | unique) as $months | rollup([\"region\", \"month\"]; {revenue: measure(revenue), prior: calc(revenue; on_calendar(\"month\"; $months) | shift(\"month\"; -1)), to_date: calc(revenue; on_calendar(\"month\"; $months) | to_date(\"month\"))}) | map(select(.level == \"region/month\") | del(.level))"
+    "jq": "def revenue: map(.amount) | add; (calendar(\"2025-12-01\"; \"2026-04-30\") | map(.year_month) | unique) as $months | rollup([\"region\", \"month\"]; {revenue: measure(revenue), prior: measure_with(revenue; on_calendar(\"month\"; $months) | shift(\"month\"; -1)), to_date: measure_with(revenue; on_calendar(\"month\"; $months) | to_date(\"month\"))}) | map(select(.level == \"region/month\") | del(.level))"
   },
   {
     "name": "on_calendar_value_outside",
@@ -959,7 +959,7 @@
         "prior": 45
       }
     ],
-    "jq": "def revenue: map(.amount) | add; map(select(.region == \"east\")) | rollup([\"month\"]; {prior: calc(revenue; on_calendar(\"month\"; [\"2026-02\", \"2026-03\", \"2026-04\"]) | shift(\"month\"; -1))}) | map(select(.level == \"month\") | del(.level))"
+    "jq": "def revenue: map(.amount) | add; map(select(.region == \"east\")) | rollup([\"month\"]; {prior: measure_with(revenue; on_calendar(\"month\"; [\"2026-02\", \"2026-03\", \"2026-04\"]) | shift(\"month\"; -1))}) | map(select(.level == \"month\") | del(.level))"
   },
   {
     "name": "funnel_walkthrough",
@@ -1627,7 +1627,7 @@
     "name": "hardening_shift_no_members",
     "input": "tests/fixtures/hardening.json",
     "expect_error": "is not a level of this report",
-    "jq": ".sales | rollup([\"r\"]; {v: calc(length; with_filter({m: \"2026-01\"}) | shift(\"m\"; 1))})"
+    "jq": ".sales | rollup([\"r\"]; {v: measure_with(length; with_filter({m: \"2026-01\"}) | shift(\"m\"; 1))})"
   },
   {
     "name": "hardening_rows_from_map_clash",
@@ -1680,6 +1680,6 @@
         "b": null
       }
     ],
-    "jq": ".cast_missing | cast({a: \"number\", b: \"number\"})"
+    "jq": ".cast_missing | cast_columns({a: \"number\", b: \"number\"})"
   }
 ]

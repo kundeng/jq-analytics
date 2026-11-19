@@ -42,6 +42,8 @@ So `funnel_steps({user}; ...)` gives rows with a `user` column, and `funnel_step
 def _entity_key: if type == "object" then . else {key: .} end;
 ```
 
+Built into jq: `type`.
+
 One `if`: `type == "object"` decides.
 
 ## _funnel_check
@@ -79,6 +81,8 @@ def _funnel_check(time; step; $steps):
     | if $bad != null then error("funnel: an event of step \($bad[0] | tojson) has no time") else . end
   end;
 ```
+
+Built into jq: `any`, `error`, `first`, `group_by`, `length`, `map`, `select`, `tojson`, `unique`.
 
 - `($steps | unique | length) != ($steps | length)`: `unique` removes repeats, so a shorter list means a step is there twice. `group_by(.) | map(select(length > 1)[0])[0]` finds one repeated name for the message.
 - `first(.[] | select(...) | [step]) // null` finds the first event whose step is in the list and whose time is null. The step is wrapped in an array so that a step named `false` or `null` still counts as found.
@@ -235,6 +239,8 @@ def funnel_steps(entity; time; step; $steps; $within):
      | select($best != null) | $k + {depth: ($best | length), times: $best}];
 ```
 
+Built into jq: `any`, `first`, `length`, `map`, `not`, `range`, `select`, `sort`. From this library: `_entity_key`, `_funnel_check`, `_groups`.
+
 - `map(select((step) as $s | any($steps[]; . == $s)))` keeps the events of listed steps.
 - `$k` is the entity key as fields, through `_entity_key`. `$t` is the list of step 2.
 - The outer `reduce` runs over `$t[0]`, the first-step times. Its state is the best chain so far, null at the start. `if . != null and length == $n then .` skips the rest once a complete chain is found.
@@ -320,6 +326,8 @@ def funnel(entity; time; step; $steps; $within):
         from_first: (if $c[0] == 0 then null else $c[$i] / $c[0] end)}];
 ```
 
+Built into jq: `length`, `map`, `range`, `select`. From this library: `funnel_steps`.
+
 - `from_previous` is `$c[$i] / $c[$i - 1]`, null on the first step and where the previous count is 0.
 - `from_first` is `$c[$i] / $c[0]`, null where the first count is 0.
 - An entity with depth 3 is counted at steps 1, 2 and 3, so the counts never grow from one step to the next.
@@ -352,6 +360,8 @@ The keys are the periods as JSON text. `"2026-03"` is at position 2. A period th
 def _period_pos: . as $p | reduce range(0; length) as $i ({}; .[$p[$i] | tojson] = $i);
 ```
 
+Built into jq: `length`, `range`, `tojson`.
+
 `_period_idx/3`, lines 998 to 1000:
 
 ```jq
@@ -359,6 +369,8 @@ def _period_idx(period; $pos; $who):
   (period) as $p | $pos[$p | tojson] as $i
   | if $i == null then error("\($who): period \($p | tojson) is not in the period list") else $i end;
 ```
+
+Built into jq: `error`, `tojson`.
 
 - `_period_pos`: `reduce range(0; length) as $i ({}; .[$p[$i] | tojson] = $i)` writes each period's position under its JSON text.
 - `_period_idx`: `(period) as $p` runs the caller's filter on the event; `$pos[$p | tojson]` is the position, and null means not in the list.
@@ -426,6 +438,8 @@ def cohorts(entity; period; $periods):
   ($periods | _period_pos) as $pos
   | [_groups(entity)[] | (.[0] | entity | _entity_key) + {cohort: $periods[map(_period_idx(period; $pos; "cohorts")) | min]}];
 ```
+
+Built into jq: `map`, `min`. From this library: `_entity_key`, `_groups`, `_period_idx`, `_period_pos`.
 
 - `(.[0] | entity | _entity_key)` is the entity's key as fields.
 - `$periods[map(_period_idx(period; $pos; "cohorts")) | min]`: the positions, their minimum, and the period at that position.
@@ -524,6 +538,8 @@ def retention(entity; period; $periods):
      | {cohort: $periods[$c], period: $periods[$p], offset: ($p - $c), entities: $n,
         cohort_size: ($m | length), rate: ($n / ($m | length))}];
 ```
+
+Built into jq: `from_entries`, `group_by`, `length`, `map`, `min`, `range`, `select`, `tostring`, `unique`. From this library: `_groups`, `_period_idx`, `_period_pos`.
 
 - `{c: min, a: unique}` runs on one entity's list of positions.
 - `range(0; $np) as $c | ($byc[$c | tostring] // []) as $m | select(($m | length) > 0)` walks the periods in order and keeps those that are some entity's cohort.
