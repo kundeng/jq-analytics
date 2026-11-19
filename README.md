@@ -53,9 +53,9 @@ An event log is not a shape: its rows are a table, and the question decides whet
 
 ```mermaid
 flowchart LR
-  A["rows of strings<br/>(Splunk, ServiceNow)"] --> B["types<br/>cast, parse_ts"]
+  A["rows of strings<br/>(Splunk, ServiceNow)"] --> B["types<br/>cast_columns, parse_ts"]
   B --> C["time<br/>tz, local_time,<br/>hours_between"]
-  C --> D["tables<br/>group_agg, join_*,<br/>join_asof, over,<br/>pivot, unpivot"]
+  C --> D["tables<br/>group_agg, join_*,<br/>join_asof, window,<br/>pivot, unpivot"]
   D --> E["math over a list<br/>mean, var_*, stddev_*,<br/>quantile_*, round_to"]
   E --> F["answer (JSON)"]
   T["zone tables<br/>generated block<br/>inside analytics.jq"] -.-> C
