@@ -28,11 +28,11 @@ On this page, in the order of the file:
 | Function | Whose | What it is for |
 |---|---|---|
 | `_iv_check` | Internal helper, not for callers | The input check of `intervals_from_events` |
-| `intervals_from_events` | Public function | Builds validity intervals from an event log |
+| `intervals_from_events` | Public function | Builds validity intervals from an event log: who held a resource (a seat, an address, a session id) and from when to when |
 | `join_within` | Public function | A left outer join of rows that have a time to the interval of the same key that contains that time |
 | `_iv_order_check` | Internal helper, not for callers | The input check shared by `merge_intervals` and `concurrency` |
 | `merge_intervals` | Public function | Per key, intervals that overlap or touch become one |
-| `concurrency` | Public function | How many intervals are open over time |
+| `concurrency` | Public function | How many intervals are open over time: one row `{t, open}` per moment the count changes |
 
 ---
 

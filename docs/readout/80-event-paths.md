@@ -22,9 +22,9 @@ On this page, in the order of the file:
 | `_entity_key` | Internal helper, not for callers | Turns an entity key into the fields that start an output row |
 | `_funnel_check` | Internal helper, not for callers | The input check of `funnel_steps` |
 | `funnel_steps` | Public function | How far each entity gets through an ordered list of steps |
-| `funnel` | Public function | The funnel as a table |
+| `funnel` | Public function | The funnel as a table: one row per step with how many entities reached it, and that count as a fraction of the previous step's and of the first step's |
 | `_period_pos`, `_period_idx` | Internal helpers, not for callers | Two helpers of `cohorts` and `retention` |
-| `cohorts` | Public function | One row per entity |
+| `cohorts` | Public function | One row per entity: its key and `cohort`, the earliest period in which it has an event |
 | `retention` | Public function | Of the entities first seen in a period, how many have at least one event in each later period |
 
 ---

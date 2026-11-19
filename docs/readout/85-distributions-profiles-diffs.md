@@ -12,10 +12,10 @@ On this page, in the order of the file:
 |---|---|---|
 | `mode` | Public function | The most frequent non-null value of a list |
 | `value_counts` | Public function | One row per distinct non-null value of a list, with its count and its share of the non-null values, most frequent first |
-| `bin_edges`, `histogram` | Public functions | A histogram of a list of numbers |
-| `corr` | Public function | Pearson's correlation of two columns |
-| `profile` | Public function | A first look at a table |
-| `_diff_index`, `diff_tables` | Public functions and internal helpers | `diff_tables` reports what changed between two versions of a table that share a key |
+| `bin_edges`, `histogram` | Public functions | A histogram of a list of numbers: how many fall in each bin |
+| `corr` | Public function | Pearson's correlation of two columns: 1 when they rise together on a straight line, -1 when one falls as the other rises, near 0 when there is no straight-line relation |
+| `profile` | Public function | A first look at a table: one row per column, saying how many rows have it, how many are null or empty, how many distinct values it holds, of which types, and its smallest and largest value |
+| `_diff_index`, `diff_tables` | Public functions and internal helpers | `diff_tables` reports what changed between two versions of a table that share a key: one row per key that was added, removed or changed |
 
 ---
 

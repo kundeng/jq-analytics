@@ -30,11 +30,11 @@ On this page, in the order of the file:
 | Function | Whose | What it is for |
 |---|---|---|
 | `_time_check` | Internal helper, not for callers | A guard that `state_blocks`, `transitions` and `sessions` each call first |
-| `_blocks` | Internal helper, not for callers | The blocks of one entity |
-| `state_blocks` | Public function | A table of events into a table of blocks |
-| `transitions` | Public function | One row per change of state |
-| `sessions` | Public function | Events grouped into sessions |
-| `runs` | Public function | Run-length encoding |
+| `_blocks` | Internal helper, not for callers | The blocks of one entity: its events, already sorted by time, with consecutive events of the same state merged |
+| `state_blocks` | Public function | A table of events into a table of blocks: per entity, how long it spent in each state, in order |
+| `transitions` | Public function | One row per change of state: from which state, to which, and when |
+| `sessions` | Public function | Events grouped into sessions: per entity, a new session starts when the gap since the previous event is greater than a limit |
+| `runs` | Public function | Run-length encoding: consecutive items with the same value become one row with the value, where the run starts and how long it is |
 
 ---
 

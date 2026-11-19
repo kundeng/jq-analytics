@@ -15,8 +15,8 @@ flowchart TD
   T[rows] --> RL[rollup_levels: build members and index once; one context per group per level]
   RL --> CELL[cell expression, with the context as input]
   CELL --> M[measure: f on the cell's rows]
-  CELL --> CALC[calc: change the context, find its rows, run f]
-  CH[without, keep_only, with_filter, shift, to_date, on_calendar] --> CALC
+  CELL --> CALC[measure_with: change the context, find its rows, run f]
+  CH[without_filter, only_filters, with_filter, shift, to_date, on_calendar] --> CALC
   CALC --> CR[_ctx_rows: from the index when it can, else _where scans]
 ```
 
@@ -39,12 +39,12 @@ On this page, in the order of the file:
 | Function | Whose | What it is for |
 |---|---|---|
 | `_where` | Internal helper, not for callers | The rows that match a filter object, found by testing every row |
-| `_ctx_rows` | Internal helper, not for callers | Input |
-| `rollup_levels` | Public function | A report at several levels |
-| `rollup` | Public function | The levels of a hierarchy |
+| `_ctx_rows` | Internal helper, not for callers | Input: a context |
+| `rollup_levels` | Public function | A report at several levels: one output row per group at each level listed |
+| `rollup` | Public function | The levels of a hierarchy: all the fields, then one fewer from the right, down to the grand total |
 | `measure`, `measure_with`, `share_of` | Public functions | The three functions a cell is written with |
 | `without_filter`, `only_filters`, `with_filter` | Public functions | Three context changes that edit `.at`, the filter object, and nothing else |
-| `shift` | Public function | A context change that moves the filter on `$dim` to a neighbouring value |
+| `shift` | Public function | A context change that moves the filter on `$dim` to a neighbouring value: `shift("month"; -1)` is the previous month, `shift("month"; 1)` the next |
 | `on_calendar` | Public function | Makes `shift` and `to_date` on `$dim` step through a list of periods the caller gives, in place of the values present in the data |
 | `to_date` | Public function | A context change that turns the filter on `$dim` into "everything up to and including this value", with the other filters kept |
 

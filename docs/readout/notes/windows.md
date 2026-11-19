@@ -2,7 +2,7 @@ Seven definitions. `window` does what SQL's `OVER (PARTITION BY ... ORDER BY ...
 
 ```mermaid
 flowchart TD
-  R[rows] --> P[over: split by part, sort each partition by ord]
+  R[rows] --> P[window: split by part, sort each partition by ord]
   P --> W[window function: array of rows in, array of values out]
   W --> B[values written back to the rows, in input order]
 ```

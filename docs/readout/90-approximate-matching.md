@@ -12,7 +12,7 @@ On this page, in the order of the file:
 |---|---|---|
 | `_bigrams`, `_dice` | Internal helpers, not for callers | The two helpers under `similarity` |
 | `similarity` | Public function | How alike two strings are, from 0 to 1 |
-| `join_fuzzy` | Public function | A left outer join on "most similar string" |
+| `join_fuzzy` | Public function | A left outer join on "most similar string": each left row gets the right row whose string is most like its own, if the similarity reaches a minimum |
 
 ---
 

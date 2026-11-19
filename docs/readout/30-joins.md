@@ -51,7 +51,7 @@ On this page, in the order of the file:
 |---|---|---|
 | `_merge` | Internal helper, not for callers | One left row and one right row made into one output row |
 | `_matches` | Internal helper, not for callers | The pairing step that every join here shares, except `lookup` and `join_asof` |
-| `join_on` | Public function | The general flat join |
+| `join_on` | Public function | The general flat join: one output row per matching pair, with the fields of both rows |
 | `join_inner`, `join_left`, `join_full`, `join_semi`, `join_anti` | Public functions | The five kinds of equality join under their own names |
 | `join_nest` | Public function | Every left row exactly once, with one new field holding the array of its matching right rows |
 | `lookup` | Public function | Attaches the one matching row of a second table under a new field |

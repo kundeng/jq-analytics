@@ -20,7 +20,7 @@ On this page, in the order of the file:
 |---|---|---|
 | `nonnull`, `count_nonnull`, `sum_nonnull`, `mean` | Public functions | The list without its nulls, and the count, sum and mean of what is left |
 | `min_nonnull`, `max_nonnull`, `min_by_nonnull`, `max_by_nonnull` | Public functions | The least and greatest value of a column, and the whole row that holds it |
-| `var_samp`, `var_pop`, `stddev_samp`, `stddev_pop` | Public functions | Variance and standard deviation |
+| `var_samp`, `var_pop`, `stddev_samp`, `stddev_pop` | Public functions | Variance and standard deviation: how far the values lie from their mean |
 | `quantile_disc`, `quantile_cont`, `median`, `quantiles_disc`, `quantiles_cont` | Public functions | The value below which a share `$p` of the data lies, with `$p` from 0 to 1 |
 | `round_to` | Public function | A number rounded to `$d` decimal places, as SQL's and a spreadsheet's `ROUND(x, d)` |
 

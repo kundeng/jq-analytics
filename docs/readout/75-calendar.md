@@ -20,10 +20,10 @@ On this page, in the order of the file:
 | Function | Whose | What it is for |
 |---|---|---|
 | `_cal_bad`, `_cal_date` | Internal helpers, not for callers | `_cal_date` turns the text `"YYYY-MM-DD"` into the epoch seconds of that day's midnight UTC, and refuses anything that is not a real date |
-| `_cal_p`, `_cal_iso_weeks` | Internal helpers, not for callers | Input |
+| `_cal_p`, `_cal_iso_weeks` | Internal helpers, not for callers | Input: a year |
 | `_cal_pad2` | Internal helper, not for callers | A number as text of at least two digits, for `2026-03` and `2026-W09` |
-| `_cal_midnight` | Internal helper, not for callers | Input |
-| `calendar` | Public function | A date table |
+| `_cal_midnight` | Internal helper, not for callers | Input: `$m`, midnight UTC of some date |
+| `calendar` | Public function | A date table: one row per day from `$from` to `$to`, both included |
 
 ---
 

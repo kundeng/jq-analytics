@@ -235,7 +235,7 @@ def whose(note: dict) -> str:
 def purpose(note: dict) -> str:
     """The note's first line of prose, up to its first full stop: what the function is for."""
     first = next((line.strip() for line in note["body"] if line.strip() and not line.startswith(("#", "<!--", "```", "|"))), "")
-    return re.split(r"(?<=[.:])\s", first, maxsplit=1)[0].rstrip(":.").replace("|", "\\|")
+    return re.split(r"(?<=\.)\s", first, maxsplit=1)[0].rstrip(":.").replace("|", "\\|")
 
 
 def sub_heading(line: str, lead: str) -> str:

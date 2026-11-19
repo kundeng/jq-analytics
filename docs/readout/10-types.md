@@ -9,7 +9,7 @@ On this page, in the order of the file:
 | Function | Whose | What it is for |
 |---|---|---|
 | `_ts_exact`, `parse_ts` | Public functions and internal helpers | `parse_ts` turns a timestamp string into seconds since 1970-01-01 UTC, the number that every time function in the library takes |
-| `cast_columns` | Public function | Gives the named columns of a table their types |
+| `cast_columns` | Public function | Gives the named columns of a table their types: text to number, timestamp or boolean, and anything to string |
 
 ---
 

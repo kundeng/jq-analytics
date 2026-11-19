@@ -34,7 +34,7 @@ flowchart LR
   N -- "unnest, flatten_fields" --> T
   K -- "rows_from_map" --> T
   X -- "nodes_from_nested" --> TR
-  E -- "cast, parse_ts" --> T
+  E -- "cast_columns, parse_ts" --> T
   E -- "split_by" --> S
   T -- "intervals_from_events, state_blocks, sessions" --> I
   T -- "lookup" --> ST

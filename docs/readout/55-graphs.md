@@ -36,12 +36,12 @@ On this page, in the order of the file:
 | Function | Whose | What it is for |
 |---|---|---|
 | `_adj` | Internal helper, not for callers | A lookup from a node to the list of nodes its edges lead to |
-| `_search` | Internal helper, not for callers | Breadth-first search from `$start` |
+| `_search` | Internal helper, not for callers | Breadth-first search from `$start`: every node that can be reached, the start first, in the order met |
 | `reachable`, `hops` | Public functions | `reachable` lists every node that can be reached from `$start` along the edges, nearest first |
 | `shortest_path` | Public function | The route from `$start` to `$goal` with the fewest edges, as `{path, cost}`, where `cost` is the number of edges |
 | `shortest_path` | Public function | The route with the lowest total weight, where `weight` is a filter giving each edge's weight |
-| `topo_order` | Public function | A dependency order |
-| `components` | Public function | Connected groups, with the edges read as undirected |
+| `topo_order` | Public function | A dependency order: one row per node with a `level`, such that every edge goes from a lower level to a higher one |
+| `components` | Public function | Connected groups, with the edges read as undirected: one row per node, `{node, component}`, where `component` is the smallest node of the node's group |
 
 ---
 

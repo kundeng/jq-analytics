@@ -8,8 +8,8 @@ On this page, in the order of the file:
 
 | Function | Whose | What it is for |
 |---|---|---|
-| `_groups` | Internal helper, not for callers | Rows into groups |
-| `group_agg` | Public function | Group a table by a key and compute something per group |
+| `_groups` | Internal helper, not for callers | Rows into groups: an array of groups, each an array of rows |
+| `group_agg` | Public function | Group a table by a key and compute something per group: one output row per group, holding the key and the results |
 
 ---
 

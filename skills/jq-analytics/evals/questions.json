@@ -1,0 +1,384 @@
+{
+ "about": "Questions with known answers, for trying the skill on an agent that has only skills/jq-analytics/ and analytics.jq. The agent must answer by running jq with the library. `expected` is the answer in a neutral form; any output that states the same facts passes. The answers were produced with the library and checked by hand.",
+ "questions": [
+  {
+   "id": "q01",
+   "tests": "types before arithmetic; nulls skipped; group order",
+   "question": "Mean RAM per site, and the number of hosts per site. RAM is text and one host has none.",
+   "input": {
+    "hosts": [
+     {
+      "host": "web01",
+      "site": "North",
+      "ram": "32",
+      "seen": "2026-11-02 14:00:00"
+     },
+     {
+      "host": "db01",
+      "site": "South",
+      "ram": "64",
+      "seen": "2026-11-02 03:30:00"
+     },
+     {
+      "host": "app01",
+      "site": "North",
+      "ram": "",
+      "seen": "2026-11-01 05:30:00"
+     },
+     {
+      "host": "app02",
+      "site": "North",
+      "ram": "16",
+      "seen": ""
+     }
+    ]
+   },
+   "expected": [
+    {
+     "site": "North",
+     "hosts": 3,
+     "mean_ram": 24
+    },
+    {
+     "site": "South",
+     "hosts": 1,
+     "mean_ram": 64
+    }
+   ]
+  },
+  {
+   "id": "q02",
+   "tests": "time zone, not the process zone; day boundary; switch to winter time",
+   "question": "On which local date in America/Detroit was each host last seen? The text is UTC. Leave out hosts never seen.",
+   "input": {
+    "hosts": [
+     {
+      "host": "web01",
+      "site": "North",
+      "ram": "32",
+      "seen": "2026-11-02 14:00:00"
+     },
+     {
+      "host": "db01",
+      "site": "South",
+      "ram": "64",
+      "seen": "2026-11-02 03:30:00"
+     },
+     {
+      "host": "app01",
+      "site": "North",
+      "ram": "",
+      "seen": "2026-11-01 05:30:00"
+     },
+     {
+      "host": "app02",
+      "site": "North",
+      "ram": "16",
+      "seen": ""
+     }
+    ]
+   },
+   "expected": {
+    "web01": "2026-11-02",
+    "db01": "2026-11-01",
+    "app01": "2026-11-01"
+   }
+  },
+  {
+   "id": "q03",
+   "tests": "funnel",
+   "question": "How many users reached each of the steps view, cart, pay, in that order?",
+   "input": {
+    "events": [
+     {
+      "user": "u1",
+      "t": 10,
+      "step": "view"
+     },
+     {
+      "user": "u1",
+      "t": 20,
+      "step": "cart"
+     },
+     {
+      "user": "u1",
+      "t": 30,
+      "step": "pay"
+     },
+     {
+      "user": "u2",
+      "t": 5,
+      "step": "view"
+     },
+     {
+      "user": "u2",
+      "t": 50,
+      "step": "cart"
+     },
+     {
+      "user": "u3",
+      "t": 7,
+      "step": "view"
+     }
+    ]
+   },
+   "expected": {
+    "view": 3,
+    "cart": 2,
+    "pay": 1
+   }
+  },
+  {
+   "id": "q04",
+   "tests": "graph direction: reverse reachability",
+   "question": "If db goes down, which services are affected, directly or through others? An edge from X to Y means X depends on Y.",
+   "input": {
+    "deps": [
+     {
+      "from": "web",
+      "to": "api"
+     },
+     {
+      "from": "api",
+      "to": "db"
+     },
+     {
+      "from": "batch",
+      "to": "db"
+     },
+     {
+      "from": "db",
+      "to": "disk"
+     }
+    ]
+   },
+   "expected": [
+    "api",
+    "batch",
+    "web"
+   ],
+   "compare": "as a set"
+  },
+  {
+   "id": "q05",
+   "tests": "dependency order",
+   "question": "Give an order in which the services can be started so that each starts after everything it depends on. An edge from X to Y means X depends on Y.",
+   "input": {
+    "deps": [
+     {
+      "from": "web",
+      "to": "api"
+     },
+     {
+      "from": "api",
+      "to": "db"
+     },
+     {
+      "from": "batch",
+      "to": "db"
+     },
+     {
+      "from": "db",
+      "to": "disk"
+     }
+    ]
+   },
+   "expected": "any order with disk before db, db before api and batch, api before web",
+   "check": "order constraints"
+  },
+  {
+   "id": "q06",
+   "tests": "window: running total",
+   "question": "Each employee's total sales up to and including their last day.",
+   "input": {
+    "sales": [
+     {
+      "emp": "a",
+      "day": 1,
+      "sales": 5
+     },
+     {
+      "emp": "b",
+      "day": 1,
+      "sales": 9
+     },
+     {
+      "emp": "a",
+      "day": 2,
+      "sales": 7
+     },
+     {
+      "emp": "b",
+      "day": 2,
+      "sales": 2
+     },
+     {
+      "emp": "a",
+      "day": 3,
+      "sales": 1
+     }
+    ]
+   },
+   "expected": {
+    "a": 13,
+    "b": 11
+   }
+  },
+  {
+   "id": "q07",
+   "tests": "rank within a partition",
+   "question": "Who sold the most on each day?",
+   "input": {
+    "sales": [
+     {
+      "emp": "a",
+      "day": 1,
+      "sales": 5
+     },
+     {
+      "emp": "b",
+      "day": 1,
+      "sales": 9
+     },
+     {
+      "emp": "a",
+      "day": 2,
+      "sales": 7
+     },
+     {
+      "emp": "b",
+      "day": 2,
+      "sales": 2
+     },
+     {
+      "emp": "a",
+      "day": 3,
+      "sales": 1
+     }
+    ]
+   },
+   "expected": {
+    "1": "b",
+    "2": "a",
+    "3": "a"
+   }
+  },
+  {
+   "id": "q08",
+   "tests": "anti join; a null key never matches",
+   "question": "Which orders have no known customer?",
+   "input": {
+    "orders": [
+     {
+      "id": "o1",
+      "cust": "c1"
+     },
+     {
+      "id": "o2",
+      "cust": "c9"
+     },
+     {
+      "id": "o3",
+      "cust": null
+     }
+    ],
+    "customers": [
+     {
+      "cust": "c1"
+     },
+     {
+      "cust": "c2"
+     }
+    ]
+   },
+   "expected": [
+    "o2",
+    "o3"
+   ],
+   "compare": "as a set"
+  },
+  {
+   "id": "q09",
+   "tests": "intervals: merge and concurrency",
+   "question": "Per room, the blocks of time it is booked once overlapping bookings are merged; and the largest number of bookings open at the same moment over all rooms.",
+   "input": {
+    "bookings": [
+     {
+      "room": "A",
+      "start": 9,
+      "end": 11
+     },
+     {
+      "room": "A",
+      "start": 10,
+      "end": 12
+     },
+     {
+      "room": "A",
+      "start": 14,
+      "end": 15
+     },
+     {
+      "room": "B",
+      "start": 9,
+      "end": 10
+     }
+    ]
+   },
+   "expected": {
+    "blocks": [
+     {
+      "room": "A",
+      "start": 9,
+      "end": 12
+     },
+     {
+      "room": "A",
+      "start": 14,
+      "end": 15
+     },
+     {
+      "room": "B",
+      "start": 9,
+      "end": 10
+     }
+    ],
+    "most_at_once": 2
+   }
+  },
+  {
+   "id": "q10",
+   "tests": "validity intervals; a lapsed lease; null when nobody holds it",
+   "question": "Which device (mac) held address 10.0.0.5 at t = 1200, 6000 and 9100? ACK grants the address for `lease` seconds; RELEASE gives it up.",
+   "input": {
+    "dhcp": [
+     {
+      "ip": "10.0.0.5",
+      "mac": "aa",
+      "t": 1000,
+      "msg": "ACK",
+      "lease": 3600
+     },
+     {
+      "ip": "10.0.0.5",
+      "mac": "aa",
+      "t": 5000,
+      "msg": "RELEASE"
+     },
+     {
+      "ip": "10.0.0.5",
+      "mac": "bb",
+      "t": 9000,
+      "msg": "ACK",
+      "lease": 3600
+     }
+    ]
+   },
+   "expected": {
+    "1200": "aa",
+    "6000": null,
+    "9100": "bb"
+   }
+  }
+ ]
+}

@@ -12,7 +12,7 @@ On this page, in the order of the file:
 |---|---|---|
 | `split_by` | Public function | One list of rows into an object of tables, one table per value of a tag |
 | `keep_tables` | Public function | Only the named tables of an object of tables |
-| `shape` | Public function | For each table |
+| `shape` | Public function | For each table: how many rows it has and which fields its rows use |
 
 ---
 

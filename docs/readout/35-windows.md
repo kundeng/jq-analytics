@@ -6,7 +6,7 @@ Seven definitions. `window` does what SQL's `OVER (PARTITION BY ... ORDER BY ...
 
 ```mermaid
 flowchart TD
-  R[rows] --> P[over: split by part, sort each partition by ord]
+  R[rows] --> P[window: split by part, sort each partition by ord]
   P --> W[window function: array of rows in, array of values out]
   W --> B[values written back to the rows, in input order]
 ```
@@ -19,7 +19,7 @@ On this page, in the order of the file:
 |---|---|---|
 | `window` | Public function | Adds one column to a table, computed per partition in a chosen order, and returns the rows in the order they came in |
 | `row_number` | Public function | 1, 2, 3 and so on for the rows of a partition, in its order |
-| `rank_by` | Public function | SQL's `RANK()` |
+| `rank_by` | Public function | SQL's `RANK()`: rows with the same value share a rank, and the next rank skips |
 | `lag`, `lead` | Public functions | The value from the row `$k` places before the current one (`lag`) or after it (`lead`) |
 | `running_sum` | Public function | The sum of a value from the start of the partition up to each row |
 | `moving_mean` | Public function | The mean of a value over the current row and the `$n - 1` rows before it |

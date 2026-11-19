@@ -10,8 +10,8 @@ On this page, in the order of the file:
 
 | Function | Whose | What it is for |
 |---|---|---|
-| `unpivot` | Public function | Wide to long |
-| `pivot` | Public function | Long to wide |
+| `unpivot` | Public function | Wide to long: every column that is not kept becomes a row of its own |
+| `pivot` | Public function | Long to wide: one output row per row key, and one column per name in a list the caller gives |
 
 ---
 

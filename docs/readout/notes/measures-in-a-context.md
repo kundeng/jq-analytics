@@ -11,8 +11,8 @@ flowchart TD
   T[rows] --> RL[rollup_levels: build members and index once; one context per group per level]
   RL --> CELL[cell expression, with the context as input]
   CELL --> M[measure: f on the cell's rows]
-  CELL --> CALC[calc: change the context, find its rows, run f]
-  CH[without, keep_only, with_filter, shift, to_date, on_calendar] --> CALC
+  CELL --> CALC[measure_with: change the context, find its rows, run f]
+  CH[without_filter, only_filters, with_filter, shift, to_date, on_calendar] --> CALC
   CALC --> CR[_ctx_rows: from the index when it can, else _where scans]
 ```
 

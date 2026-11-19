@@ -24,14 +24,14 @@ On this page, in the order of the file:
 |---|---|---|
 | `_distinct_in_order` | Internal helper, not for callers | The distinct values of an array, in the order they first appear |
 | `_unnest_arr`, `unnest`, `unnest_outer` | Public functions and internal helpers | One row per element of an array field |
-| `_flat`, `flatten_fields` | Public functions and internal helpers | Nested objects become columns named by their path, so `{"user" |
+| `_flat`, `flatten_fields` | Public functions and internal helpers | Nested objects become columns named by their path, so `{"user": {"dept": "x"}}` gives a column `user.dept` |
 | `_nodes`, `nodes_from_nested` | Public functions and internal helpers | A nested tree, where each node holds its children in an array, becomes node rows, each with a `parent` field |
 | `rows_from_map` | Public function | An object keyed by id becomes rows, with the key in field `$as` |
-| `fill_grid` | Public function | Completes a time series |
+| `fill_grid` | Public function | Completes a time series: every combination of the key fields gets a row at every time step from the earliest time to the latest, and a missing combination gets a filler row |
 | `to_map` | Public function | Rows become an object keyed by `key`, for looking a row up by id |
-| `_nest`, `nested_from_nodes` | Public functions and internal helpers | The reverse of `nodes_from_nested` |
+| `_nest`, `nested_from_nodes` | Public functions and internal helpers | The reverse of `nodes_from_nested`: node rows with an id and a parent become a nested tree, each node's children in an array in field `$as` |
 | `node_link` | Public function | Edge rows become the `{nodes, links}` object that graph tools such as networkx, d3 and Cytoscape read |
-| `to_csv` | Public function | A table as CSV text |
+| `to_csv` | Public function | A table as CSV text: a header line, then one line per row, with the columns in the order of `$cols` |
 
 ---
 
