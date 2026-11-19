@@ -119,7 +119,7 @@ Two tables. The rows of `lease` do not all have the same fields, and `empty` has
 
 ### What happens inside, on the example
 
-`map_values(f)` runs `f` on each table. Inside `f` the input is one table. For `lease`: step 1, `map(keys)`, the field names of each row. Step 2, `add`, the lists joined into one. Step 3, `unique`, sorted and without repeats. The three results, in that order:
+`map_values(f)` runs `f` on each table. `map_values` is a jq built-in, not a function of this library: on an object it runs `f` on each value and keeps the keys. The object here is the set of tables, so inside `f` the input is one table. `f` makes `rows`, the table's `length`, and `fields`, in three steps. For `lease`: step 1, `map(keys)`, the field names of each row. Step 2, `add`, the lists joined into one. Step 3, `unique`, sorted and without repeats. The three results, in that order:
 
 ```jq run
 [{ip: "a", user: "u"}, {ip: "b", ttl: 60}] | map(keys), (map(keys) | add), (map(keys) | add | unique)
