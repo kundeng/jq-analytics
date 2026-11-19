@@ -1,5 +1,5 @@
 {
- "about": "Questions with known answers, for trying the skill on an agent that has only skills/jq-analytics/ and analytics.jq. The agent must answer by running jq with the library. `expected` is the answer in a neutral form; any output that states the same facts passes. The answers were produced with the library and checked by hand.",
+ "about": "Questions with known answers, for trying the skill on an agent that has only skills/jq-analytics/ and analytics.jq. The agent must answer by running jq with the library. `expected` is the answer in a neutral form; any output that states the same facts passes. Questions q11 to q15 were added after the second trial and do not resemble the skill's worked cases. The answers were produced with the library and checked by hand.",
  "questions": [
   {
    "id": "q01",
@@ -379,6 +379,224 @@
     "6000": null,
     "9100": "bb"
    }
+  },
+  {
+   "id": "q11",
+   "tests": "runs: a streak in a list; sort first",
+   "question": "What is the longest streak of consecutive up=1 readings, and at which position (0-based) does it start?",
+   "input": {
+    "readings": [
+     {
+      "dev": "r1",
+      "t": 0,
+      "up": 1
+     },
+     {
+      "dev": "r1",
+      "t": 10,
+      "up": 1
+     },
+     {
+      "dev": "r1",
+      "t": 20,
+      "up": 0
+     },
+     {
+      "dev": "r1",
+      "t": 30,
+      "up": 1
+     },
+     {
+      "dev": "r1",
+      "t": 40,
+      "up": 1
+     },
+     {
+      "dev": "r1",
+      "t": 50,
+      "up": 1
+     }
+    ]
+   },
+   "expected": {
+    "length": 3,
+    "start": 3
+   }
+  },
+  {
+   "id": "q12",
+   "tests": "long to wide; types first; a missing cell is null",
+   "question": "One row per k with a column per month (jan, feb) holding v as a number; a missing month is null.",
+   "input": {
+    "rows": [
+     {
+      "k": "a",
+      "m": "jan",
+      "v": "3"
+     },
+     {
+      "k": "a",
+      "m": "feb",
+      "v": "5"
+     },
+     {
+      "k": "b",
+      "m": "jan",
+      "v": "2"
+     }
+    ]
+   },
+   "expected": [
+    {
+     "k": "a",
+     "jan": 3,
+     "feb": 5
+    },
+    {
+     "k": "b",
+     "jan": 2,
+     "feb": null
+    }
+   ]
+  },
+  {
+   "id": "q13",
+   "tests": "diff of two versions; which is the input and which the argument",
+   "question": "Which ids were added, removed and changed between the old and the new table?",
+   "input": {
+    "old": [
+     {
+      "id": 1,
+      "owner": "x"
+     },
+     {
+      "id": 2,
+      "owner": "y"
+     },
+     {
+      "id": 3,
+      "owner": "z"
+     }
+    ],
+    "new": [
+     {
+      "id": 1,
+      "owner": "x"
+     },
+     {
+      "id": 2,
+      "owner": "q"
+     },
+     {
+      "id": 4,
+      "owner": "w"
+     }
+    ]
+   },
+   "expected": {
+    "added": [
+     4
+    ],
+    "removed": [
+     3
+    ],
+    "changed": [
+     2
+    ]
+   }
+  },
+  {
+   "id": "q14",
+   "tests": "as-of join; both sides call the time t, which must be renamed; no reading gives null",
+   "question": "For each event, the latest temperature reading of the same host at or before the event's time (null when there is none).",
+   "input": {
+    "readings": [
+     {
+      "host": "h1",
+      "t": 100,
+      "temp": 20
+     },
+     {
+      "host": "h1",
+      "t": 200,
+      "temp": 30
+     }
+    ],
+    "events": [
+     {
+      "host": "h1",
+      "t": 150,
+      "what": "alarm"
+     },
+     {
+      "host": "h1",
+      "t": 50,
+      "what": "boot"
+     },
+     {
+      "host": "h2",
+      "t": 150,
+      "what": "alarm"
+     }
+    ]
+   },
+   "expected": [
+    {
+     "host": "h1",
+     "t": 150,
+     "temp": 20
+    },
+    {
+     "host": "h1",
+     "t": 50,
+     "temp": null
+    },
+    {
+     "host": "h2",
+     "t": 150,
+     "temp": null
+    }
+   ]
+  },
+  {
+   "id": "q15",
+   "tests": "types first; empty ignored; interpolated quantile",
+   "question": "Per team: the median of x and the 90th percentile of x (continuous, interpolated), with x as a number and empty x ignored.",
+   "input": {
+    "rows": [
+     {
+      "team": "a",
+      "x": "1"
+     },
+     {
+      "team": "a",
+      "x": "2"
+     },
+     {
+      "team": "a",
+      "x": "9"
+     },
+     {
+      "team": "b",
+      "x": "4"
+     },
+     {
+      "team": "b",
+      "x": ""
+     }
+    ]
+   },
+   "expected": {
+    "a": {
+     "median": 2,
+     "p90": 7.6
+    },
+    "b": {
+     "median": 4,
+     "p90": 4
+    }
+   },
+   "compare": "numbers equal to two decimal places"
   }
  ]
 }

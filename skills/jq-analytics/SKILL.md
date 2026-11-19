@@ -102,6 +102,11 @@ Facts that cost a wrong answer or a wasted run when guessed. The comment of each
 - **Descending order:** negate a number in the order argument (`-.sales`). For text or to reverse a whole result, `sort_by(...) | reverse` afterwards.
 - **`group_agg`'s second argument is any filter that returns an object,** run on one group's rows. The last row per group: `group_agg({emp}; max_by(.day) | {last_day: .day, total})`.
 - **Graph edges are followed from the first filter to the second.** With an edge meaning "X depends on Y", `reachable(.from; .to; "x")` is what x depends on; swap the two filters, `reachable(.to; .from; "db")`, for what depends on db. `reachable` leaves out the start; `hops` includes it at 0.
+- **A flat join merges the two rows, and refuses a clash.** A field that both sides have with different values is an error: `join: field "t" differs between left (150) and right (100); rename one side first`. Both tables nearly always call the time `t`, so rename on the right before an as-of or interval join: `join_asof($readings | map({host, read_t: .t, temp}); .host; .host; .t; .read_t)`. `lookup` and `join_nest` put the right side under a field of its own and cannot clash.
+- **A start order for "X depends on Y"** is `topo_order(.to; .from)`: level 0 is what depends on nothing.
+- **`runs` has no partition and no order of its own.** It reads a list as given. Sort first, and for several entities run it per group: `group_agg({dev}; sort_by(.t) | map(.up) | runs(.) | ...)`.
+- **`pivot`'s last argument reduces the values that fall in one cell,** given as a list: `pivot(["jan", "feb"]; {k}; .m; .v; sum_nonnull)` gives one row per `k` with the columns `jan` and `feb`, null where a cell has no rows.
+- **Interpolated numbers print with float noise** (`quantile_cont(0.9)` of `[1, 2, 9]` is 7.6000000000000005): apply `round_to(2)` to what a person will read.
 - **Intervals include their start and not their end.** One that ends at 10 and one that starts at 10 do not overlap, and a moment equal to an end belongs to the next interval. A null end means still open.
 - **Empty or null time text gives null** from `parse_ts`; text that is not a time is an error naming it. `cast_columns` takes the types `"number"`, `"timestamp"`, `"string"` and `"boolean"`.
 - **A limit that does not apply is null:** `funnel(...; $steps; null)` puts no time limit between the first and the last step; a number is a limit in the unit of the time argument.
@@ -241,6 +246,7 @@ Was this opened in office hours in Detroit? The text is UTC.
 | `Cannot index string with string "x"`, `Cannot index number with ...` | a row was passed where a table is expected (rule 1), or a list of values where rows are expected | remove the `.[]`, or `map(.x)` only where the function wants a list |
 | `x/0 is not defined` | a bare field name as an argument (rule 2) | `.x` |
 | `string ("57") and number (2) cannot be divided`, `cannot be subtracted` | arithmetic on an uncast column (rule 3) | `cast_columns` first |
+| `join: field "t" differs between left (...) and right (...); rename one side first` | both tables have the field, with different values | rename it on one side with `map({..., read_t: .t})` before the join |
 | `cast_columns: x = "..." is not a number` | a value that is not a number in a column you declared as one | look at the value; clean it or leave the column a string |
 | `has no keys`, `Cannot iterate over null` | the input is null or a scalar, often a wrong path into the document | print the input of that stage |
 | a message that starts with a function's name | the library refused the input and says why | read it; it names the value |
