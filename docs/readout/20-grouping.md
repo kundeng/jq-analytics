@@ -2,9 +2,61 @@
 
 Generated from `src/jq_analytics/analytics.jq` and `docs/readout/notes/grouping.md`. Do not edit.
 
-Two definitions. `_groups` is used all over the library (intervals, funnels, shapes); `group_agg` is the public face.
+## Design
 
-On this page, in the order of the file:
+### What it is for
+
+Two definitions. `_groups` is used all over the library (intervals, funnels, shapes); `group_agg` is the public face. Together they answer "per site, how many, and what is the mean": SQL's `GROUP BY`. The input is a table; the output is a table with one row per group, holding the key's fields and the fields the aggregate computed.
+
+```jq
+[{site: "N", x: 1}, {site: "S", x: 5}, {site: null, x: 7}, {site: "N", x: null}, {site: "N", x: 3}]
+| group_agg({site}; map(.x) | {rows: length, n: count_nonnull, mean: mean})
+```
+
+```json
+[
+  {"site": "N", "rows": 3, "n": 2, "mean": 2},
+  {"site": "S", "rows": 1, "n": 1, "mean": 5},
+  {"site": null, "rows": 1, "n": 1, "mean": 7}
+]
+```
+
+The first argument, the key, is a filter run on each row; the second, the aggregate, is a filter run on each group, which is an array of rows, and it must return an object. Any expression may be a key: `{site, month}` groups by two fields, `{big: (.x > 2)}` by a computed one.
+
+### The rules it keeps
+
+- **Groups come in the order their keys first appear**, on every engine; rows inside a group keep input order. In the example N comes first because the first row is N.
+- **A null key forms one group of its own**, as in SQL's `GROUP BY` (README, rule 2).
+- **Keys are compared as values**, so the number `1` and the string `"1"` are two groups, and two object keys are equal when all their fields are.
+- **The key is copied into the output row.** An object key is merged in as it is (`{site}` gives a column `site`); any other key goes in a field named `key`. A result field with the same name as a key field overwrites it.
+- **Nulls inside a group** are the aggregate's business: `length` counts every row, `count_nonnull` and `mean` skip nulls (page 05).
+- **Refuses** an input that is not a table (page 00). A bare word as the key (`site` without the dot) is jq's own error `site/0 is not defined`.
+
+### Beside core jq, SQL and pandas
+
+The core-jq idiom is `group_by(.site) | map({site: .[0].site, n: length})`. It gives the same groups with the same rows, with two differences:
+
+- **Order.** `group_by` sorts on the key, so its groups come out in jq's sort order: null first, then `"N"`, then `"S"`, on jq 1.7.1, gojq and jaq alike. `group_agg` keeps the order of the data, so input sorted by date gives a report sorted by date, and a key that is an object, which has no order a reader would expect, comes out in the order it was met. gojq additionally prints every object's fields sorted by name (`{"n":1,"site":null}`), which is printing, not grouping.
+- **The key is written once.** In the idiom it is named twice: once to group and once to copy it from the group's first row (`.[0].site`).
+
+The `_groups` note below shows how first-appearance order is built on top of `group_by` in four steps, and why it is not a `reduce` into an object keyed by group (quadratic copying, and a different key order on gojq).
+
+SQL: `SELECT site, count(*), count(x), avg(x) FROM t GROUP BY site` gives the same three rows. Their order is not defined unless the query sorts: DuckDB returned S, null, N on one run of this table.
+
+pandas: `df.groupby("site")["x"].agg(["size", "count", "mean"])` sorts the groups by key and **drops the null-key group** by default. `groupby("site", sort=False, dropna=False)` gives the library's answer: N, S, then the null group (checked with pandas 3.1.1).
+
+What the family adds: a stated order that holds on every engine, a null group as SQL has, and a key that names its own output column.
+
+### Decisions
+
+- **Order of first appearance**, from 0.1.0 (README, rule 3). Every function built on `_groups` (intervals, funnels, `split_by`, retention) inherits one stated rule instead of the builtin's sort order. Power Query's `Table.Group` with `GroupKind.Global` is the closest named equivalent.
+- **No `reduce` that appends rows to their group**: appending inside a `reduce` copies the growing array, so the cost grows with the square of a group's size. The same rule later shaped `pivot`, `retention` and `nested_from_nodes` (0.9.0, spec 55).
+- **0.9.1 (2026-11-18).** The comment of `group_agg` had drifted above another definition (review finding 5); it was moved back.
+- **2026-11-18.** The owner's review of this page asked for the one-value-in assumption to be explicit when it is broken; that became the input check of 0.14.0 (page 00).
+
+## The functions
+
+In the order of the file:
 
 | Function | Whose | What it is for |
 |---|---|---|

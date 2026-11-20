@@ -1,6 +1,36 @@
-Three small definitions for a program that carries several tables in one object, `{lease: [...], hit: [...]}`. The usual reason is a host that can hand the program only one stream of rows, with a field saying which table each row belongs to.
+### What it is for
 
-An object of tables has no row order of its own: jq and jaq print its tables in the order they were made, and gojq prints them sorted by name. The rows inside each table keep their order on every engine.
+Three small definitions for a program that carries several tables in one object, `{lease: [...], hit: [...]}`. The usual reason is a host that can hand the program only one stream of rows, with a field saying which table each row belongs to. `split_by` makes the object from such a stream, `keep_tables` drops the tables no longer needed, and `shape` shows each table's row count and fields, for looking at a pipeline midway.
+
+```jq run
+[{type: "lease", ip: "a"}, {type: "hit", ip: "a"}, {type: "lease", ip: "b"}]
+| split_by(.type) as $t
+| {tables: ($t | shape), lease_ips: ($t.lease | map(.ip))}
+```
+
+When the tables arrive separately, no structure is needed at all: each is named with `as $name` (or passed with `--slurpfile` on the command line, `args=` from Python) and used by that name in any later step, as SQL names a common table expression.
+
+### The rules it keeps
+
+- **Tables are named by the tag as text.** A null tag becomes a table named `"null"`, because an object's keys are strings.
+- **Two tags with the same text are an error**, naming both: the number `1` and the string `"1"`, or null and `"null"`. One table would otherwise replace the other.
+- **Rows keep their order inside each table.** The tables themselves have no order: an object of tables has none of its own. jq and jaq print its tables in the order they were made, and gojq prints them sorted by name.
+- **`keep_tables` ignores a name that is not there**: no error and no empty table.
+- **Refuses:** `split_by` an input that is not a table; `keep_tables` and `shape` an input that is not an object of tables, with a message that says `split_by` makes one and `profile` describes a single table (page 00).
+
+### Beside core jq, SQL and pandas
+
+The core-jq idiom for `split_by` is `group_by(.t) | map({key: (.[0].t | tostring), value: .}) | from_entries`. On rows tagged `1` and `"1"` it silently keeps one table of one row and loses the other, on jq 1.7.1, gojq and jaq alike: `{"1":[{"t":"1","i":2}]}`. `split_by` raises an error instead. `keep_tables` is `with_entries(select(...))` with a list of names, and `shape` is `map_values({rows: length, fields: (map(keys) | add // [] | unique)})`: both are written in core jq, given names so a program reads as what it does.
+
+SQL has no "object of tables": several tables are several names in one database, and splitting a mixed stream is one `WHERE type = 'lease'` per table, or a common table expression for each. pandas: `dict(tuple(df.groupby("type")))` gives a dictionary of data frames by tag, and drops the rows with no tag unless `dropna=False` is passed (checked with pandas 3.1.1: the null-tagged row is missing from the result).
+
+What the family adds is small: the name-clash check, and named steps for the split, the keep and the look.
+
+### Decisions
+
+- **0.1.2, spec 05.** Several tables are named as a shape of their own ("one object whose fields are tables"), so that a step that makes more than one table, and a host that delivers one mixed stream, have a stated form.
+- **0.9.0 (2026-11-18, spec 55).** `split_by` refuses two tags that give the same table name (review finding 6); before, `[{t: 1}, {t: "1"}] | split_by(.t)` returned one table with one row.
+- **0.10.0 (2026-11-18, spec 57).** `keep` was renamed `keep_tables`, because the old name did not say what it keeps.
 
 ## split_by/1
 <!-- code: 2965c7cc -->

@@ -1,4 +1,13 @@
-Seven definitions. `window` does what SQL's `OVER (PARTITION BY ... ORDER BY ...)` does. The other six are window functions: each takes one sorted partition and computes one value per row of it. They are passed to `window` as its last argument.
+### What it is for
+
+Seven definitions. `window` does what SQL's `OVER (PARTITION BY ... ORDER BY ...)` does: it adds a column whose value for each row depends on the other rows of its group in a chosen order. That answers "the running total per site by day", "the previous reading of the same sensor", "the rank of each host within its site", "the mean of the last three days". The other six are window functions: each takes one sorted partition and computes one value per row of it. They are passed to `window` as its last argument.
+
+```jq run
+[{day: 2, site: "N", x: 5}, {day: 1, site: "N", x: 3}, {day: 1, site: "S", x: 9}, {day: 3, site: "N", x: null}]
+| window(.site; .day; "sum"; running_sum(.x)) | map([.day, .site, .sum])
+```
+
+The rows come back in the order they came in, each with its new column. Site N in day order is 3, 5, null, so its running sums are 3, 8, 8.
 
 ```mermaid
 flowchart TD
@@ -7,7 +16,38 @@ flowchart TD
   W --> B[values written back to the rows, in input order]
 ```
 
-A partition is the set of rows that share a value, such as all rows of one site. A window function sees one partition at a time, as an array of rows already in order.
+A partition is the set of rows that share a value, such as all rows of one site. A window function sees one partition at a time, as an array of rows already in order. Any function that takes such an array and returns an array of the same length can be passed as the window function, not only the six here.
+
+### The rules it keeps
+
+- **Rows come back in input order**, with one new column; nothing is dropped or added. Several columns are a chain of `window` calls.
+- **Ties in the order keep input order**, because the sort is stable. A null `part` is a partition of its own.
+- **Frames are rows, each row on its own.** `running_sum` and `moving_mean` count the rows up to and including the current one. Two rows that tie on the order get different running sums; SQL's default frame (`RANGE`) would give both the same.
+- **Nulls:** `running_sum` skips them and is null until the first value, then repeats the last sum over a missing value. `moving_mean` skips them inside its window and is null only when the window has no values. `lag` and `lead` give null where there is no row that many places away.
+- **`rank_by` is SQL's `RANK`**: equal values share a rank and the next rank skips. The partition must be ordered by the value being ranked, which the caller does by passing the same expression as `ord`.
+- **Refuses:** an input that is not a table (page 00). The window functions themselves are not checked, because `window` always hands them an array.
+
+### Beside core jq, SQL and pandas
+
+Core jq has no window. The nearest idiom groups, sorts, and walks each group with `foreach`:
+
+```jq
+group_by(.site) | map(sort_by(.day) | [foreach .[] as $r (0; . + ($r.x // 0); $r + {sum: .})]) | add
+```
+
+On the four rows above it gives the right sums on jq 1.7.1, gojq and jaq, but the rows come out grouped by site and sorted by day (N 1, N 2, N 3, S 1), not in the order they came in, and every window function is a new piece of `foreach`. `window` puts the rows back where they were, so a chain of windows, or a join after one, sees the table it started with.
+
+SQL: `SUM(x) OVER (PARTITION BY site ORDER BY day ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)` gives the same sums as `running_sum`; the test suite compares each window function with DuckDB's. Without the `ROWS` clause the frame is `RANGE`, and DuckDB gives two rows tied on `day` the same sum (3 and 3 for values 1 and 2, where `running_sum` gives 1 and 3). `ROW_NUMBER()`, `RANK()`, `LAG`, `LEAD` and `AVG(x) OVER (... ROWS BETWEEN n-1 PRECEDING AND CURRENT ROW)` are the others.
+
+pandas: `df.sort_values("day").groupby("site")["x"].cumsum()` aligns the result back to the original rows by index, as `window` does. It differs on nulls and null partitions, checked with pandas 3.1.1: the day-3 row with no x gets `NaN` where `running_sum` gives 8, and the rows whose `site` is null get `NaN` unless `groupby(..., dropna=False)` is passed. `rank(method="min")`, `shift(k)` and `rolling(n, min_periods=1).mean()` are the other window functions.
+
+What the family adds: SQL's window functions in jq with input order kept, null partitions kept, and one frame rule stated.
+
+### Decisions
+
+- **Rows frames**, from 0.1.0: each row's running value is its own, and the README states the difference from SQL's default frame.
+- **0.9.0 (2026-11-18, spec 55).** `rank_by` was rewritten to group once instead of counting earlier rows for each row (review finding 7); its cost now follows the sort, not the square of the partition. No answer changed.
+- **0.10.0 (2026-11-18, spec 57).** `over` was renamed `window`, because the old name did not say what it does.
 
 ## window/4
 <!-- code: 0c7d4eb4 -->

@@ -2,7 +2,98 @@
 
 Generated from `src/jq_analytics/analytics.jq` and `docs/readout/notes/joins.md`. Do not edit.
 
-Sixteen definitions. Two helpers do the work: `_matches` pairs each left row with its right rows, and `_merge` joins one left row to one right row. `_merge` follows a plan made once per join by `_merge_plan`, which says what happens to a field name that both tables have; `_key_fields` finds the key's own field names for that plan. `join_on` chooses what to emit from those pairs. Everything else except `lookup` and `join_asof` is a one-line call of `join_on` or `_matches`.
+## Design
+
+### What it is for
+
+Combining two tables: attach each request's host record, find the requests whose host is unknown, put a band on an amount, find the setting in force when something happened. The input is the left table; the right table is the first argument; the output is a table.
+
+Every join here is four choices, and each is an argument:
+
+```mermaid
+flowchart TD
+  L[left table] --> K{key: the equality part}
+  R[right table, indexed once by its key] --> K
+  K --> C{condition: the rest, checked on pairs that share a key}
+  C --> KIND{kind: inner, left, full, semi, anti}
+  KIND --> F[flat: one row per match, rows merged]
+  KIND --> N[nested: each left row once, matches in an array]
+```
+
+| Choice | What you write | Cost |
+|---|---|---|
+| Key | a filter per side; an array for a composite key (`[.site, .host]`); a cleaned value when keys match only after cleaning | left rows plus right rows: the right table is indexed once |
+| Condition | a filter over the pair `{l, r}`: a range, an inequality | checked only for pairs that share a key; with `true` for both keys, every pair |
+| Kind | `"inner"`, `"left"`, `"full"`, `"semi"`, `"anti"` | none |
+| Shape | flat (`join_on` and the named kinds) or nested (`join_nest`) | nested never multiplies rows |
+
+Which join answers which question:
+
+| The question | Use | Why |
+|---|---|---|
+| rows that match on a key | `join_inner`, `join_left`, `join_full` | the plain cases |
+| does a match exist, yes or no | `join_semi`, `join_anti` | no right fields, never multiplies rows |
+| exactly one record per key, such as a name for a code | `lookup` | a key repeated in the dimension is an error, so rows cannot multiply |
+| a key plus a range or an inequality | `join_on` with a condition | the condition runs only inside a key |
+| every match, kept together per left row | `join_nest` | to count or summarise matches |
+| the latest value at or before a moment, such as a price or a setting | `join_asof` | a value stays true until the next one replaces it |
+| which spans overlap | `join_overlap` | both sides are intervals |
+| who held this at a moment | `intervals_from_events`, then `join_within` (page 70) | holding can end; an as-of join cannot know that |
+| keys that almost match | clean the key in the key expression; then `join_fuzzy` (page 90) for small blocks | most near-misses are case, spacing or punctuation |
+
+Three joins the definitions below do not show. A star of dimensions, one `lookup` after another: each request gets its site, and through the site's region the region's lead.
+
+```jq
+[{site: "N", region: "east"}, {site: "S", region: "west"}] as $sites
+| [{region: "east", lead: "dee"}, {region: "west", lead: "eli"}] as $regions
+| [{id: "R1", site: "N"}, {id: "R2", site: "S"}, {id: "R3", site: "X"}]
+| lookup($sites; .site; .site; "s") | lookup($regions; .s.region; .region; "r")
+| map([.id, .s.region, .r.lead])
+```
+
+```json
+[
+  ["R1", "east", "dee"],
+  ["R2", "west", "eli"],
+  ["R3", null, null]
+]
+```
+
+A table joined to itself, each team to its boss's row. The boss's own `boss` comes out as `boss_right` (the rule for shared names is below):
+
+```jq
+[{name: "eng", boss: "ceo"}, {name: "web", boss: "eng"}, {name: "ceo", boss: null}] as $e
+| $e | join_left($e; .boss; .name) | map([.name, .boss, .boss_right])
+```
+
+```json
+[
+  ["eng", "ceo", null],
+  ["web", "eng", "ceo"],
+  ["ceo", null, null]
+]
+```
+
+Keys equal only after cleaning. ` Web-01 ` matches nothing until both keys are lowercased and stripped to letters and digits, inside the key expressions:
+
+```jq
+def clean: ascii_downcase | gsub("[^a-z0-9]"; "");
+[{id: "R1", host: " Web-01 "}, {id: "R2", host: "db01"}, {id: "R3", host: null}]
+| join_left([{name: "web01", owner: "ann"}, {name: "db01", owner: "bo"}]; (.host // "" | clean); (.name | clean))
+| map([.id, .owner])
+```
+
+```json
+[
+  ["R1", "ann"],
+  ["R2", "bo"],
+  ["R3", null]
+]
+```
+
+R3's null host becomes `""` there, which is a key like any other; it matches nothing only because no host is named `""`.
+
+The definitions: two helpers do the work. `_matches` pairs each left row with its right rows, and `_merge` joins one left row to one right row. `_merge` follows a plan made once per join by `_merge_plan`, which says what happens to a field name that both tables have; `_key_fields` finds the key's own field names for that plan. `join_on` chooses what to emit from those pairs. Everything else except `lookup` and `join_asof` is a one-line call of `join_on` or `_matches`.
 
 ```mermaid
 flowchart LR
@@ -42,12 +133,47 @@ Hosts, the right table:
 
 In every join the left table is the input (it comes before the `|`) and the right table is the first argument. The arguments are separated by `;`, because in jq a comma means "emit both values". The runs name the right table once with `as $hosts`, which binds a name and passes nothing on, so the next `|` starts from the left table.
 
-Two idioms recur in the code and are explained once here:
+### The rules it keeps
 
-- **A key goes through `tojson` before it is used as an object key.** jq object keys are strings, so the number `1` and the string `"1"` would otherwise collide, and an array key (a composite key) could not be used at all. `tojson` gives `1`, `"1"` and `[1,"a"]` three different strings.
-- **The right table is indexed once.** An object from key to rows is built before the left rows are walked, so the cost is left rows plus right rows, not their product.
+- **A null key never matches**, not even another null (README, rule 2). A left row with a null key comes back alone from a left or full join.
+- **Keys are compared by their JSON text.** A key goes through `tojson` before it is used as an object key, because jq object keys are strings: the number `1` and the string `"1"` would otherwise collide, and an array key (a composite key) could not be used at all. `tojson` gives `1`, `"1"` and `[1,"a"]` three different strings.
+- **Duplicate keys multiply rows** in a flat join, as in SQL. `lookup` refuses a duplicate key in its dimension instead; `join_nest` and the semi and anti joins never multiply.
+- **Order:** output follows the left table, then the right table's order among a row's matches, on every engine. A full join appends the unmatched right rows after, in right order.
+- **A field name on both sides is kept twice.** A flat match is the two rows merged. The left value keeps its name; the right one gets the suffix `_right` (`site`, `site_right`), in every matched row whether or not the values agree, as in Polars. A field that both keys read directly (`.host` and `.host`, `{host}`, `[.host]`) appears once. `join_on` takes the suffix as a sixth argument, and `null` asks for the strict rule: kept once when equal, an error when not. A suffixed name that already exists is an error. Nothing is overwritten silently.
+- **As-of ties:** among right rows with the same time, the first in input order is taken, on every engine.
+- **Intervals are `[start, end)`** in `join_overlap`, and a null end means still open.
+- **Refuses:** an input or right table that is not a table (page 00); an unknown kind (`"outer"`); a suffix that is not a string or null; a taken suffixed name; a duplicate key in `lookup`'s dimension; in `join_overlap`, an interval with no start or with its end before its start.
+- **Cost:** the right table is indexed once, so an equality join costs left rows plus right rows plus the output. A join with `true` for both keys checks every pair and is for small right tables.
 
-On this page, in the order of the file:
+### Beside core jq, SQL and pandas
+
+jq 1.6 and later have `INDEX(stream; key)` and `JOIN($index; stream; key; join)`. They are not in jaq 3.1 at all (`undefined filter`). On jq 1.7.1 and gojq, with the requests and hosts above (minus the null row), `[JOIN(INDEX($hosts[]; .host); .[]; .host; add)]`:
+
+- keeps one `db01` record, the last one, and loses the other: an index holds one row per key;
+- merges with `add`, so a left field of the same name is overwritten by the right one with no warning (a left `site: "X"` becomes `"N"`);
+- turns keys into strings, so `1` and `"1"` are one key;
+- stops on a left row whose key is null (`Cannot index object with null` on jq, `expected a string for object key but got: null` on gojq).
+
+It behaves as a left join of one match per key; there is no inner, full, semi or anti form, no condition and no as-of.
+
+SQL is the model for the kinds, the null rule and the condition: `FROM l LEFT JOIN r ON l.host = r.host AND cond`. The test suite compares each kind with DuckDB's answer. Two things SQL leaves open that the library fixes: the order of the output (DuckDB returns joined rows in no stated order unless the query sorts) and the names of clashing columns (DuckDB with `ON` returns `host, site, host, site`; with `USING (host)` one `host`). DuckDB's `ASOF LEFT JOIN` is `join_asof`; on the example with two changes at the same time it gave the first.
+
+pandas `l.merge(r, on="host", how="left")` keeps left order and multiplies duplicates as the library does, but differs in two places, checked with pandas 3.1.1: it **matches a null key to a null key** (request 4 gets the null-host record's site `S`), and it renames both sides of a clash, `site_x` and `site_y`. `pd.merge_asof` with two right rows at the same time takes the **last** (limit 102 in the `join_asof` example), where the library takes the first.
+
+What the family adds: every SQL join kind and an as-of and overlap join in jq, with the null rule, order and name clashes stated and the same on every engine.
+
+### Decisions
+
+- **2026-11-13.** Generalised joins first: the library was designed around the four choices above (key, condition, kind, shape) before other families were added.
+- **2026-11-15.** A field clash in a flat join was an error; as-of ties take the first row in input order.
+- **2026-11-18, spec 59, version 0.12.0.** The clash rule was replaced by Polars': both values kept, the right one as `name_right`. The error stopped a join on exactly the rows someone comparing two sources wants to see, and whether it stopped depended on the data, not the tables' fields. pandas (`_x`, `_y`), Polars (`_right`), DuckDB (`site_1`), SQLite (two columns named `site`) and Power Query (a table-name prefix) were compared; Polars' rule won because the left table's fields never change name. On the owner's word ("ok, follow polars").
+- **2026-11-18, the as-of join is not the tool for "who held this at T".** On the case of an address and a time, it named a device ten seconds after that device's lease had run out, and no single age limit fits leases of different lengths. The answer is intervals (page 70).
+- **0.13.1 (2026-11-19, spec 62).** `join_overlap` reads a null end as still open. Found while answering why `join_overlap` had not been run on real data: real open sessions would have been dropped, because jq orders null below every number.
+- **0.14.0 (2026-11-19, spec 60).** The six joins share one body, `_join`, which carries the name of the join the user called into its error messages.
+
+## The functions
+
+In the order of the file:
 
 | Function | Whose | What it is for |
 |---|---|---|

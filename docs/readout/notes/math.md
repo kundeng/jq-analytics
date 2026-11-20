@@ -1,4 +1,6 @@
-Eighteen definitions over a list of values, usually one column of a table (`map(.x)`). One rule runs through all of them: **nulls are skipped, and "no values" gives null**, as SQL aggregates do. jq's own `add`, `min` and `length` do not skip nulls, which is why these exist under their own names.
+### What it is for
+
+Eighteen definitions over a list of values, usually one column of a table (`map(.x)`): how many, the total, the mean, the least and greatest, the spread, and the quantiles. They answer "what is the median time to resolve", "what is the 90th percentile", "how spread out are these durations". The input is one array of numbers that may hold nulls; the output is one number, one row (`min_by_nonnull`), or a list of numbers (`quantiles_cont`).
 
 ```mermaid
 flowchart LR
@@ -8,7 +10,51 @@ flowchart LR
   R[round_to: one number]
 ```
 
+A typical call pulls a column out of a table first and then reduces it:
+
+```jq run
+[{h: 2.5}, {h: null}, {h: 11.5}, {h: 1}] | map(.h) | {n: count_nonnull, mean: mean, median: median}
+```
+
 Two jq reminders for this page. A bare word such as `mean` is a call to the function of that name, and it runs on the current input, which here is the list. A comma between calls (`count_nonnull, mean`) runs each on the same input and emits each result as its own value, so a run with commas prints several lines.
+
+### The rules it keeps
+
+- **Nulls are skipped, and "no values" gives null**, as SQL aggregates do. `count_nonnull` is the one exception to the second half: it gives 0. A list of nothing but nulls is "no values".
+- **Too few values for the measure gives null**, not an error: `var_samp` and `stddev_samp` of one value are null, because the sample forms divide by one less than the count.
+- **Two quantile rules, named.** `quantile_disc` returns a value from the data, the one at rank ⌈n·p⌉ of the sorted values (nearest rank, at least rank 1). `quantile_cont` interpolates at position (n − 1)·p. They differ on small lists, and an analysis must say which it used. `median` is `quantile_cont(0.5)`.
+- **Ties among rows.** `min_by_nonnull` returns the first row with the least value, `max_by_nonnull` the last row with the greatest, which are jq's own `min_by` and `max_by` rules.
+- **Rounding** is `round_to($d)`: halves away from zero, on the number as stored, so `1.005 | round_to(2)` is 1. Round for display only, after any comparison with a threshold.
+- **Refuses:** an input that is not a list (page 00). A value that is not a number fails in jq's own arithmetic; the functions do not convert text to numbers, which is `cast_columns`' job (page 10).
+
+### Beside core jq, SQL and pandas
+
+The closest core jq is `add / length` for a mean, `min` and `max`, and `sort | .[length / 2 | floor]` for a middle value. On `[40, 10, null, 30, 20]` those give 20, null and 20 on jq 1.7.1, gojq and jaq (jaq prints the mean as `20.0`). The right answers are 25, 10 and 25:
+
+- `length` counts the null, so `add / length` divides 100 by 5 rows instead of 4 values.
+- jq orders null below every number, so `min` is null.
+- The middle element of a sorted list is neither SQL quantile rule for an even count.
+
+DuckDB gives `avg` 25, `count(x)` 4, `count(*)` 5, `quantile_disc(x, 0.25)` 10, `quantile_cont(x, 0.25)` 17.5, `median` 25, `var_samp` 166.67 and `var_pop` 125 on the same list, which are the library's answers, and the test suite holds DuckDB's answer for each function. On a column of only nulls DuckDB's `sum` and `avg` are NULL and `count` is 0, which is the library's rule.
+
+pandas agrees on the mean (25), count (4), median (25), the continuous quantile (`quantile(0.25)` is 17.5, its default `interpolation="linear"`) and the sample variance (`var()` divides by n − 1). It differs in three places, checked with pandas 3.1.1:
+
+| | the library and SQL | pandas |
+|---|---|---|
+| sum of a column of only nulls | null | 0 |
+| a value from the data at p = 0.25, 0.5, 0.9 of `[10, 20, 30, 40]` | `quantile_disc`: 10, 20, 40 | no interpolation mode gives this: `lower` 10, 20, 30; `higher` and `nearest` 20, 30, 40 |
+| rounding 2.5, -2.5, 0.125 | `round_to`: 3, -3, 0.13 (away from zero) | `round`: 2, -2, 0.12 (half to even) |
+
+What the family adds over core jq is the null rule and named quantile and variance rules in one place, each pinned by a test against DuckDB.
+
+### Decisions
+
+- **0.1.1 (2026-11-17).** `min_nonnull` and `max_nonnull` added, because jq's `min` and `max` sort null below every number.
+- **2026-11-18.** The null-skipping functions live under their own names (`count_nonnull`, `sum_nonnull`), not behind a switch that changes what `add` or `min` mean, and not in a separate module: the library is one file. A reader of a program sees which rule a call uses from its name.
+- **Two quantile functions, not one with a mode argument**, so a program names its rule where it is used. The rules are SQL's `PERCENTILE_DISC` and `PERCENTILE_CONT`, and the list forms return one null for no values, as DuckDB's list form does.
+- **`round_to` is for display.** The README's motivating case is an analysis that rounded hours before comparing them with a threshold and miscounted by one.
+- **0.9.0 (2026-11-18, spec 55).** The comment above `quantile_disc` named a file outside the repository (review finding 2) and was rewritten.
+- **0.14.0 (2026-11-19, spec 60).** Every function here checks that its input is a list. Before, `count_nonnull` given one row counted that row's fields.
 
 ## nonnull/0, count_nonnull/0, sum_nonnull/0, mean/0
 <!-- code: 23ab2dcc -->

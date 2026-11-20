@@ -1,6 +1,47 @@
-Four definitions for keys that should match and do not. The order to try things in: first clean the key inside an ordinary join, for example `join_inner($r; (.name | ascii_downcase); ...)`, because most keys that should match differ only by case, spacing or punctuation. Use the functions here for small tables where that is not enough. For edit distance, or for millions of comparisons, use a database.
+### What it is for
 
-The measure used is built on bigrams: the two-character pieces of a string. Two strings are alike when they share most of their bigrams.
+Four definitions for keys that should match and do not: a host typed `WEB01` where the inventory says `web01`, `veb02` for `web02`. The order to try things in: first clean the key inside an ordinary join, for example `join_inner($r; (.name | ascii_downcase); ...)`, because most keys that should match differ only by case, spacing or punctuation. Use the functions here for small tables where that is not enough. For edit distance, or for millions of comparisons, use a database.
+
+```jq run
+[{host: "WEB01", site: "N"}, {host: "veb02", site: "N"}, {host: "db1", site: "S"}]
+| join_fuzzy([{name: "web01", site: "N"}, {name: "web02", site: "N"}, {name: "db01", site: "S"}];
+             .site; .site; (.host | ascii_downcase); .name; 0.6; "match")
+| map({host, matched: .match.row.name, similarity: .match.similarity})
+```
+
+`WEB01`, lowercased, equals `web01`. `veb02` is closest to `web02`. `db1` scores 0.4 against `db01`, below the minimum of 0.6, so it is left unmatched rather than matched badly.
+
+The measure used is built on bigrams: the two-character pieces of a string. Two strings are alike when they share most of their bigrams. `similarity(a; b)` is the Dice coefficient over the distinct bigrams: twice the number shared, divided by the number in both together, from 0 to 1. `join_fuzzy` is a left outer join on "most similar string", comparing only rows that share an exact key, the block.
+
+### The rules it keeps
+
+- **No cleaning.** The functions compare exactly what they are given; lowercase and trim in the arguments (`.host | ascii_downcase`) if that is wanted. A capital letter costs a bigram: `Web01` and `web01` score 0.75.
+- **Equal strings score 1**, even a single character, which has no bigrams; two different strings with no bigrams in common score 0. A null on either side gives null.
+- **A block is required.** Rows are compared only within the same exact block key, and a left row with no block or no string gets null. The cost is one comparison per pair of rows in the same block.
+- **A match must reach the minimum**; below it the left row's field is null. Among equally similar right rows, the first in input order is kept.
+- **Every left row comes back once**, with the field named in `$as` holding `{similarity, row}` or null; order is the left table's.
+- **Refuses** a value that is neither a string nor null, and an input or right table that is not a table (page 00).
+
+### Beside core jq, SQL and pandas
+
+Core jq has the cleaning step and nothing else: `ascii_downcase | gsub("[^a-z0-9]"; "")` turns `WEB01` and `web-01 ` both into `web01` on jq 1.7.1, gojq and jaq, and used as a join key it costs nothing (page 30 runs it). There is no similarity function.
+
+SQL engines carry string similarity: DuckDB has `levenshtein` (1 for `db1` and `db01`), `jaro_winkler_similarity` (0.867 for `veb02` and `web02`) and others, and a fuzzy join is a join on the block with a similarity condition:
+
+```sql
+SELECT l.id, r.id, jaro_winkler_similarity(l.name, r.name) AS s
+FROM l JOIN r ON l.site = r.site
+WHERE levenshtein(l.name, r.name) <= 2;
+```
+
+pandas has no fuzzy join. Python's standard `difflib.get_close_matches` is the nearest tool at hand: it picks `web02` for `veb02`, and, with its default cutoff of 0.6 on a different ratio, also matches `db1` to `db01`, which the bigram score leaves out. The two measures disagree on short strings; neither is the right one in general, which is why the minimum is the caller's.
+
+What the family adds: a bounded fuzzy join for the case of small tables with no other engine at hand.
+
+### Decisions
+
+- **2026-11-15.** Fuzzy matching left out of the first design.
+- **2026-11-18, spec 40, version 0.8.0.** Measured first, on 20,000 pairs of made-up names about 16 characters long: edit distance in jq took 6.3 to 10.4 s on the command-line engines and 22.1 s in the Python jq package, against 0.008 s in DuckDB, with the same answers; roughly a thousand times slower. Edit distance therefore does not ship: at a thousand pairs a second, comparing even 300 rows against 300 takes a minute and a half. A bigram similarity, about 11,000 pairs a second, and a blocked join ship instead; the join refuses to run without a blocking key, so its cost is bounded by the size of the blocks. Cleaning keys stays the first answer. Jaro-Winkler, phonetic codes, token similarity, matching without a block, one-to-many matches and deduplication of a table against itself (pair the matches and use `components`) were left out.
 
 ## _bigrams/0, _dice/2
 <!-- code: 62c9b2f6 -->

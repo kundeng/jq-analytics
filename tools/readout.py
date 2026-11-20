@@ -8,7 +8,7 @@ docs/readout/<NN>-<family>.md: each note's definitions copied from analytics.jq 
 numbers, the note, and the output of each `jq run` block. Stops, writing nothing, on a definition
 with no note, a note naming no definition, a stale stamp, a comment that sits above another
 function than the one it describes, or a run whose output differs between the engines. --all also stops when a family has no notes file. --stamp writes missing stamps into
-the notes first. --list prints each family's definitions and whether a note covers them.
+the notes first. Every family's notes open with its design section, which must hold the ### headings in DESIGN_PARTS; the page shows it under "## Design" and the functions under "## The functions". --list prints each family's definitions and whether a note covers them.
 --family=<slug> (repeatable) limits the build to those families. --check builds and runs every
 example and writes nothing. A note may hold the line <!-- definition --> where its code is to
 appear; without it the code comes first. Under each definition's code the page lists the names the
@@ -35,6 +35,8 @@ SECTION = re.compile(r"^# -{20,} (.+)$")
 DEF = re.compile(r"^def ([A-Za-z_][A-Za-z0-9_]*)(\(([^)]*)\))?:")
 HEADING = re.compile(r"^## (.+)$")
 STAMP = re.compile(r"^<!-- code: ([0-9a-f]{8}) -->$")
+DESIGN_PARTS = ("### What it is for", "### The rules it keeps", "### Beside core jq, SQL and pandas", "### Decisions")
+# the parts every family's design section (the notes text before its first definition) must have
 PLACE = "<!-- definition -->"   # a line of a note: the definition's code goes here instead of first
 
 
@@ -309,6 +311,9 @@ def main() -> None:
                 problems.append(f"{family['slug']}: note {note['keys'][0]} has no stamp (run with --stamp after reading the code)")
             elif note["stamp"] != want:
                 problems.append(f"{family['slug']}: note {note['keys'][0]} is stale: the code is now {want}, the note was written for {note['stamp']}")
+        missing_parts = [h for h in DESIGN_PARTS if h not in [line.strip() for line in intro]]
+        if missing_parts:
+            problems.append(f"{family['slug']}: the design section lacks {', '.join(missing_parts)}")
         left = [k for k in by_key if k not in covered]
         if left:
             problems.append(f"{family['slug']}: no note for {', '.join(left)}")
@@ -322,9 +327,9 @@ def main() -> None:
             continue
         page = [f"# {family['name'][0].upper() + family['name'][1:]}", "",
                 f"Generated from `src/jq_analytics/analytics.jq` and `docs/readout/notes/{family['slug']}.md`. Do not edit.", ""]
-        page += render_body(intro, engines)
+        page += ["## Design", ""] + render_body(intro, engines)
         notes.sort(key=lambda note: by_key[note["keys"][0]]["first"])
-        page += ["", "On this page, in the order of the file:", "", "| Function | Whose | What it is for |", "|---|---|---|"]
+        page += ["", "## The functions", "", "In the order of the file:", "", "| Function | Whose | What it is for |", "|---|---|---|"]
         for note in notes:
             page.append(f"| {', '.join('`' + n + '`' for n in names_of(note))} | {whose(note)} | {purpose(note)} |")
         page.append("")

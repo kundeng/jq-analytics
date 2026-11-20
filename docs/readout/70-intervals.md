@@ -2,7 +2,13 @@
 
 Generated from `src/jq_analytics/analytics.jq` and `docs/readout/notes/intervals.md`. Do not edit.
 
-Six definitions. An interval is a row with a key, a start and an end, read as `[start, end)`: the start belongs to it, the end does not, and a null end means still open. `intervals_from_events` builds intervals from an event log; `join_within` finds the interval that contains a moment; `merge_intervals` and `concurrency` summarise a set of intervals.
+## Design
+
+### What it is for
+
+Five definitions. An interval is a row with a key, a start and an end, read as `[start, end)`: the start belongs to it, the end does not, and a null end means still open. `intervals_from_events` builds intervals from an event log; `join_within` finds the interval that contains a moment; `merge_intervals` and `concurrency` summarise a set of intervals. `join_overlap`, which pairs intervals of two tables, is on the joins page with its check `_iv_order_check`.
+
+The question the family was built around: an alert names an address and a time. Which device held the address then, and who was signed in on that device?
 
 ```mermaid
 flowchart TD
@@ -12,6 +18,47 @@ flowchart TD
   I --> M[merge_intervals: overlapping or touching become one]
   I --> C[concurrency: how many are open over time]
 ```
+
+**The input**, three made-up tables. Lease events say a device was given, or kept, an address for `ttl` seconds. Session events say a user opened, kept or released a session on a device.
+
+```text
+lease events                     session events                        alerts
+addr  dev  t    ttl              dev  user  t    kind     ttl          id  addr  t
+a1    d1   0    100              d1   ann   10   open     100          A   a1    50
+a1    d1   80   100              d1   ann   90   hold     100          B   a1    190
+a1    d2   200  100              d1   ann   150  release               C   a1    250
+                                 d2   bo    210  open     100
+                                 d2   bo    260  hold     100
+```
+
+**By hand.** d1's lease is renewed at 80, so it runs to 180 and then lapses; d2 takes the address at 200. ann's session on d1 runs from 10 until she releases it at 150; bo's on d2 starts at 210 and is still open. Alert A at 50 falls in d1's lease and ann's session. Alert B at 190 falls in the gap between the leases: nobody held the address. Alert C at 250 falls in d2's lease and bo's session.
+
+**The program.** Events become intervals, then each alert finds the interval that contains its time; `join_within` is a left outer join, so an alert with no containing interval comes back alone.
+
+```jq
+[{addr: "a1", dev: "d1", t: 0, ttl: 100}, {addr: "a1", dev: "d1", t: 80, ttl: 100}, {addr: "a1", dev: "d2", t: 200, ttl: 100}] as $leases
+| [{dev: "d1", user: "ann", t: 10, kind: "open", ttl: 100}, {dev: "d1", user: "ann", t: 90, kind: "hold", ttl: 100},
+   {dev: "d1", user: "ann", t: 150, kind: "release", ttl: null},
+   {dev: "d2", user: "bo", t: 210, kind: "open", ttl: 100}, {dev: "d2", user: "bo", t: 260, kind: "hold", ttl: 100}] as $sessions
+| ($leases | intervals_from_events(.addr; .dev; .t; "hold"; .ttl)
+   | map({addr: .resource, dev: .holder, lease_start: .start, lease_end: .end})) as $held
+| ($sessions | intervals_from_events(.dev; .user; .t; .kind; .ttl)
+   | map({dev: .resource, user: .holder, s_start: .start, s_end: .end})) as $sess
+| [{id: "A", addr: "a1", t: 50}, {id: "B", addr: "a1", t: 190}, {id: "C", addr: "a1", t: 250}]
+| join_within($held; .addr; .addr; .t; .lease_start; .lease_end)
+| join_within($sess; .dev; .dev; .t; .s_start; .s_end)
+| map({id, t, dev, user})
+```
+
+```json
+[
+  {"id": "A", "t": 50, "dev": "d1", "user": "ann"},
+  {"id": "B", "t": 190, "dev": null, "user": null},
+  {"id": "C", "t": 250, "dev": "d2", "user": "bo"}
+]
+```
+
+Alert B gets no device from the first join, so its key for the second join is null, and a null key never matches: no user either. The lease intervals themselves are d1 from 0 to 180, `ended_by: "lapsed"`, and d2 from 200 to 300, `ended_by: "open"`: still running when the data stopped, its end the last hold plus its `ttl`.
 
 In every call below a `;` separates the arguments, and the arguments without a `$` are filters run on each row: `intervals_from_events(.seat; .who; .t; .k; .ttl)` reads each event's resource from its `seat` field, its holder from `who`, and so on.
 
@@ -23,7 +70,52 @@ Two of the definitions, `intervals_from_events` and `merge_intervals`, share one
 
 A `reduce` that appends each finished interval to a result array copies that array on every append, and the cost grows with the square of the output. The `foreach` avoids that.
 
-On this page, in the order of the file:
+### The rules it keeps
+
+- **Intervals are `[start, end)`.** A moment equal to an end belongs to the next interval, not the one ending; two intervals that only touch do not overlap, but `merge_intervals` joins them (they leave no gap).
+- **A null end means still open**: it contains every later moment, overlaps everything of its key that starts after it, and keeps `concurrency`'s count up.
+- **A resource has at most one holder at a time.** Intervals of one resource built by `intervals_from_events` never overlap. Each records how it ended (`ended_by`: `released`, `lapsed`, `taken_over`, `open`), the time of its last hold (`last`), how many opens and holds it covers (`events`), and whether its start was seen (`start_seen`, true only when the first event was an `open`, since a first `hold` may renew something older than the data).
+- **Events at the same second apply as open, hold, release**, whatever order the log has them in.
+- **When several intervals of a key contain a moment**, `join_within` takes the one that started last.
+- **Order:** resources and keys in order of first appearance; intervals in time order within each. `concurrency` emits one row per moment the count changes, in time order.
+- **Refuses:** an event kind other than `open`, `hold`, `release` or null, and an event with a kind but no time (`intervals_from_events`, naming the event's position); an interval with no start, or an end before its start (`merge_intervals`, `concurrency`); an input that is not a table, and in `join_within` an intervals table that is not one (page 00).
+- **Cost**, measured in the Python jq package with parsing included: `intervals_from_events` 8.4 s for 200,000 events (180,077 intervals); `join_within` 4.0 s for 50,000 lookups; `merge_intervals` 5.1 s; `concurrency` 4.7 s.
+
+### Beside core jq, SQL and pandas
+
+Core jq has no interval type and no range lookup. The nearest library idiom is the as-of join (page 30), "the latest lease event at or before the alert", which looks like the same question:
+
+```jq
+[{addr: "a1", dev: "d1", lt: 0}, {addr: "a1", dev: "d1", lt: 80}, {addr: "a1", dev: "d2", lt: 200}] as $leases
+| [{id: "A", addr: "a1", t: 50}, {id: "B", addr: "a1", t: 190}, {id: "C", addr: "a1", t: 250}]
+| join_asof($leases; .addr; .addr; .t; .lt) | map({id, t, dev})
+```
+
+```json
+[
+  {"id": "A", "t": 50, "dev": "d1"},
+  {"id": "B", "t": 190, "dev": "d1"},
+  {"id": "C", "t": 250, "dev": "d2"}
+]
+```
+
+It names d1 for alert B, ten seconds after d1's lease ran out. An as-of join knows when a value started and nothing about when it stopped being true. An age limit does not repair this, because no single limit fits leases of different lengths: on real lease data a fixed limit of 300 seconds missed the holder two times in three, and no limit named a device tens of thousands of times when the address was free.
+
+SQL: `join_within` is `LEFT JOIN intervals i ON i.key = l.key AND l.t >= i.start AND (i.end IS NULL OR l.t < i.end)`, and the test suite compares it, `merge_intervals` and `concurrency` with DuckDB's answers. Building the intervals from events has no single SQL equivalent: it takes a chain of window functions over each resource's events, with the lapse, release and take-over rules written out in `CASE` expressions. `merge_intervals` is the "gaps and islands" pattern. pandas' `merge_asof` is the as-of join above, with the same blind spot; its `IntervalIndex` can look up which interval contains a moment once the intervals exist, but there is no builder from events.
+
+What the family adds: the intervals themselves, built from evidence with expiry, release and take-over, and the lookup that answers "who held this at that moment".
+
+### Decisions
+
+- **2026-11-18, spec 15, version 0.3.0.** "Who held this at T" is answered with intervals, checked on real lease and session data; the as-of example in the README was wrong for it and was replaced. `join_asof` stays for "latest value at or before T" (prices, configuration versions), and the README says when it is the wrong tool. An interval with no closing event ends at its last hold plus the time to live, marked `open`; with a null time to live its end is null.
+- **Checked on real data**, recorded outside the repository. On three real lease logs (26,563, 1,249 and 161 intervals) the output equals a reference implementation built separately, row for row. On a real session log of 260 sessions, 259 give one interval with the same start; each of the four differences is a difference of rule (a session with only a closing record, one with two, two whose records all share one second), not a defect. That data changed two rules: each interval keeps `last`, the time of its last hold, because with no time to live the last evidence is all a caller has; and events at the same second apply as open, hold, release, because seventeen sessions logged their start and a keep-alive in the same second. No real slice showed an address passing to another holder while the first was still valid, so `taken_over` rests on made-up cases.
+- **`end` is a jq keyword** and cannot name a parameter on jq and gojq, so `merge_intervals` and `concurrency` call theirs `fin`. `join_within` keeps a running latest end per key so that a moment no interval contains stops its backward search at once.
+- **0.9.0 (2026-11-18, spec 55).** `merge_intervals` and `concurrency` accepted a null start (review finding 1); an interval with no start is now an error. The long comment of `intervals_from_events` sat above its helper (finding 5) and was moved back.
+- **0.13.1 (2026-11-19, spec 62).** `join_overlap` reads a null end as still open, as the functions here always did.
+
+## The functions
+
+In the order of the file:
 
 | Function | Whose | What it is for |
 |---|---|---|

@@ -2,11 +2,53 @@
 
 Generated from `src/jq_analytics/analytics.jq` and `docs/readout/notes/reshape.md`. Do not edit.
 
+## Design
+
+### What it is for
+
 Four definitions. Two are each other's opposite: `unpivot` turns columns into rows, and `pivot` turns rows into columns. The other two change only the names of the columns: `rename_fields` renames the ones listed, and `prefix_fields` puts a prefix on all of them.
 
-A table with one column per measurement (`cpu`, `ram`) is called wide. The same data with one row per measurement, and the measurement's name in a column of its own, is called long. Grouping and joining work on long tables; reports are usually wide.
+A table with one column per measurement (`cpu`, `ram`) is called wide. The same data with one row per measurement, and the measurement's name in a column of its own, is called long. Grouping and joining work on long tables; reports are usually wide. A round trip, long and back to wide:
 
-On this page, in the order of the file:
+```jq
+[{id: 1, a: 10, b: null}, {id: 2, a: 11, b: 21}]
+| unpivot(["id"]; "col"; "val") as $long
+| $long, ($long | pivot(["a", "b"]; {id}; .col; .val; add))
+```
+
+```json
+[{"id":1,"col":"a","val":10},{"id":1,"col":"b","val":null},{"id":2,"col":"a","val":11},{"id":2,"col":"b","val":21}]
+[{"id":1,"a":10,"b":null},{"id":2,"a":11,"b":21}]
+```
+
+The renames answer three needs: after a join, `site_right` says which side a value came from, and a reader wants to know what it is; before two tables are stacked, one may say `host` where the other says `hostname`; before a report, the columns get the names its reader expects.
+
+### The rules it keeps
+
+- **`unpivot` keeps nulls**: a field whose value is null still gets its row. Within each input row the unpivoted fields come in name order, so every engine gives the same row order (gojq would otherwise give fields sorted and jq written order). Output rows follow the input rows.
+- **`pivot` takes its column list from the caller.** The output has exactly those columns, in that order, on every row, whatever the data holds: a column with no values is null (and `agg` is not called), and a value of `colf` not in the list is dropped. Rows come in the order their row keys first appear (it is built on `group_agg`). Several values in one cell are combined by `agg` (`max`, `add`, `length`, `first`), which receives them in input order.
+- **`rename_fields` changes names, never values or places.** A field keeps its place in the row (on the engines that keep field order). A row without the field is left as it is; no null field is added. All names change at once, so `{a: "b", b: "a"}` swaps two fields.
+- **Refuses:** an input that is not a table (page 00); in `rename_fields`, a new name that is already another field of the row, and an argument that is not an object of strings; in `prefix_fields`, a prefix that is not a string. A prefix cannot create a clash, so none is checked.
+
+### Beside core jq, SQL and pandas
+
+Core jq writes a pivot as `group_by(.host) | map({host: .[0].host} + (map({(.metric): .v}) | add))`. On the five measurements of the `pivot` note it runs on jq 1.7.1, gojq and jaq, and shows three differences from `pivot`: the last value of a cell wins with no rule stated (two `cpu` values for web01, the second kept); the columns depend on the data (db01 gets `disk` and no `cpu` field at all, web01 no `disk`); and the hosts come sorted (db01 before web01) rather than in order of appearance. An unpivot is `.[] | to_entries[]` with the kept fields put back, which has no order rule across engines. A rename is `map(.new = .old | del(.old))`, which adds a null `new` to a row without `old` and, on jq and jaq, moves the field to the end of the row (the `rename_fields` note runs it).
+
+SQL: DuckDB's `FROM t UNPIVOT INCLUDE NULLS (value FOR metric IN (cpu, ram))` (the form the test suite compares `unpivot` with) and `PIVOT t ON metric IN ('cpu', 'ram') USING max(v) GROUP BY host`, and `AS` for renames. The `IN` list is the same idea as `pivot`'s column list; Power Query's "Pivot Column" also asks for its values.
+
+pandas, checked with pandas 3.1.1: `df.melt(id_vars=["host"])` keeps nulls but orders the long rows column by column (both hosts' `cpu`, then both hosts' `ram`), where `unpivot` goes row by row. `pivot_table(index="host", columns="metric", values="v", aggfunc="max")` takes its columns from the data (`disk` appears), and plain `pivot` refuses a cell with two values (`ValueError: Index contains duplicate entries, cannot reshape`). `rename(columns={...})` is `rename_fields`; `add_prefix` is `prefix_fields`.
+
+What the family adds: a pivot whose output shape never depends on the data, and renames that leave ragged rows ragged.
+
+### Decisions
+
+- **The column list of `pivot` is required**, from 0.1.0, as Power Query's `pivotValues` is: jq cannot know the columns before reading all the data, and a fixed list gives every row the same columns in the same order.
+- **0.9.0 (2026-11-18, spec 55).** `pivot` groups a row group's values by column name once instead of appending each value to its column's array (review finding 8); its cost now follows its rows, whatever the size of one cell. No answer changed.
+- **2026-11-19, spec 61, version 0.13.0.** `rename_fields` and `prefix_fields` added on the owner's word ("ok add both now"). They followed the join rule of 0.12.0, which produces `site_right`. A list of fields for `prefix_fields` to leave alone, a suffix function and renaming by a function were left out; selecting and dropping columns are short in plain jq (`map({host, site})`, `map(del(.site))`).
+
+## The functions
+
+In the order of the file:
 
 | Function | Whose | What it is for |
 |---|---|---|

@@ -2,11 +2,70 @@
 
 Generated from `src/jq_analytics/analytics.jq` and `docs/readout/notes/distributions-profiles-diffs.md`. Do not edit.
 
-Eight definitions for the first questions asked of a table: which values are common, how a number is spread, whether two numbers move together, what each column holds, and what changed between two versions.
+## Design
+
+### What it is for
+
+Ten definitions for the first questions asked of a table: which values are common, how a number is spread, whether two numbers move together, what each column holds, and what changed between two versions of a table or a document.
+
+| The question | Use | Output |
+|---|---|---|
+| the most common value | `mode` | one value |
+| how often each value occurs | `value_counts` | one row per value: count and share |
+| how a number is spread | `bin_edges`, then `histogram` | one row per bin: edges and count |
+| do two numbers move together | `corr` | Pearson's r, from -1 to 1 |
+| what is in each column | `profile` | one row per column: present, nulls, empty, distinct, types, min, max |
+| what changed between two versions of a keyed table | `diff_tables` | one row per added, removed or changed key, with the fields that differ |
+| what changed between two versions of any document | `diff_docs` | one row per path that differs |
+
+A first look at an unfamiliar table, with the usual defects (an empty string, a number stored as text, a null, a missing field):
+
+```jq
+[{host: "web01", site: "N", ram: 32}, {host: "db01", site: "S", ram: 64}, {host: "new01", site: "", ram: "16"}, {host: "x01", ram: null}]
+| profile | map({column, present, nulls, empty, types})
+```
+
+```json
+[
+  {"column": "host", "present": 4, "nulls": 0, "empty": 0, "types": {"string": 4}},
+  {"column": "ram", "present": 4, "nulls": 1, "empty": 0, "types": {"null": 1, "number": 2, "string": 1}},
+  {"column": "site", "present": 3, "nulls": 1, "empty": 1, "types": {"string": 3}}
+]
+```
+
+`ram` holds numbers, a string and a null; that is what to fix with `cast_columns` before computing anything on it.
 
 The first four take a plain list of values as input, so a column is first pulled out of a table with `map(.field)`. `corr` and `diff_tables` take a table and filter arguments; in jq a `;` separates arguments, and an argument such as `.x` is a filter run on each row.
 
-On this page, in the order of the file:
+### The rules it keeps
+
+- **Nulls are skipped** by `mode`, `value_counts`, `histogram` and `corr` (a pair with a null on either side is left out), and the share in `value_counts` is of the non-null values. `profile` counts them, and counts an absent field as null.
+- **Ties have a rule, so the input order does not matter.** `mode` returns the smallest of the most frequent values in jq's sort order; `value_counts` sorts by count, then by value.
+- **A bin holds `from <= v < to`**, except the last, which also holds its upper edge. A value outside the edges is an error, not dropped, because a histogram that dropped it would undercount without saying so.
+- **No answer is null, not an error:** `mode` of no values, `corr` of fewer than two pairs or of a side that never varies.
+- **`profile` reports `min` and `max` only for a column of one type**, numbers or strings; columns come in name order.
+- **`diff_tables` compares rows by key** and lists the fields that differ, a field on one side only included; unchanged keys give no row; rows are sorted by key. **`diff_docs` compares by path**, arrays by position, and sorts the rows by path.
+- **Refuses:** a value outside the histogram's edges, edges that are not increasing, `bin_edges` with `hi` not above `lo`; a null or repeated key in either table of `diff_tables`, naming which table; an input that is not a list or a table (page 00).
+
+### Beside core jq, SQL and pandas
+
+The core-jq idiom for a mode is `group_by(.) | max_by(length) | .[0]`. On `[3, 1, 3, 1, 2]` it gives 3 on jq 1.7.1, gojq and jaq, because `max_by` returns the last of the tied groups and `group_by` sorts them; `mode` gives 1, the smallest. The idiom also counts null as a value: with two nulls added it still answers 3 only because the null group sorts first. A `value_counts` is `group_by(.) | map({value: .[0], count: length})`, which counts nulls and sorts by value, not count. There is no histogram, correlation, profile or diff in core jq.
+
+SQL: `mode()` (DuckDB returned 1 on the example; no tie rule is stated), `count(*) ... GROUP BY v ORDER BY 2 DESC`, `corr(y, x)` (0.5 on the `corr` note's example, the library's answer), `histogram` and `SUMMARIZE` for a profile. A table diff is a full outer join on the key with a comparison per column.
+
+pandas, checked with pandas 3.1.1: `Series.mode()` returns every tied value (`[1.0, 3.0]`); `value_counts(normalize=True)` gives the same shares (a 0.5, b 0.25, c 0.25) and drops nulls by default; `x.corr(y)` gives 0.5, skipping the pair with a missing value; `describe()` is the nearest profile; `DataFrame.compare` diffs two frames of the same shape and index.
+
+What the family adds: the first-look questions in jq, with a tie rule, a histogram that refuses what it cannot place, and diffs that name the fields or paths that changed.
+
+### Decisions
+
+- **2026-11-18, spec 35, version 0.7.0.** `mode`, `value_counts`, `histogram`, `corr`, `profile` and `diff_tables`. Approximate quantiles and sketches, rank correlation, outlier detection, schema inference beyond jq's own types, and fuzzy row matching (spec 40) were left out.
+- **2026-11-19, spec 65, version 0.15.0.** `diff_docs`, from the survey of questions people ask about jq ("comparing two JSON documents"): one row per path, in `getpath` form, sorted. Arrays compare by position; an approximate diff that detects moved items was left out.
+- **0.14.0 (2026-11-19, spec 60).** `mode` and `value_counts` given one row instead of a list used to answer about that row's field values with no error; they now stop with a message.
+
+## The functions
+
+In the order of the file:
 
 | Function | Whose | What it is for |
 |---|---|---|

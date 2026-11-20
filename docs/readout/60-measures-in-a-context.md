@@ -2,12 +2,16 @@
 
 Generated from `src/jq_analytics/analytics.jq` and `docs/readout/notes/measures-in-a-context.md`. Do not edit.
 
-Thirteen definitions that let a report compute one measure at several levels and compare a cell with a different slice of the data: its share of a total, the previous period, a running total. This is the part of the library modelled on DAX's `CALCULATE`.
+## Design
+
+### What it is for
+
+Thirteen definitions that let a report compute one measure at several levels and compare a cell with a different slice of the data: its share of a total, the previous period, a running total. `group_agg` answers one question at one level; a report asks the same measure at several levels at once, and asks each cell to look outside its own rows. In SQL that is `GROUP BY ROLLUP` plus window functions or self-joins; in DAX it is `CALCULATE` changing the filter context. This is the part of the library modelled on DAX's `CALCULATE`.
 
 Three words carry it:
 
 - A **measure** is any jq expression over an array of rows, such as `map(.rev) | sum_nonnull`.
-- A **context** is the object a cell is evaluated in: which filters it stands for (`at`), the rows that match them (`rows`), every row (`all`), and two lookups built once per report (`members`, `index`).
+- A **context** is the object a cell is evaluated in: which filters it stands for (`at`), the rows that match them (`rows`), every row (`all`), and two lookups built once per report: each level field's values (`members`) and the rows grouped by each level's fields (`index`).
 - A **context change** takes a context and returns another: remove a filter, add one, move to a neighbouring value.
 
 ```mermaid
@@ -19,6 +23,15 @@ flowchart TD
   CH[without_filter, only_filters, with_filter, shift, to_date, on_calendar] --> CALC
   CALC --> CR[_ctx_rows: from the index when it can, else _where scans]
 ```
+
+| Change | Does | DAX |
+|---|---|---|
+| `without_filter($dim)` | removes one filter | `REMOVEFILTERS`, `ALL` on one column |
+| `only_filters($dims)` | keeps the listed filters, drops the rest; `[]` is the grand total | `ALLEXCEPT` |
+| `with_filter($at)` | adds or replaces filters: a value, or a `{from, to}` range | a filter argument of `CALCULATE` |
+| `shift($dim; $k)` | moves to the value `$k` places along; -1 is the previous one | `PREVIOUSMONTH`, `DATEADD`, after `on_calendar` |
+| `to_date($dim)` | everything up to and including this value | a running total; `DATESYTD` when the year is another filter |
+| `on_calendar($dim; $values)` | makes `shift` and `to_date` step through `$values` instead of the values present in the data | a marked date table |
 
 All runs below use five made-up sales rows unless they say otherwise:
 
@@ -32,9 +45,87 @@ All runs below use five made-up sales rows unless they say otherwise:
 
 There are no February rows; that matters for `shift`. Each run builds the table from triples with `map({region: .[0], month: .[1], rev: .[2]})`.
 
+**One report, traced.** Revenue by region and month with region subtotals and a grand total; each cell's share of its region; the running total. By hand: E is 30 in January and 10 in March, 40 in all; W is 30 and 30, 60 in all; the total is 100. E in January is 30 of E's 40, a share of 0.75. E's running total is 30 after January and 40 after March.
+
+```jq
+def rev: map(.rev) | sum_nonnull;
+[["E", "2026-01", 10], ["E", "2026-01", 20], ["E", "2026-03", 10], ["W", "2026-01", 30], ["W", "2026-03", 30]]
+| map({region: .[0], month: .[1], rev: .[2]})
+| rollup(["region", "month"];
+    {rev: measure(rev), of_region: share_of(rev; without_filter("month")), to_date: measure_with(rev; to_date("month"))})
+```
+
+```json
+[
+  {"region": "E", "month": "2026-01", "level": "region/month", "rev": 30, "of_region": 0.75, "to_date": 30},
+  {"region": "E", "month": "2026-03", "level": "region/month", "rev": 10, "of_region": 0.25, "to_date": 40},
+  {"region": "W", "month": "2026-01", "level": "region/month", "rev": 30, "of_region": 0.5, "to_date": 30},
+  {"region": "W", "month": "2026-03", "level": "region/month", "rev": 30, "of_region": 0.5, "to_date": 60},
+  {"region": "E", "level": "region", "rev": 40, "of_region": 1, "to_date": 40},
+  {"region": "W", "level": "region", "rev": 60, "of_region": 1, "to_date": 60},
+  {"level": "all", "rev": 100, "of_region": 1, "to_date": 100}
+]
+```
+
+What happens for the cell E, January:
+
+1. `rollup` built the context `{at: {region: "E", month: "2026-01"}, rows: [the two E January rows], ...}`.
+2. `measure(rev)` runs `rev` on those two rows: 30.
+3. `share_of(rev; without_filter("month"))` removes the month filter. The context is now `{region: "E"}`, which is one of the report's own levels, so its rows are read from the index with no scan: the three E rows, 40. The share is 30 / 40.
+4. `to_date("month")` turns the month filter into "up to 2026-01"; with E still filtered, that is the same two rows: 30.
+
 Three jq reminders for this family. A `;` separates arguments. A `$name` parameter is a value, and a parameter without the `$` is a filter that the function runs later on an input it chooses. Inside a `cell` argument, `.` is the context, not a row.
 
-On this page, in the order of the file:
+### The rules it keeps
+
+- **Every level is a field on the row.** Put computed levels there first (`map(. + {month: .opened_at[0:7]})`), or bring a dimension's fields onto the fact rows with `lookup` (page 30).
+- **Every level is computed from rows.** Nothing is added up from finer cells, so a median or a ratio is right at the subtotal and the total: the median of all five rows is 20, which cannot be derived from the regions' medians of 10 and 30.
+- **Output shape:** one flat row per cell, with a `level` field (`"region/month"`, `"region"`, `"all"`); a subtotal row has no field for the levels it sums over. Rows come level by level, each level's groups sorted by its values.
+- **A cell whose context has no rows is not emitted.** A changed context with no rows runs the measure on an empty array (so `sum_nonnull` gives null).
+- **A move with nowhere to go has no context.** A `shift` past either end, or from a row with no filter on that field (a subtotal), marks the context void: `measure_with` and `share_of` return null without running the measure.
+- **`to_date` on a row with no filter on that field leaves the context unchanged**, so a subtotal shows its total. `to_date` compares values, so the period list must sort the way it is ordered: `2026-03` does, `Mar` does not.
+- **"Previous" means the previous value that has rows**, unless `on_calendar` supplies the periods. For March above, `shift("month"; -1)` is January; with a calendar it is February, which has no rows.
+- **Refuses** a `shift` on a field that is not a level of the report and has no `on_calendar` list: `shift: "month" is not a level of this report; add it to a level or use on_calendar`, the same on every engine. And an input that is not a table (page 00).
+- **Cost:** a changed context that is one of the report's own levels is read from an index built once. Any other filter scans every row once per cell. At 379,600 rows and 77 cells, a share of the total took 3.1 s on jq 1.8.2 from the index; a filter on a field outside the levels scans all rows for each of the 77 cells. So make every field a `measure_with` changes into a level of the report.
+
+### Beside core jq, SQL and pandas
+
+Core jq has no report at several levels. The nearest idiom is one `group_by` per level, concatenated, with each share or previous value computed by a second pass that looks the parent group up by hand; every new comparison is a new pass.
+
+SQL computes every level from rows too: `GROUP BY ROLLUP(region, month)` with `median(rev)` gives E 10, W 30 and the total 20 on DuckDB. Two things differ. A subtotal row carries NULL in the summed-over columns, which cannot be told from a real NULL without `GROUPING()`; the library leaves the field out and names the level. And comparisons are separate constructs: the share of the region is `r / sum(r) OVER (PARTITION BY region)`, the running total `sum(r) OVER (PARTITION BY region ORDER BY month)`, the previous month `lag(r) OVER (...)`, each over a grouped subquery, and `lag` steps to the previous row, not the previous calendar month. On the five rows those window queries give the same 0.75, 30, 40 and previous value 30 as the report above.
+
+pandas: `pivot_table(index="region", columns="month", values="rev", aggfunc="median", margins=True)` also computes its "All" margins from rows (E 10, W 30, all 20). Shares and previous periods are `groupby(...).transform("sum")` and `shift()` on a sorted frame, written per comparison.
+
+DAX is the model. The query below was compiled to DuckDB SQL by dax-sql 0.2.2 and run on a fixture with an empty month; for every region and month that has sales, its revenue, previous month and year to date equal `on_calendar`'s, and the compiled SQL is stored as the answer of test case `on_calendar_dax`:
+
+```text
+EVALUATE SUMMARIZECOLUMNS(
+    Sales[Region], 'Date'[Month],
+    "revenue", [Revenue],
+    "prior", CALCULATE([Revenue], PREVIOUSMONTH('Date'[Date])),
+    "to_date", TOTALYTD([Revenue], 'Date'[Date]))
+```
+
+Two differences remain, both by design:
+
+- DAX returns a row for a month without sales whenever some measure is not blank (the empty month shows the previous month's revenue). The jq report has one row per group that has rows; left-join the report to the period list if the empty periods are wanted.
+- `TOTALYTD` starts again each January; `to_date` runs over the whole period list. The fixture's sales lie within one year, so the test does not exercise this difference.
+
+The jq layer covers the common changes of context. It does not have DAX's time-intelligence functions as such, its blank rules, relationships between tables, or iterators over related tables. For a model that already exists in DAX, or a measure that leans on those, write it in DAX, compile it to SQL with dax-sql, and run it in DuckDB.
+
+Malloy's measure forms map onto this layer with no new function (Malloy's side taken from its documentation, not run here): `all(revenue)` is `measure_with(revenue; only_filters([]))`, and `exclude(revenue, region)` is `measure_with(revenue; without_filter("region"))`.
+
+### Decisions
+
+- **2026-11-15.** The measure layer: levels are fields on the row; `shift` moves to the previous value that has rows; `rollup` plus hand-picked levels (`rollup_levels`, SQL's grouping sets), no cube of every combination.
+- **2026-11-17.** The jq layer stays at subtotals and shares; DAX's own rules go through dax-sql.
+- **0.4.0 (2026-11-18, spec 20).** `on_calendar` added with the calendar table, so that "the previous month" can be a month with no rows. It is one assignment: `shift` and `to_date` already read the context's member list, and it replaces that list.
+- **0.9.0 (2026-11-18, spec 55).** `shift` on a field that is not a level of the report, with no `on_calendar`, had no member list to step through: jq and gojq gave a null cell, jaq stopped with `cannot index null` (review finding 12). It is now one error on every engine, naming the field and saying what to do.
+- **0.10.0 (2026-11-18, spec 57).** Four names changed because they did not say what they act on: `calc` to `measure_with`, `share` to `share_of`, `without` to `without_filter`, `keep_only` to `only_filters`. No aliases.
+
+## The functions
+
+In the order of the file:
 
 | Function | Whose | What it is for |
 |---|---|---|

@@ -1,4 +1,17 @@
-Eight definitions; six are small helpers of `calendar`, which makes one row per day. A day row carries the day's calendar fields (year, quarter, month, ISO week, US week) and the moments its local day starts and ends in a named zone, so a day is an interval and `join_within` can put an event in its day.
+### What it is for
+
+Eight definitions; six are small helpers of `calendar`, which makes one row per day. It answers "which ISO week, quarter or month is this day in", "how do I put each event in its local day", and "which periods exist, rows or not". A day row carries the day's calendar fields (year, quarter, month, ISO week, US week) and the moments its local day starts and ends in a named zone, so a day is an interval and `join_within` can put an event in its day.
+
+Three events placed in their local day in Detroit, through the day rows as intervals:
+
+```jq run
+calendar("2026-03-07"; "2026-03-09"; "America/Detroit") | map({zone: "x", date, start, end}) as $days
+| [{id: 1, at: "2026-03-08 04:30:00"}, {id: 2, at: "2026-03-08 05:30:00"}, {id: 3, at: "2026-03-09 03:59:59"}]
+| map(.t = (.at | parse_ts) | .zone = "x")
+| join_within($days; .zone; .zone; .t; .start; .end) | map({id, at, date})
+```
+
+Event 2, at 05:30 UTC on 8 March, is 00:30 in Detroit on the 8th; event 1, an hour earlier, is still the 7th there. The constant key `"x"` makes every day a candidate for every event. The definitions below show the week columns, which a New Year makes interesting: Friday 1 January 2021 is in ISO week 53 of 2020 and US week 1 of 2021.
 
 ```mermaid
 flowchart LR
@@ -9,7 +22,34 @@ flowchart LR
   C --> R[one row per day]
 ```
 
-Times are epoch seconds: the number of seconds since 1970-01-01 00:00 UTC. A day is 86,400 of them.
+Times are epoch seconds: the number of seconds since 1970-01-01 00:00 UTC. A day is 86,400 of them in UTC; in a zone with daylight saving, one day a year is 23 hours long and one is 25.
+
+Its other use is the period list. `calendar(...) | map(.year_month) | unique` is every month in a range, including months with no rows, and `on_calendar` hands it to a report so that "the previous month" is the previous calendar month (page 60).
+
+### The rules it keeps
+
+- **Both week systems, as separate columns.** `iso_year` and `iso_week` (weeks start Monday; week 1 holds the year's first Thursday, so a day near New Year can belong to the neighbouring ISO year), `iso_year_week` as `"2026-W09"`; and `us_week` (weeks start Sunday; week 1 holds 1 January), a spreadsheet's `WEEKNUM(d, 1)`.
+- **Weekday 0 is Sunday**, as everywhere in the library.
+- **A day is `[start, end)`**, the epoch seconds of local midnight in the zone and of the next local midnight, so the days of a range tile time with no gap. The zone decides `start` and `end` only; the calendar fields are those of the date.
+- **The input is ignored.** Call it with `jq -n` or bind it with `as`.
+- **Both ends are included**, and rows come in date order.
+- **Refuses** text that is not `YYYY-MM-DD`, a date that does not exist (30 February), `$from` after `$to`, and a zone the tables do not have, each naming `calendar` and quoting the value.
+
+### Beside core jq, SQL and pandas
+
+Core jq can make the dates and the ISO week: `fromdateiso8601` for the first day, `range` for the day numbers, and `gmtime | strftime("%G-W%V")`. On 31 December 2020 to 4 January 2021 that gives the same ISO weeks as `calendar` on jq 1.7.1, gojq and jaq. The US week is where it falls short: `strftime("%U")` counts weeks from the first Sunday, so it gives `52` for 31 December 2020 and `00` for 1 January 2021, where `us_week` gives 53 and 1. Local day boundaries need the zone rules, which core jq reads only from the process's `TZ` (page 15).
+
+SQL: a date dimension is `generate_series` over dates with `year`, `quarter`, `dayofweek`, `dayofyear`, `isoyear`, `weekofyear` and `AT TIME ZONE` for the local midnights. The test suite compares `calendar` with DuckDB's values for every day of 2026 and around three New Years.
+
+pandas: `pd.date_range("2020-12-31", "2021-01-04").isocalendar()` gives the same ISO years and weeks (2020-53 four times, then 2021-1), with Monday as day 1 where `calendar` has Sunday as 0. With `tz="America/Detroit"` the dates carry their local midnights (`-05:00` on 7 and 8 March 2026, `-04:00` on the 9th), which is what `start` and `end` hold as epoch seconds.
+
+What the family adds: a date table in jq with both week systems and local day boundaries, without the machine's zone.
+
+### Decisions
+
+- **2026-11-18, spec 20, version 0.4.0.** The calendar carries both ISO and US weeks, as separate columns. No fiscal calendars (4-4-5 included), no holidays and no business hours; filling a report with rows for periods that have no data is a left join of the report to the period list, not a feature of the calendar. `on_calendar` came in the same version, so a report's previous period can be one without rows.
+- **Impossible dates are refused by printing the parsed date back** and comparing, because some engines read `2026-02-30` as 2 March. `parse_ts` took the same check in 0.9.0.
+- **A day's start is found by guessing and correcting**: local midnight is `$m` minus the zone's offset, and the offset is looked up again at the guess, which keeps the answer right for a zone whose clocks change near midnight.
 
 ## _cal_bad/1, _cal_date/1
 <!-- code: 7ae2c44b -->

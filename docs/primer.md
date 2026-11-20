@@ -275,7 +275,7 @@ When the question is analytic, a named function replaces a hand-written `reduce`
 | JSON to CSV, TSV or a table; CSV into JSON | `to_csv(null)`, `to_tsv`, `to_table`; `from_csv` |
 | flatten nested rows, and back | `flatten_fields`, `flatten_paths`, `unflatten_fields`, `unnest` |
 | what changed between two versions | `diff_tables`, `diff_docs` |
-| drop nulls and empty values everywhere | `drop_empty` (nulls only: `del(.. | nulls)`) |
+| drop nulls and empty values everywhere | `drop_empty` (nulls only: `del(.. \| nulls)`) |
 
 The README has the full table, the rules each function keeps and its cost.
 

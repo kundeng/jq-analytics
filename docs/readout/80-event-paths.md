@@ -2,6 +2,10 @@
 
 Generated from `src/jq_analytics/analytics.jq` and `docs/readout/notes/event-paths.md`. Do not edit.
 
+## Design
+
+### What it is for
+
 Eight definitions: four public (`funnel_steps`, `funnel`, `cohorts`, `retention`) and four helpers. They read an event log, one row per thing an entity (a user, a device) did, and answer how far entities get through a sequence of steps and how many come back in later periods.
 
 ```mermaid
@@ -13,9 +17,67 @@ flowchart TD
   P[period list, in order] --> C & R
 ```
 
+A funnel is an ordered list of steps; an entity reaches step n when it has events for steps 1 to n in time order, optionally all within a time limit from its first step. Five made-up users, the steps view, cart and pay, and a limit of one hour:
+
+| user | events | depth | why |
+|---|---|---|---|
+| u1 | view 0, cart 100, pay 200 | 3 | in order, within the hour |
+| u2 | view 0, pay 50, cart 60 | 2 | pay came before cart |
+| u3 | view 0, cart 5000 | 1 | the cart is outside the hour |
+| u4 | view 0, view 4000, cart 4100, pay 4200 | 3 | the first view times out; the second completes |
+| u5 | cart 10, pay 20 | none | never viewed |
+
+`funnel` gives 4 at view, 3 at cart (0.75 of the previous step) and 2 at pay (0.6667 of the previous, 0.5 of the first). The definitions below run this example.
+
+Retention takes the list of periods from the caller, in order. With a active in January and March, b in January only, and nobody in February:
+
+```jq
+[{user: "a", month: "2026-01"}, {user: "a", month: "2026-03"}, {user: "b", month: "2026-01"}]
+| retention({user}; .month; ["2026-01", "2026-02", "2026-03"]) | map([.cohort, .period, .entities, .rate])
+```
+
+```json
+[
+  ["2026-01", "2026-01", 2, 1],
+  ["2026-01", "2026-02", 0, 0],
+  ["2026-01", "2026-03", 1, 0.5]
+]
+```
+
+February has a row with 0: a period in which nobody came back is still a period.
+
 In the calls below a `;` separates the arguments. Arguments without a `$` are filters run on each event (`.t` is "this event's time"); `{user}` is short for `{user: .user}`; `$steps`, `$within` and `$periods` are values.
 
-On this page, in the order of the file:
+### The rules it keeps
+
+- **An entity is credited with the deepest chain any of its first-step events can start.** u4's first view times out, its second completes, so u4 has depth 3. Among chains of equal length the earlier one is kept.
+- **Steps at the same moment count as in order** (`>=`, not `>`).
+- **The time limit counts from the chain's first step**; `null` means no limit.
+- **An entity that never reaches step 1 has no row** in `funnel_steps`; the counts in `funnel` never grow from one step to the next. With no entities every count is 0 and every ratio null.
+- **Periods are positions in the caller's list**, not sorted values, so `["Dec", "Jan", "Feb"]` works, and a period with no events still gets its rows in `retention`. A cohort is an entity's earliest period in that list.
+- **Order:** entities in the order they first appear; `retention` cohort by cohort in period order, each from its own period to the last.
+- **The entity key becomes the first columns**: an object key's fields, otherwise a field `key`.
+- **Refuses:** an empty step list, a step listed twice, an event of a listed step with no time (`funnel_steps`, `funnel`); an event whose period is not in the list (`cohorts`, `retention`, naming the function); an input that is not a table (page 00).
+- **Cost**, measured in the Python jq package: `funnel` 5.7 s at 200,000 events; `retention` with 40,000 entities over 365 periods 1.3 s.
+
+### Beside core jq, SQL and pandas
+
+Core jq has nothing for either. A funnel by hand needs per-entity grouping, a sort, and a search over chains; a shortcut that starts every chain at the entity's earliest first-step event gives u4 depth 1, since its cart comes 4,100 s after that view, outside the hour.
+
+SQL writes a funnel as a self-join per step (view to cart within the limit, cart to pay at or after the cart) or with window functions, and a cohort table as `min(period) OVER (PARTITION BY entity)` and a `GROUP BY cohort, period`. A period with no events at all has no group, so the empty period disappears unless the query joins to a period list.
+
+pandas, checked with pandas 3.1.1: cohort `groupby("user").month.transform("min")` and then `pd.crosstab(cohort, month, values=user, aggfunc="nunique")` gives January's cohort 2 in January and 1 in March, with **no February column**, because no event falls in February. `retention` gives the February row with 0 and a rate. pandas has no funnel function.
+
+What the family adds: a funnel with a stated chain rule and a retention table complete over the caller's periods.
+
+### Decisions
+
+- **2026-11-18, spec 25, version 0.5.0.** Periods come from a caller-supplied ordered list, as `on_calendar` takes one, so empty periods count and the order is the caller's. Events at the same time satisfy consecutive steps. Funnels with repeating or unordered steps, sessions inside funnels (cut events with `sessions` first and use the session as the entity), survival curves and churn models were left out.
+- **0.9.0 (2026-11-18, spec 55).** `retention` scanned every entity once per period (review finding 10). It now groups the entities by cohort once: 40,000 entities over 365 periods went from 18.6 s to 1.3 s in the Python jq package, with no answer changed.
+
+## The functions
+
+In the order of the file:
 
 | Function | Whose | What it is for |
 |---|---|---|

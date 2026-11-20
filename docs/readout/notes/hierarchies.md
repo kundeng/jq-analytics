@@ -1,4 +1,6 @@
-Two definitions. A tree here is a table of nodes, each naming its parent; a root's parent is null or `""`. An organisation chart, a folder tree and a bill of materials all have this form.
+### What it is for
+
+Two definitions for trees: "what is the chain of managers above this team, and how deep is it", and "how many people, or how much cost, sit under each node, at any depth". A tree here is a table of nodes, each naming its parent; a root's parent is null or `""`. An organisation chart, a folder tree and a bill of materials all have this form. The output is the same table with fields added: `ancestry` and `depth` from `tree_paths`, and `subtree` as well from `tree_rollup`.
 
 Both examples use one tree of five teams:
 
@@ -9,6 +11,45 @@ flowchart TD
   eng --> web
   eng --> api
 ```
+
+With head counts ceo 1, eng 2, ops 3, web 4 and api missing, the totals by hand are eng 2 + 4 + 0 = 6 and ceo 1 + 6 + 3 = 10:
+
+```jq run
+[{id: "ceo", boss: null, n: 1}, {id: "eng", boss: "ceo", n: 2}, {id: "ops", boss: "ceo", n: 3},
+ {id: "web", boss: "eng", n: 4}, {id: "api", boss: "eng", n: null}]
+| tree_rollup(.id; .boss; .n) | map({id, ancestry, subtree})
+```
+
+A tree that arrives nested (each node holding its children) becomes this table with `nodes_from_nested`, and goes back with `nested_from_nodes` (page 65).
+
+### The rules it keeps
+
+- **Ancestry reads from the root down**, ending with the node itself; a root's depth is 0.
+- **A null value counts as 0** in a rollup, so a node with no value still has a subtree.
+- **Every level is summed**, not only the children: a rollup is over the node and all its descendants at any depth.
+- **Order:** the rows come back in input order; the input need not be in top-down order.
+- **Ids are compared by their JSON text**, so the number `1` and the string `"1"` are two nodes.
+- **Refuses** a cycle, a parent id that is not a node, and an id on two rows, each with an error naming the id. `tree_rollup` and `nested_from_nodes` call `tree_paths` and refuse the same. An input that is not a table is refused too (page 00).
+- **Cost:** each ancestry is built once, and a walk up stops at the first ancestor already done, so the work follows the size of the output, which is nodes times average depth. Measured in the Python jq package, parsing included: 7 to 8 s at 200,000 nodes for a shallow tree, 20.1 s at 200,000 nodes in a tree thousands of levels deep, where the output itself (every node's full ancestry) is that large.
+
+### Beside core jq, SQL and pandas
+
+The core-jq idiom is a lookup from id to parent and `recurse` up it:
+
+```jq
+(map({(.id): .boss}) | add) as $par | map(.id as $i | {id: $i, ancestry: ([$i | recurse($par[.] // empty)] | reverse)})
+```
+
+On the five teams it gives the same ancestries on jq 1.7.1, gojq and jaq. It differs on bad input and on size. A parent that is not a node becomes a silent extra root: `[{id: "a", boss: "zz"}]` gives the ancestry `["zz", "a"]` on all three. A cycle never ends. Ids become object keys, so `1` and `"1"` collide. And every node walks its whole ancestry again, which is what made the library's first version take 16 s on 4,000 nodes dozens of levels deep.
+
+SQL needs a recursive query: `WITH RECURSIVE r(id, cur, path) AS (SELECT id, boss, [id] FROM t UNION ALL SELECT r.id, t.boss, list_prepend(t.id, r.path) FROM r JOIN t ON r.cur = t.id) SELECT id, path FROM r WHERE cur IS NULL` gives the same five ancestries on DuckDB. A rollup is that query joined back and summed. A cycle makes the recursion run on unless the query guards against it, and a dangling parent drops the node from the result instead of raising an error. DAX has `PATH` for the ancestry. pandas has no tree operation in its DataFrame API; it is written as repeated self-merges, one per level.
+
+A one-level sum, which is what a single self-join or a single grouping pass by parent gives, undercounts any tree deeper than two levels; `tree_rollup` sums every level.
+
+### Decisions
+
+- **0.6.0 (2026-11-18, spec 30).** `tree_paths` rewritten so that each ancestry is built once: a walk up stops at the first ancestor already done. Before, it walked every node's whole ancestry, and a tree of 4,000 nodes dozens of levels deep took 16 s; 40,000 now take 1.9 s.
+- **0.9.0 (2026-11-18, spec 55).** An id on two rows is an error (review finding 11); before, both rows of the id got the ancestry of one of them.
 
 ## tree_paths/2
 <!-- code: d6007051 -->

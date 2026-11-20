@@ -1,18 +1,63 @@
-Fifteen definitions that convert between the forms data arrives in (nested documents, objects keyed by id) and the tables the rest of the library takes, and from those tables to what the next tool reads. A table here is an array of objects, one object per row.
+### What it is for
+
+Twenty-five definitions that convert between the forms data arrives in (nested documents, objects keyed by id, CSV text) and the tables the rest of the library takes, and from those tables to what the next tool reads (CSV, TSV, a printed table, an object keyed by id, a nested tree, a node-link graph). A table here is an array of objects, one object per row. They answer "how do I get this API reply into rows", "how do I fill the gaps in this time series", and "how do I hand this result to a spreadsheet or a graph viewer".
 
 ```mermaid
 flowchart TD
-  N[nested documents] -- unnest, unnest_outer, flatten_fields --> T[tables]
+  N[nested documents] -- unnest, unnest_outer, flatten_fields, flatten_paths --> T[tables]
+  CSVIN[CSV text, or arrays with a header] -- from_csv, rows_from_arrays --> T
   NT[a nested tree] -- nodes_from_nested --> T
   M[an object keyed by id] -- rows_from_map --> T
-  T -- fill_grid --> T
+  T -- fill_grid, drop_empty --> T
+  T -- unflatten_fields --> N2[nested rows]
   T -- to_map --> M2[an object keyed by id]
   T -- nested_from_nodes --> NT2[a nested tree]
   T -- node_link --> G[nodes and links for graph tools]
-  T -- to_csv --> C[CSV lines]
+  T -- to_csv, to_tsv, to_table --> C[text lines]
 ```
 
+A small trip from an API reply to CSV: an object keyed by host becomes rows, then text.
+
+```jq run
+{web01: {ram: 16, tags: ["web"]}, db01: {ram: 64}} | rows_from_map("host") | [to_csv(null)]
+```
+
+The keys come back sorted (`db01` first), the columns are every field name, sorted, and the list in `tags` is written as its JSON text in one cell. `docs/design/05-shapes.md` places these converters among the library's shapes (table, several tables, intervals, tree, graph, star) and traces one nested export through three of them.
+
 Two jq reminders for this family. A `;` separates arguments. A parameter written `$as` is a value, here usually a field name as a string; a parameter without the `$`, such as `f` in `unnest(f; $as)`, is a filter the function runs on each row, so `.tags` there means "this row's tags".
+
+### The rules it keeps
+
+- **A converter changes form, never values.** No cast and no rounding: `from_csv` gives every value as a string, for `cast_columns` to type.
+- **Output order is stated and the same on every engine.** Where an object's key order would decide it, the library sorts, because gojq does not keep the order keys were written in: `rows_from_map` sorts by key, `to_csv(null)` sorts the column names. Where the data has an order, it is kept: `unnest` emits rows in input order and elements in array order, `nodes_from_nested` goes depth first, `node_link` lists nodes in order of first appearance, `fill_grid` goes combination by combination in time order.
+- **Empty is a value where it matters.** `unnest` drops a row whose array is empty or null (SQL's `CROSS JOIN UNNEST`); `unnest_outer` keeps it once with a null (`LEFT JOIN LATERAL`). `flatten_fields` keeps an empty object as `{}`. `drop_empty` removes null, `""`, `[]` and `{}` at every depth, and a container left empty by that, but keeps `false` and `0`.
+- **Refuses rather than guesses**, each with an error naming the row, key or line: an array field that is neither an array nor null (`unnest`); two paths that flatten to one name (`flatten_fields`, `flatten_paths`); a value that already has the key field (`rows_from_map`); a repeated key, with `1` and `"1"` counting as a repeat (`to_map`); a row with no time, or a time off the step grid (`fill_grid`); a parent that is not a node, a cycle, or a repeated id (`nested_from_nodes`, through `tree_paths`); a CSV record longer than its header, or a header that repeats a name (`rows_from_arrays`); anything but text given to `from_csv`. And an input that is not a table (page 00).
+- **Limits:** a key made only of digits comes back from `unflatten_fields` as an array position, not a key. `from_csv` reads RFC 4180 only (comma, double quotes), at about 5 s a megabyte in jq 1.7.1; larger files belong to DuckDB's `read_csv`.
+
+### Beside core jq, SQL and pandas
+
+Core jq has pieces of most of these, and the library's versions exist where the piece stops short. Each idiom below was run on jq 1.7.1, gojq and jaq:
+
+| Need | Core jq | Where it stops short |
+|---|---|---|
+| object keyed by id to rows | `to_entries \| map({host: .key} + .value)` | the row order is the key order the engine keeps: written order on jq and jaq, sorted on gojq |
+| CSV out | `@csv` on an array of cells | stops on a nested cell, with a different message on each engine (`array (["x"]) is not valid in a csv row` on jq); no header; the column list is yours to build |
+| CSV in | none; `split("\n") \| map(split(","))` | splits inside quotes: `a,"b,c"` gives three cells, `a`, `"b`, `c"`, on all three engines |
+| flatten to path names | `[paths(scalars) \| map(tostring) \| join(".")]` | gives the names but drops empty containers (`e: []` is lost); `leaf_paths` is not defined in jq 1.7.1, gojq or jaq |
+| drop nulls | `del(.. \| nulls)` | works on all three and is the right tool for nulls alone (`drop_nulls` was left out for that reason); `drop_empty` also removes `""`, `[]`, `{}` and containers emptied by that |
+| rows to an object by key | `INDEX(.id)` | keeps the last row of a repeated key silently; not in jaq |
+
+SQL: `CROSS JOIN UNNEST` and `LEFT JOIN LATERAL` are `unnest` and `unnest_outer`; a cross join of the keys with `generate_series`, left-joined to the data, is `fill_grid`; DuckDB's `read_csv` with every column as text reads the test file as `from_csv` does, and the test suite holds that answer.
+
+pandas, checked with pandas 3.1.1: `explode("tags")` is `unnest_outer` (an empty or missing list gives one row with NaN); `pd.json_normalize` is `flatten_fields` with `.` as the separator, except that it drops an empty object where `flatten_fields` keeps `{}`; `read_csv` and `to_csv` are the CSV pair, with type guessing on read that `from_csv` leaves to `cast_columns`.
+
+What the family adds: the conversions at the edges of a jq program, with a stated order and an error instead of a silent loss.
+
+### Decisions
+
+- **2026-11-18, spec 10, version 0.2.0.** Ten converters, in the one library file. A converter changes form, never values, refuses input that is not its source, and states its output order; an object keyed by id becomes rows sorted by key. Parquet, Excel and schema validation were left out: jq cannot write binary formats.
+- **0.9.0 (2026-11-18, spec 55).** `rows_from_map` refuses a value that already has the key field (review finding 13; before, the key was lost); `fill_grid` refuses a null time (finding 14); `nested_from_nodes` groups children by parent once instead of appending inside a `reduce` (finding 15), so its cost no longer grows with the number of children of one parent.
+- **2026-11-19, spec 65, version 0.15.0.** From a survey of the questions people ask about jq: `to_csv(null)` infers the columns (sorted, because first-seen order differs on gojq) and writes a nested cell as JSON text instead of stopping; `to_tsv` and `to_table` added; `from_csv` and `rows_from_arrays` read CSV; `drop_empty`; `flatten_paths` and `unflatten_fields`, which round-trip. `unflatten_fields` sets values through its own `_setp`, because jaq 3.1.2 will neither create an array from null nor assign past an array's end. Deep merge, other CSV dialects and an approximate document diff were left out.
 
 ## _distinct_in_order/0
 <!-- code: f7b39916 -->

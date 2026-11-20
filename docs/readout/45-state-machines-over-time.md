@@ -2,7 +2,46 @@
 
 Generated from `src/jq_analytics/analytics.jq` and `docs/readout/notes/state-machines-over-time.md`. Do not edit.
 
+## Design
+
+### What it is for
+
 Six definitions. Five of them read the events of one entity, in time order, as a machine that is in one state at a time; the sixth, `runs`, does the same cut on a plain array. An entity is the thing the events belong to, such as one request or one user. A block is a stretch of time that the entity spends in one state.
+
+| The question | Use | Output |
+|---|---|---|
+| how long was each thing in each state | `state_blocks` | one row per block: state, start, end, duration, events |
+| what changed, and when | `transitions` | one row per change: from, to, at |
+| which events belong to one visit | `sessions` | one row per session: number, start, end, events |
+| how long was the longest streak | `runs` | run-length encoding of a list as it stands |
+
+The input is a table of events, read through three filters: the entity (`{id}`), the time (`.t`) and the state (`.s`); `sessions` takes a gap limit instead of a state. What makes a table an event log is which fields the function is told to read. Intervals with an explicit end, such as leases and sessions that are opened and released, are built by `intervals_from_events` on page 70; funnels and retention over events are on page 80.
+
+Most examples on this page use the five events of request T1:
+
+| id | t | s |
+|---|---|---|
+| T1 | 0 | Open |
+| T1 | 10 | Open |
+| T1 | 30 | Work |
+| T1 | 50 | Open |
+| T1 | 80 | Closed |
+
+By hand: Open from 0 to 30, with two events; Work from 30 to 50; Open again from 50 to 80; Closed from 80, with no end yet.
+
+```jq
+[{id: "T1", t: 0, s: "Open"}, {id: "T1", t: 10, s: "Open"}, {id: "T1", t: 30, s: "Work"}, {id: "T1", t: 50, s: "Open"}, {id: "T1", t: 80, s: "Closed"}]
+| state_blocks({id}; .t; .s)
+```
+
+```json
+[
+  {"id": "T1", "state": "Open", "start": 0, "end": 30, "duration": 30, "events": 2},
+  {"id": "T1", "state": "Work", "start": 30, "end": 50, "duration": 20, "events": 1},
+  {"id": "T1", "state": "Open", "start": 50, "end": 80, "duration": 30, "events": 1},
+  {"id": "T1", "state": "Closed", "start": 80, "end": null, "duration": null, "events": 1}
+]
+```
 
 Three of the definitions share one move: **find the positions where something changes, then cut the array at those positions.**
 
@@ -15,17 +54,40 @@ blocks:     [0, 2)      [2, 3) [3, 4) [4, end)
 
 `$st` in the code is that list of start positions. Building it with `range` and `select`, and then reading the array by position, does one pass over the events and appends to nothing.
 
-Most examples on this page use the five events of request T1 drawn above:
+### The rules it keeps
 
-| id | t | s |
-|---|---|---|
-| T1 | 0 | Open |
-| T1 | 10 | Open |
-| T1 | 30 | Work |
-| T1 | 50 | Open |
-| T1 | 80 | Closed |
+- **A repeated state does not restart the clock:** the Open events at 0 and 10 are one block.
+- **Blocks tile the timeline.** A block ends where the next one starts, so there are no gaps and no overlaps.
+- **The last block has no end:** its `end` and `duration` are null. The data stopped; the state did not.
+- **A session is cut where the gap is greater than the limit**; a gap of exactly the limit stays inside the session. A session's `end` is the time of its last event, so a session of one event starts and ends at the same time.
+- **Order:** entities in the order their first event appears in the input (the grouping rule); inside an entity, events are sorted by time with a stable sort, so two events at the same time keep input order. `runs` does not sort at all: it reads the array as it stands.
+- **The entity key is copied into every output row**, as `group_agg` does: an object key's fields, or a field `key`.
+- **Refuses** an event with a null time: `state_blocks: an event has no time` (and the same for `transitions` and `sessions`), because such an event can be neither sorted into place nor subtracted. And an input that is not a table, or for `runs` not a list (page 00).
 
-On this page, in the order of the file:
+### Beside core jq, SQL and pandas
+
+Core jq has no state or session function. Run-length encoding is the usual hand-written `reduce`:
+
+```jq
+reduce .[] as $x ([]; if length > 0 and .[-1].value == $x then .[-1].n += 1 else . + [{value: $x, n: 1}] end)
+```
+
+On `["ok", "ok", "fail", "fail", "fail", "ok"]` it gives the same three runs as `runs(.)` on jq 1.7.1, gojq and jaq (gojq prints each run's fields sorted). It has no start position, and the state version needs the per-entity grouping, the sort by time and the end of each block from the next block's start written around it each time.
+
+SQL writes this as "gaps and islands": `LAG(s) OVER (PARTITION BY id ORDER BY t)` marks a change, a running `SUM` of the marks numbers the blocks, a `GROUP BY id, block` takes each block's first state, start and count, and a `LEAD` of the start gives the end. Run on DuckDB over T1's events, that query gives the four blocks above, with end 30, 50, 80 and NULL. For sessions the mark is `t - LAG(t) > 30`.
+
+pandas does the same with `(s != s.groupby(id).shift()).groupby(id).cumsum()` as the block number, then a `groupby` on entity and block (checked with pandas 3.1.1: the same four blocks, starts and counts); sessions use `df.groupby(id).t.diff() > gap`.
+
+What the family adds: the whole gaps-and-islands pattern as one call, with the open last block, the null-time check and the entity's key handled.
+
+### Decisions
+
+- **One pass, cut at positions.** The blocks are found from the list of positions where the state changes, not by appending to a growing array; the same cut serves `_blocks`, `sessions` and `runs`.
+- **0.9.0 (2026-11-18, spec 55).** `state_blocks`, `transitions` and `sessions` refuse a null time (review finding 9); before, `sessions` failed with jq's own `number (5) and null (null) cannot be subtracted`. The comment of `state_blocks` was moved back above it (finding 5).
+
+## The functions
+
+In the order of the file:
 
 | Function | Whose | What it is for |
 |---|---|---|

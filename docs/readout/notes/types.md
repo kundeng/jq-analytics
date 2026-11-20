@@ -1,4 +1,47 @@
-Two public definitions that turn text into typed values: `parse_ts` for one timestamp, `cast_columns` for the named columns of a table. Both refuse what they cannot read. Neither returns a quiet null for a bad value.
+### What it is for
+
+Two public definitions that turn text into typed values: `parse_ts` for one timestamp, `cast_columns` for the named columns of a table. Data from a CSV file, a log export or a ticketing system arrives with every value a string and an empty string where a value is missing; nothing can be added, compared by size or put on a clock until it is typed. This is usually the first stage of a program:
+
+```jq run
+[{opened: "2026-08-12 13:30:00", hours: "2.5"}, {opened: "", hours: ""}]
+| cast_columns({hours: "number", opened: "timestamp"})
+```
+
+`parse_ts` takes one string and gives seconds since 1970-01-01 UTC, the number every time function in the library reads. `cast_columns` takes a table and a schema (column name to `"number"`, `"timestamp"`, `"string"` or `"boolean"`) and gives the table back with those columns converted; other columns are untouched.
+
+### The rules it keeps
+
+- **Missing is `""` or null, and becomes null.** Nothing else turns into null.
+- **Both refuse what they cannot read.** Neither returns a quiet null for a bad value: a timestamp in another layout, a date that does not exist (30 February), a number with a leading space, a boolean written `"yes"`, a type name that is not one of the four. The error quotes the value, and `cast_columns` names the column.
+- **No zone means UTC.** `parse_ts` reads `YYYY-MM-DD HH:MM:SS` or the same with `T`, an optional fraction of a second, and an optional `Z`, `±HH:MM` or `±HHMM`. A clock with an offset is converted to UTC; a clock without one is taken as UTC, which is how ticketing systems and log exports usually write wall-clock text. A fraction is kept.
+- **A number must look like a JSON number** before it is converted, so the answer is the same on every engine.
+- **A schema column that a row lacks is added as null**, so every row comes out with the same columns.
+- **Order:** rows keep their order, and each row keeps its fields.
+
+### Beside core jq, SQL and pandas
+
+Core jq has `fromdateiso8601` and `tonumber`. Both read less than `parse_ts` and `cast_columns` and, worse, read it differently on each engine (jq 1.7.1, gojq 0.12, jaq 3.1):
+
+| Input | jq 1.7.1 | gojq | jaq |
+|---|---|---|---|
+| `"2026-08-12 13:05:00" \| fromdateiso8601` (a space, no `Z`) | error | error | error |
+| `"2026-08-12T13:05:00.250Z" \| fromdateiso8601` | error | error | 1786539900.25 |
+| `"2026-08-12T18:35:00+05:30" \| fromdateiso8601` | error | 1786539900 | 1786539900 |
+| `"2026-02-30T00:00:00Z" \| fromdateiso8601` | 1772409600 (2 March) | 1772409600 (2 March) | error |
+| `" 12" \| tonumber` | 12 | error | 12 |
+
+`parse_ts` gives one answer for all of these on every engine: the space form, the fraction and the offset are read, 30 February is an error. It still calls `fromdateiso8601` inside, on a text it has rebuilt into the one form every engine reads, and prints the result back with `todate` to catch the engines that roll an impossible date into the next month.
+
+SQL's `CAST(s AS TIMESTAMP)` and `CAST(s AS DOUBLE)` are the model: DuckDB refuses `'2026-02-30 00:00:00'` with `Conversion Error: timestamp field value out of range`, and `parse_ts` matches DuckDB's `ts::TIMESTAMPTZ` with the session zone set to UTC. DuckDB is more lenient about numbers: `CAST(' 12' AS DOUBLE)` is 12. Its `TRY_CAST` turns a failure into NULL, which the library deliberately does not offer.
+
+pandas' `pd.to_datetime` refuses 30 February by default (`DateParseError: day is out of range for month`), but the common `errors="coerce"` turns it, and `""`, into `NaT` with no trace of which was which. `cast_columns` is the one-call form of pandas' `astype` with a dict, or Power Query's "Changed Type" step, with the rule that a failure stops the program.
+
+### Decisions
+
+- **0.1.1 (2026-11-17).** A faster `parse_ts`: a 19-character timestamp takes a short path without the regular expression, which was the larger part of its cost on a big table.
+- **0.9.0 (2026-11-18, spec 55).** `parse_ts` refuses a date that does not exist (review finding 3): before, jq and gojq read `"2026-02-30 00:00:00"` as 2 March and jaq raised its own error. The fix prints the parsed moment back and compares, as `calendar` does. The cost of that check on the short path was measured at 200,000 rows and accepted. The same sprint stated, and pinned with a test, that `cast` adds a missing schema column as null (finding 4).
+- **0.10.0 (2026-11-18, spec 57).** `cast` was renamed `cast_columns`, because the old name did not say what it acts on. The old name is gone; there is no alias.
+- **Errors, not nulls, for bad values** follows the README's rule 4: a value silently turned into null is a row silently dropped from every later count.
 
 ## _ts_exact/1, parse_ts/0
 <!-- code: 7163a5ca -->

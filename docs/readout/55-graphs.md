@@ -2,7 +2,21 @@
 
 Generated from `src/jq_analytics/analytics.jq` and `docs/readout/notes/graphs.md`. Do not edit.
 
-Eight definitions. A graph is a table of edges: one row per edge. The arguments `from` and `to` are filters that give each edge's two ends, so `reachable(.a; .b; "fetch")` reads an edge row's start from its `a` field and its end from its `b` field. In jq a `;` separates arguments, a bare parameter such as `from` is a filter run on each row, and a `$name` parameter such as `$start` is a value. Four functions share one breadth-first search, `_search`.
+## Design
+
+### What it is for
+
+Eight definitions for questions about a network of links: what can be reached from here, how far away is it, what is the best route, what has to come before what, and which nodes hang together. A graph is a table of edges: one row per edge. The arguments `from` and `to` are filters that give each edge's two ends, so `reachable(.a; .b; "fetch")` reads an edge row's start from its `a` field and its end from its `b` field. In jq a `;` separates arguments, a bare parameter such as `from` is a filter run on each row, and a `$name` parameter such as `$start` is a value.
+
+| The question | Use | Output |
+|---|---|---|
+| what can be reached from a node | `reachable` | node names, nearest first |
+| how far away is each of them | `hops` | nodes with a hop count, the start at 0 |
+| the best route | `shortest_path`, by hops or by a weight | `{path, cost}`, or null |
+| what has to come before what | `topo_order` | each node with a level |
+| which nodes hang together | `components` | each node with its group's label |
+
+Four functions share one breadth-first search, `_search`.
 
 ```mermaid
 flowchart LR
@@ -31,7 +45,46 @@ As a table of edges, in the order every example lists them:
 | lint | package |
 | docs | package |
 
-On this page, in the order of the file:
+Every function, once, on that graph:
+
+| Call | Result |
+|---|---|
+| `reachable(.a; .b; "compile")` | `["test", "package"]` |
+| `hops(.a; .b; "fetch")` | fetch 0, compile 1, lint 1, test 2, package 2 |
+| `shortest_path(.a; .b; "fetch"; "package")` | path fetch, lint, package; cost 2 |
+| `shortest_path(.a; .b; .min; "fetch"; "package")` with weights 1, 1, 1 on the top route and 5, 5 through lint | path fetch, compile, test, package; cost 3 |
+| `topo_order(.a; .b)` | docs 0, fetch 0, compile 1, lint 1, test 2, package 3 |
+| `components(.a; .b)` on edges fetch-compile, lint-fetch, x-y | compile, fetch, lint in one group; x, y in another |
+
+### The rules it keeps
+
+- **Edges are directed** from `from` to `to`, except in `components`, which reads them both ways.
+- **Ties are broken by a stated rule**, so every engine returns the same answer. Breadth-first searches follow edges in input order, so among routes with the same number of edges `shortest_path` returns the one found first. The weighted search breaks a tie in cost by the node found earliest. `topo_order` sorts each level's nodes, and `components` visits nodes in sorted order and labels each group with its smallest node, so those two do not depend on the order of the input rows.
+- **A node is met once**, so a cycle cannot make a search run forever; `reachable` never lists its start, even when a cycle leads back to it.
+- **No route is null**, not an error; the start to itself is a path of one node and cost 0.
+- **A level is one more than the highest level** among the nodes that point to a node; nodes on one level do not depend on each other.
+- **Nodes are compared by their JSON text**, so `1` and `"1"` are two nodes.
+- **Refuses** a weight that is not a number or is below 0 (the error names it), a graph with a cycle in `topo_order` (the error names a node on the cycle), and an input that is not a table (page 00).
+- **Cost**, measured in the Python jq package with parsing included: `reachable`, `hops` and `topo_order` take 7 to 8 s at 200,000 edges, `components` 11.6 s. The weighted `shortest_path` has no priority queue: each round scans the open nodes, so with the goal as the farthest node it took 3.3 s at 10,000 edges and 51.5 s at 40,000; with the goal among the nearest hundred nodes, 0.1 to 0.4 s at those sizes.
+
+### Beside core jq, SQL and pandas
+
+Core jq can walk a graph with `recurse` over a neighbour lookup: `["fetch" | recurse($adj[.][]?)]`, where `$adj` maps each node to its neighbours. On the build graph it gives `["fetch","compile","test","package","lint","package"]` on jq 1.7.1, gojq and jaq: `package` twice, because `recurse` follows every route and remembers nothing. `unique` removes the repeat but sorts the names, so the distance order is lost, and a graph with a cycle never ends. There is no distance, route or order. The library's search records each node once, with its distance and the node it came from.
+
+SQL needs a recursive query for each of these. On DuckDB, `WITH RECURSIVE r(node, hops) AS (SELECT 'fetch', 0 UNION SELECT e.b, r.hops + 1 FROM r JOIN e ON e.a = r.node) SELECT node, min(hops) FROM r GROUP BY node` gives the same hop counts as `hops` on the build graph; `UNION`, not `UNION ALL`, is what stops it on a cycle. A weighted shortest path or a dependency order in SQL is a much longer query. pandas has no graph operations; graph work in Python usually moves to a graph library or a graph database.
+
+What the family adds: the common graph questions over a plain table of edges, in jq, with answers that do not change between engines.
+
+### Decisions
+
+- **0.6.0 (2026-11-18, spec 30).** `hops`, both forms of `shortest_path` and `topo_order` added, and `reachable` and `components` rewritten. Measured before, they slowed down with the square of the input (40,000 edges: `reachable` 9.1 s, `components` 17.8 s), because an array grew by one inside a `reduce` and was copied each time. The search now writes to objects keyed by node and position. The repaired functions give exactly the answers they gave before.
+- **2026-11-18: no priority queue.** The weighted search picks the nearest open node by scanning, which is simple and fast enough for the few thousand nodes jq is the right tool for; the README says so with the numbers above. It is a known limit, not a review finding, and spec 55 left it out.
+- **Answers do not depend on the engine.** Where several shortest paths or several orders exist, the function picks by a stated rule (spec 30's invariant).
+- All-pairs distances, negative weights, k shortest paths, centrality and community detection were left out (spec 30).
+
+## The functions
+
+In the order of the file:
 
 | Function | Whose | What it is for |
 |---|---|---|
