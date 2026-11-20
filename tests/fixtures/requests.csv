@@ -1,0 +1,7 @@
+id,host,note,opened_at
+1,web01,"disk full, again",2026-03-08 06:30:00
+2,db01,"said ""restart"" twice","2026-03-08 07:30:00"
+3,,"line one
+line two",
+
+4,app07,plain,2026-03-09 12:00:00

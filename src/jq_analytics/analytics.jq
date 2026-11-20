@@ -178,6 +178,16 @@ def local_time($tz):
      hour: $g[3], minute: $g[4], second: ($g[5] + ($l - ($l | floor))), weekday: $g[6],
      offset_s: $o, local_epoch: $l};
 
+# format_local: the input epoch as text in zone $tz with strftime directives ("%Y-%m-%d %H:%M"),
+# the zone's offset applied, daylight saving included; %z is written as +HHMM and %Z as the zone
+# name, from the zone tables, not from the machine's clock settings
+def format_local($tz; $fmt):
+  tz_offset($tz) as $o
+  | ($o | if . < 0 then "-" else "+" end) as $s | ($o | fabs) as $a
+  | "\($s)\(($a / 3600 | floor) | if . < 10 then "0\(.)" else tostring end)\((($a % 3600) / 60 | floor) | if . < 10 then "0\(.)" else tostring end)" as $z
+  | ($fmt | gsub("%z"; $z) | gsub("%Z"; if ($tz | type) == "string" then $tz else $z end)) as $f
+  | (. + $o) | floor | gmtime | strftime($f);
+
 # hours from epoch a to epoch b, exact (no rounding); null when either is null
 def hours_between(a; b): (a) as $a | (b) as $b
   | if $a == null or $b == null then null else ($b - $a) / 3600 end;
@@ -855,10 +865,88 @@ def node_link(from; to): _table("node_link"; "the input") |
   {nodes: ([.[] | (from), (to)] | _distinct_in_order | map({id: .})),
    links: map(. + {source: (from), target: (to)})};
 
-# to_csv: a header line, then one CSV line per row, columns in the order of $cols; a stream of
-# strings, so run jq with -r. A null is an empty cell. A nested value in a cell is an error from
-# @csv itself: flatten_fields first.
-def to_csv($cols): _table("to_csv"; "the input") | ($cols | @csv), (.[] | [.[$cols[]]] | @csv);
+# a cell's value for text output: an array or object becomes its JSON text, anything else stays
+def _cell: if type == "object" or type == "array" then tojson else . end;
+
+# the columns for text output: $cols as given, or with null every field name of the table, sorted
+# (sorted, not first seen, because gojq does not keep an object's key order)
+def _cols($cols): if $cols == null then [.[] | keys[]] | unique else $cols end;
+
+# to_csv: a header line, then one CSV line per row, columns in the order of $cols (null: every
+# field name, sorted); a stream of strings, so run jq with -r. A null is an empty cell; a nested
+# value is written as its JSON text.
+def to_csv($cols): _table("to_csv"; "the input") | _cols($cols) as $c | ($c | @csv), (.[] | [.[$c[]] | _cell] | @csv);
+
+# to_tsv: as to_csv, with tabs; a tab, line break or backslash in a value is escaped as jq's @tsv does
+def to_tsv($cols): _table("to_tsv"; "the input") | _cols($cols) as $c | ($c | @tsv), (.[] | [.[$c[]] | _cell] | @tsv);
+
+# to_table: the rows as plain-text columns for a terminal, a header line first, each column as wide
+# as its longest value, two spaces between, no trailing spaces; run jq with -r
+def to_table($cols): _table("to_table"; "the input") | _cols($cols) as $c
+  | ([$c] + map([.[$c[]] | _cell | if . == null then "" else tostring end])) as $g
+  | [range($c | length) as $j | $g | map(.[$j] | length) | max] as $w
+  | $g[] | [range($c | length) as $j | .[$j] + (" " * ($w[$j] - (.[$j] | length)) // "")] | join("  ") | sub(" +$"; "");
+
+# rows_from_arrays: [header, row, row, ...] as rows; a short row's missing cells are null, a row
+# longer than the header or a header that repeats a name is an error
+def rows_from_arrays: _table("rows_from_arrays"; "the input") | .[0] as $h
+  | if ($h | unique | length) != ($h | length)
+    then error("rows_from_arrays: the header repeats a name: \($h | group_by(.) | map(select(length > 1)[0])[0] | tojson)") else . end
+  | [.[1:] | to_entries[] | .key as $i | .value
+     | if length > ($h | length) then error("rows_from_arrays: record \($i + 1) has \(length) cells, the header \($h | length)") else . end
+     | . as $r | [range($h | length) as $j | {key: $h[$j], value: $r[$j]}] | from_entries];
+
+# from_csv: the text of a CSV file (jq -Rs) as rows, by RFC 4180: the first record names the
+# fields; quoted fields may hold commas, line breaks and doubled quotes; CRLF or LF line ends; blank
+# lines skipped. Every value stays a string, for cast_columns. Reads one character at a time:
+# about 5 s a megabyte in jq 1.7, 2 s in jaq; past a few megabytes, DuckDB's read_csv.
+def from_csv:
+  if type != "string" then error("from_csv: the input is \(_what), not the text of a CSV file. Read the file with jq -Rs.") else . end
+  | explode
+  | reduce (.[], -1) as $c ({rows: [], row: [], f: [], q: false, pq: false, any: false};
+      if $c == -1 then (if .any or (.row | length) > 0 then .rows += [.row + [.f | implode]] else . end)
+      elif .q then (if $c == 34 then .q = false | .pq = true else .f += [$c] end)
+      elif $c == 34 then (if .pq then .f += [34] | .q = true | .pq = false else .q = true | .any = true end)
+      else .pq = false
+        | if $c == 44 then .row += [.f | implode] | .f = [] | .any = true
+          elif $c == 10 then (if .any or (.row | length) > 0 then .rows += [.row + [.f | implode]] else . end) | .row = [] | .f = [] | .any = false
+          elif $c == 13 then .
+          else .f += [$c] | .any = true end end)
+  | .rows | rows_from_arrays;
+
+# flatten_paths: like flatten_fields, arrays included: every leaf becomes a column named by its
+# path joined with $sep, array positions as numbers ({"tags": ["x"]} gives "tags.0"); an empty
+# array or object stays as the value. Two paths that give the same name are an error.
+def flatten_paths($sep): _table("flatten_paths"; "the input")
+  | map(. as $r | [paths(type != "object" and type != "array" or length == 0)]
+        | map({key: (map(tostring) | join($sep)), value: (. as $p | $r | getpath($p))}) as $e
+        | ($e | from_entries) as $o
+        | if ($o | length) != ($e | length)
+          then error("flatten_paths: two paths flatten to the same name: \($e | map(.key) | group_by(.) | map(select(length > 1)[0]) | tojson)")
+          else $o end);
+
+# set the value at path $p, making an array for a number and an object for a string where nothing
+# is yet, and padding an array with nulls up to a position (jaq will not assign past the end)
+def _setp($p; $v):
+  if ($p | length) == 0 then $v
+  else $p[0] as $k
+    | (if . == null then (if ($k | type) == "number" then [] else {} end) else . end)
+    | (if ($k | type) == "number" and $k >= length then . + [range(length; $k + 1) | null] else . end)
+    | .[$k] = (.[$k] | _setp($p[1:]; $v)) end;
+
+# unflatten_fields: the reverse of flatten_paths and flatten_fields: a field "a.b.0" becomes
+# {a: {b: [value]}}; a part made only of digits is an array position, so a key "0" cannot survive
+def unflatten_fields($sep): _table("unflatten_fields"; "the input")
+  | map(reduce to_entries[] as $e ({}; _setp($e.key | split($sep) | map(if test("^[0-9]+$") then tonumber else . end); $e.value)));
+
+# drop_empty: a document without null, "", [] or {} at any depth, fields and array items alike;
+# a container left empty by that is removed too. false and 0 stay. Any value in. (For nulls only,
+# jq's own del(.. | nulls).)
+def drop_empty:
+  def _e: . == null or . == "" or . == [] or . == {};
+  def d: if type == "object" then with_entries(.value |= d | select(.value | _e | not))
+         elif type == "array" then map(d | select(_e | not)) else . end;
+  d;
 
 # ---------------------------------------------------------------- intervals
 
@@ -1206,6 +1294,26 @@ def diff_tables($old; key): _table("diff_tables"; "the input") | ($old | _table(
                       | map(select(. as $f | ($a | has($f)) != ($b | has($f)) or $a[$f] != $b[$f]))),
              old: $b, new: $a}
        end];
+
+# one row per path where documents $a and $b differ, walking both: objects by key (sorted), arrays by position
+def _diff($a; $b; $p):
+  if ($a | type) == "object" and ($b | type) == "object" then
+    ([$a, $b] | map(keys) | add | unique)[] as $k
+    | if ($a | has($k)) and ($b | has($k)) then _diff($a[$k]; $b[$k]; $p + [$k])
+      elif ($b | has($k)) then {path: ($p + [$k]), change: "added", old: null, new: $b[$k]}
+      else {path: ($p + [$k]), change: "removed", old: $a[$k], new: null} end
+  elif ($a | type) == "array" and ($b | type) == "array" then
+    range([$a, $b] | map(length) | max) as $i
+    | if $i < ($a | length) and $i < ($b | length) then _diff($a[$i]; $b[$i]; $p + [$i])
+      elif $i < ($b | length) then {path: ($p + [$i]), change: "added", old: null, new: $b[$i]}
+      else {path: ($p + [$i]), change: "removed", old: $a[$i], new: null} end
+  elif $a == $b then empty
+  else {path: $p, change: "changed", old: $a, new: $b} end;
+
+# diff_docs: what changed from document $old to the input, any shape: one row per path,
+# {path, change, old, new}, change "added", "removed" or "changed"; path as getpath takes it.
+# Objects compare by key, arrays by position (an item moved counts as changed). [] when equal.
+def diff_docs($old): [_diff($old; .; [])];
 
 # ---------------------------------------------------------------- approximate matching
 

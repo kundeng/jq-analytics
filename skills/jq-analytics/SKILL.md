@@ -84,13 +84,18 @@ Find the question; the shape tells you what one row must be; then read those fun
 | Totals for a node and everything under it; the path to the root | a node pointing at its parent | `tree_rollup`, `tree_paths` |
 | What depends on this; what is reachable; in what order; which things are connected | an edge | `reachable`, `hops`, `shortest_path`, `topo_order`, `components` |
 | Subtotals and a grand total; share of the total; this period against the last | a fact record with dimension fields | `rollup` with `measure`, `share_of`, `measure_with` and `without_filter`, `only_filters`, `shift`, `to_date` |
-| The local time, the weekday, office hours | a record with an instant | `parse_ts`, then `local_time` with a zone name; `calendar` for a date table |
+| The local time, the weekday, office hours | a record with an instant | `parse_ts`, then `local_time` with a zone name; `format_local` for text; `calendar` for a date table |
 | Wide to long, long to wide | a record | `unpivot`, `pivot` |
 | New names for fields: after a join, before stacking two tables, for a report | a table | `rename_fields({old: "new"})`; `prefix_fields("reg_")` on one table before a join |
 | An array field into rows; nested objects into columns | a nested record | `unnest`, `flatten_fields`, `rows_from_map`, `nodes_from_nested` |
+| Every nested value, arrays included, as a column, and back | a nested record | `flatten_paths`, `unflatten_fields` |
 | What changed between two versions | two tables with a key | `diff_tables` |
+| What changed between two versions of a document of any shape | two documents | `diff_docs` |
+| Remove null and empty values everywhere | any document | `drop_empty` (nulls only: `del(.. \| nulls)`) |
 | Keys that almost match | two tables with a text key | clean the key first (lowercase, trim); then `join_fuzzy` inside a block; for volume, a database |
-| Hand the result to another tool | a table | `to_csv`, `to_map`, `node_link`, `nested_from_nodes` |
+| Hand the result to another tool | a table | `to_csv`, `to_tsv` (`null` for every column, nested values as JSON text), `to_map`, `node_link`, `nested_from_nodes` |
+| Print rows as columns in a terminal | a table | `to_table` |
+| Read a CSV file | the file's text, read with `jq -Rs` | `from_csv`, then `cast_columns`; `rows_from_arrays` for `[header, row, ...]` |
 
 ## What the names do not tell you
 

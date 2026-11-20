@@ -125,7 +125,7 @@ Groups are formed by the tag's value and tables are named by its text. The numbe
 
 ### split_by: the definition
 
-`split_by/1`, lines 207 to 217:
+`split_by/1`, lines 217 to 227:
 
 ```jq
 # split a stream of rows into an object of tables by a tag: rows with the same tagf value form one table,
@@ -172,7 +172,7 @@ Three tables, of which two are wanted. The list also names a table that does not
 
 ### keep_tables: the definition
 
-`keep_tables/1`, lines 219 to 220:
+`keep_tables/1`, lines 229 to 230:
 
 ```jq
 # keep only the named tables (drop the rest before a heavy step or before output)
@@ -233,7 +233,7 @@ null
 
 ### shape: the definition
 
-`shape/0`, lines 222 to 223:
+`shape/0`, lines 232 to 233:
 
 ```jq
 # for checking a pipeline midway: each table's row count and field names (sorted)

@@ -16,6 +16,7 @@ On this page, in the order of the file:
 | `corr` | Public function | Pearson's correlation of two columns: 1 when they rise together on a straight line, -1 when one falls as the other rises, near 0 when there is no straight-line relation |
 | `profile` | Public function | A first look at a table: one row per column, saying how many rows have it, how many are null or empty, how many distinct values it holds, of which types, and its smallest and largest value |
 | `_diff_index`, `diff_tables` | Public functions and internal helpers | `diff_tables` reports what changed between two versions of a table that share a key: one row per key that was added, removed or changed |
+| `_diff`, `diff_docs` | Public functions and internal helpers | What changed between two versions of a document of any shape, such as a configuration before and after: one row per path that differs |
 
 ---
 
@@ -81,7 +82,7 @@ Step 3, `min | .[1]`: arrays compare element by element, so the smallest pair is
 
 ### mode: the definition
 
-`mode/0`, lines 1121 to 1123:
+`mode/0`, lines 1209 to 1211:
 
 ```jq
 # mode: the most frequent non-null value of a list; among equally frequent values the smallest in
@@ -119,7 +120,7 @@ Four non-null values. `a` appears twice, a share of 2 / 4 = 0.5. `b` and `c` tie
 
 ### value_counts: the definition
 
-`value_counts/0`, lines 1125 to 1128:
+`value_counts/0`, lines 1213 to 1216:
 
 ```jq
 # value_counts: one row per distinct non-null value of a list: {value, count, share (of the non-null
@@ -200,7 +201,7 @@ Step 3: the counts per bin number are 1, 1, 1 and 2, and the last line lays them
 
 ### bin_edges and the others: the definition
 
-`bin_edges/3`, lines 1130 to 1133:
+`bin_edges/3`, lines 1218 to 1221:
 
 ```jq
 # bin_edges: $n + 1 equally spaced numbers from $lo to $hi, the edges of $n bins
@@ -211,7 +212,7 @@ def bin_edges($lo; $hi; $n):
 
 Built into jq: `error`, `not`, `range`.
 
-`histogram/1`, lines 1135 to 1152:
+`histogram/1`, lines 1223 to 1240:
 
 ```jq
 # histogram: counts of a list of numbers per bin, the bins given by their edges (bin_edges, or any
@@ -318,7 +319,7 @@ Step 4: the first sum divided by the square root of the product of the other two
 
 ### corr: the definition
 
-`corr/2`, lines 1154 to 1164:
+`corr/2`, lines 1242 to 1252:
 
 ```jq
 # corr: Pearson's correlation of x and y over the rows where both are non-null; null with fewer than
@@ -405,7 +406,7 @@ Step 3: the output row is counted from those lists. For `ram`: `present` 4 (the 
 
 ### profile: the definition
 
-`profile/0`, lines 1166 to 1183:
+`profile/0`, lines 1254 to 1271:
 
 ```jq
 # profile: one row per column of a table, columns in name order:
@@ -523,7 +524,7 @@ Step 3: each key is looked up in both. A hand trace:
 
 ### _diff_index and the others: the definition
 
-`_diff_index/2`, lines 1185 to 1189:
+`_diff_index/2`, lines 1273 to 1277:
 
 ```jq
 def _diff_index(key; $who):
@@ -535,7 +536,7 @@ def _diff_index(key; $who):
 
 Built into jq: `error`, `has`, `tojson`.
 
-`diff_tables/2`, lines 1191 to 1208:
+`diff_tables/2`, lines 1279 to 1296:
 
 ```jq
 # diff_tables: what changed between two versions of a table that share a key. The input is the new
@@ -564,3 +565,72 @@ Built into jq: `empty`, `has`, `keys`, `map`, `select`, `tojson`, `unique`. From
 - `$n[$j] as $a | $o[$j] as $b`: the new and old row for a key, null when that table lacks it.
 - `elif $a == $b then empty`: equal rows emit nothing.
 - `fields`: `[($a | keys[]), ($b | keys[])] | unique` is the field names of both rows. `select(... ($a | has($f)) != ($b | has($f)) or $a[$f] != $b[$f])` keeps a field that is on one side only or has different values.
+
+---
+
+## _diff, diff_docs
+
+**Public functions and internal helpers** · `_diff($a; $b; $p)`, `diff_docs($old)`
+
+What changed between two versions of a document of any shape, such as a configuration before and after: one row per path that differs. `diff_tables` (above) compares tables row by row on a key; this compares anything, field by field.
+
+### _diff and the others: the example
+
+```jq
+{host: "web01", tags: ["disk", "p2"], owner: {team: "ops"}}
+| diff_docs({host: "web01", tags: ["disk"], owner: {team: "net", lead: "kim"}, gone: 1})
+```
+
+```json
+[
+  {"path": ["gone"], "change": "removed", "old": 1, "new": null},
+  {"path": ["owner", "lead"], "change": "removed", "old": "kim", "new": null},
+  {"path": ["owner", "team"], "change": "changed", "old": "net", "new": "ops"},
+  {"path": ["tags", 1], "change": "added", "old": null, "new": "p2"}
+]
+```
+
+The input is the new version and the argument the old. Four rows, sorted by path: `gone` and `owner.lead` were removed, `owner.team` changed, and the second tag was added. `host` and the first tag are equal and give no row. A path is a list jq's `getpath` takes, so `getpath(["owner", "team"])` reads the value back.
+
+### _diff and the others: reading the result
+
+- Arrays are compared by position. An item inserted at the front makes every later item "changed"; for lists of records, match them by a key with `diff_tables` instead.
+- A field whose value changed kind, say from a string to an object, is one "changed" row with both values whole.
+- Equal documents give `[]`.
+
+### _diff and the others: the definition
+
+`_diff/3`, lines 1298 to 1311:
+
+```jq
+# one row per path where documents $a and $b differ, walking both: objects by key (sorted), arrays by position
+def _diff($a; $b; $p):
+  if ($a | type) == "object" and ($b | type) == "object" then
+    ([$a, $b] | map(keys) | add | unique)[] as $k
+    | if ($a | has($k)) and ($b | has($k)) then _diff($a[$k]; $b[$k]; $p + [$k])
+      elif ($b | has($k)) then {path: ($p + [$k]), change: "added", old: null, new: $b[$k]}
+      else {path: ($p + [$k]), change: "removed", old: $a[$k], new: null} end
+  elif ($a | type) == "array" and ($b | type) == "array" then
+    range([$a, $b] | map(length) | max) as $i
+    | if $i < ($a | length) and $i < ($b | length) then _diff($a[$i]; $b[$i]; $p + [$i])
+      elif $i < ($b | length) then {path: ($p + [$i]), change: "added", old: null, new: $b[$i]}
+      else {path: ($p + [$i]), change: "removed", old: $a[$i], new: null} end
+  elif $a == $b then empty
+  else {path: $p, change: "changed", old: $a, new: $b} end;
+```
+
+Built into jq: `add`, `empty`, `has`, `keys`, `length`, `map`, `max`, `range`, `type`, `unique`.
+
+`diff_docs/1`, lines 1313 to 1316:
+
+```jq
+# diff_docs: what changed from document $old to the input, any shape: one row per path,
+# {path, change, old, new}, change "added", "removed" or "changed"; path as getpath takes it.
+# Objects compare by key, arrays by position (an item moved counts as changed). [] when equal.
+def diff_docs($old): [_diff($old; .; [])];
+```
+
+From this library: `_diff`.
+
+- `_diff` walks the two values side by side. Two objects: every key of either, sorted; a key in both is walked further, a key only in the new one is "added", only in the old one "removed". Two arrays: every position up to the longer length, the same way. Otherwise two equal values give nothing and two different ones a "changed" row.
+- `diff_docs` collects the rows of `_diff` from the old value to the input.

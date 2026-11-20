@@ -52,7 +52,7 @@ So `funnel_steps({user}; ...)` gives rows with a `user` column, and `funnel_step
 
 ### _entity_key: the definition
 
-`_entity_key/0`, line 1040:
+`_entity_key/0`, line 1128:
 
 ```jq
 def _entity_key: if type == "object" then . else {key: .} end;
@@ -90,7 +90,7 @@ One good call, then the three errors:
 
 ### _funnel_check: the definition
 
-`_funnel_check/3`, lines 1042 to 1048:
+`_funnel_check/3`, lines 1130 to 1136:
 
 ```jq
 def _funnel_check(time; step; $steps):
@@ -229,7 +229,7 @@ Step 4: an entity with a chain gets a row: its key, the chain's length as `depth
 
 ### funnel_steps: the definition
 
-`funnel_steps/5`, lines 1050 to 1078:
+`funnel_steps/5`, lines 1138 to 1166:
 
 ```jq
 # funnel_steps: how far each entity gets through the ordered steps in $steps. An entity reaches
@@ -339,7 +339,7 @@ Step 3: one row per step from `$c`, with the two ratios.
 
 ### funnel: the definition
 
-`funnel/5`, lines 1080 to 1089:
+`funnel/5`, lines 1168 to 1177:
 
 ```jq
 # funnel: one row per step, in order: {step, entities (how many reached it), from_previous,
@@ -386,7 +386,7 @@ The keys are the periods as JSON text. `"2026-03"` is at position 2. A period th
 
 ### _period_pos and the others: the definition
 
-`_period_pos/0`, line 1091:
+`_period_pos/0`, line 1179:
 
 ```jq
 def _period_pos: . as $p | reduce range(0; length) as $i ({}; .[$p[$i] | tojson] = $i);
@@ -394,7 +394,7 @@ def _period_pos: . as $p | reduce range(0; length) as $i ({}; .[$p[$i] | tojson]
 
 Built into jq: `length`, `range`, `tojson`.
 
-`_period_idx/3`, lines 1092 to 1094:
+`_period_idx/3`, lines 1180 to 1182:
 
 ```jq
 def _period_idx(period; $pos; $who):
@@ -464,7 +464,7 @@ Step 2: the smallest position of each entity, turned back into a period: 0 is `"
 
 ### cohorts: the definition
 
-`cohorts/3`, lines 1096 to 1101:
+`cohorts/3`, lines 1184 to 1189:
 
 ```jq
 # cohorts: one row per entity, in order of first appearance: {entity key..., cohort}, the earliest
@@ -559,7 +559,7 @@ Step 4: for each position from the cohort's own to the last, one row with that c
 
 ### retention: the definition
 
-`retention/3`, lines 1103 to 1117:
+`retention/3`, lines 1191 to 1205:
 
 ```jq
 # retention: of the entities first seen in a period (a cohort), how many have at least one event

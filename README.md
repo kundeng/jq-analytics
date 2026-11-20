@@ -361,6 +361,22 @@ The two values of 64 fall in the last bin because it includes its upper edge.
 ```
 <!-- /example -->
 
+**`diff_docs($old)`.** What changed between two versions of a document of any shape; the input is the new one. One row per path that differs, `{path, change, old, new}`, change `added`, `removed` or `changed`, sorted by path; a path is the list `getpath` takes. Arrays compare by position, so for lists of records matched by a key use `diff_tables`.
+
+<!-- example: diff_docs -->
+```jq
+{host: "web01", tags: ["disk", "p2"], owner: {team: "ops"}} | diff_docs({host: "web01", tags: ["disk"], owner: {team: "net", lead: "kim"}})
+```
+
+```json
+[
+  {"path": ["owner", "lead"], "change": "removed", "old": "kim", "new": null},
+  {"path": ["owner", "team"], "change": "changed", "old": "net", "new": "ops"},
+  {"path": ["tags", 1], "change": "added", "old": null, "new": "p2"}
+]
+```
+<!-- /example -->
+
 ### Types
 
 **`parse_ts`**. A timestamp string to UTC epoch seconds, fractions kept. Accepts `YYYY-MM-DD HH:MM:SS` or with `T`, an optional fraction, and an optional `Z` or `±HH:MM` / `±HHMM` offset. No offset means UTC, which is how ServiceNow and Splunk store wall-clock strings. `null` and `""` give null; anything else that does not match is an error. Why: jq's `fromdateiso8601` rejects fractions and offsets, and `strptime("%z")` parses an offset but ignores it. Matches DuckDB `ts::TIMESTAMPTZ` with `TimeZone = 'UTC'`. A date or time that does not exist, such as 30 February, is an error on every engine: the parsed moment is printed back and compared with the input, because some engines would otherwise carry the extra days into the next month.
@@ -417,6 +433,18 @@ tz("America/Detroit") as $det | ["2026-03-08 06:59:59", "2026-03-08 07:00:00", "
   {"date": "2026-11-01", "hour": 1, "minute": 59, "weekday": 0, "offset_s": -14400},
   {"date": "2026-11-01", "hour": 1, "minute": 0, "weekday": 0, "offset_s": -18000}
 ]
+```
+<!-- /example -->
+
+**`format_local($tz; $fmt)`.** An epoch as local text in zone `$tz` with `strftime` directives, the zone's offset applied, daylight saving included; `%z` is written as `+HHMM` and `%Z` as the zone name, from the zone tables rather than the machine. Matches DuckDB `strftime(timezone($tz, to_timestamp(e)), $fmt)`. jq's own `strftime` writes UTC and `localtime` uses the machine's zone.
+
+<!-- example: format_local -->
+```jq
+[1772946000, 1772949600, 1772953200] | map(format_local("America/Detroit"; "%Y-%m-%d %H:%M %z"))
+```
+
+```json
+["2026-03-08 00:00 -0500", "2026-03-08 01:00 -0500", "2026-03-08 03:00 -0400"]
 ```
 <!-- /example -->
 
@@ -895,7 +923,7 @@ Converters between the forms data arrives in and the [shapes](#shapes-what-the-f
 
 **`node_link(from; to)`.** Edge rows become `{nodes: [{id}], links: [row + {source, target}]}`, the form networkx, d3 and Cytoscape read; nodes in order of first appearance.
 
-**`to_csv($cols)`.** A header line, then one CSV line per row, columns in the order of `$cols`: a stream of strings, so run jq with `-r`. A null is an empty cell; a comma inside a value is quoted. A nested value in a cell is an error from `@csv`: `flatten_fields` first.
+**`to_csv($cols)`, `to_tsv($cols)`, `to_table($cols)`.** A header line, then one line per row, columns in the order of `$cols`, or with `null` every field name of the table, sorted: a stream of strings, so run jq with `-r`. A null is an empty cell; a nested value is written as its JSON text. `to_csv` quotes as `@csv` does, `to_tsv` escapes tabs and line breaks as `@tsv` does, `to_table` pads columns for a terminal.
 
 <!-- example: shapes_out -->
 ```jq
@@ -909,6 +937,52 @@ Converters between the forms data arrives in and the [shapes](#shapes-what-the-f
 }
 "\"id\",\"site\",\"hours\""
 "\"REQ1\",\"South, annex\","
+```
+<!-- /example -->
+
+<!-- example: text_out -->
+```jq
+[{id: 1, host: "web01", tags: ["disk", "p2"]}, {id: 2, host: "db01", note: "said \"restart\""}] | [to_csv(null)], [to_table(["id", "host", "note"])]
+```
+
+```json
+["\"host\",\"id\",\"note\",\"tags\"", "\"web01\",1,,\"[\"\"disk\"\",\"\"p2\"\"]\"", "\"db01\",2,\"said \"\"restart\"\"\","]
+["id  host   note", "1   web01", "2   db01   said \"restart\""]
+```
+<!-- /example -->
+
+**`from_csv`, `rows_from_arrays`.** `from_csv` reads the text of a CSV file, read whole with `jq -Rs`, into rows by RFC 4180: the first record names the fields; quoted fields may hold commas, line breaks and doubled quotes; CRLF or LF line ends; blank lines skipped. Every value stays a string: give the columns their types with `cast_columns`. Equal to DuckDB `read_csv(..., all_varchar = true)` on the test file. It reads one character at a time, about 5 s a megabyte in jq 1.7; for larger files use DuckDB. `rows_from_arrays` turns `[header, row, ...]` into rows; a short row's missing cells are null, a longer row is an error.
+
+<!-- example: csv_in -->
+```jq
+"id,host,opened_at\r\n1,\"web01, annex\",2026-03-08 06:30:00\r\n2,db01,\r\n" | from_csv | cast_columns({id: "number", opened_at: "timestamp"})
+```
+
+```json
+[
+  {"id": 1, "host": "web01, annex", "opened_at": 1772951400},
+  {"id": 2, "host": "db01", "opened_at": null}
+]
+```
+<!-- /example -->
+
+**`flatten_paths($sep)`, `unflatten_fields($sep)`.** `flatten_paths` is `flatten_fields` with arrays flattened too, each item named by its position (`tags.0`); `unflatten_fields` rebuilds the nesting from such names, a part made only of digits becoming an array position. Flattening then unflattening gives the rows back.
+
+**`drop_empty`.** Any document without null, `""`, `[]` or `{}` at any depth, as fields and array items; a container left empty goes too. `false` and `0` stay. For nulls alone, jq's own `del(.. | nulls)`.
+
+<!-- example: flatten_drop -->
+```jq
+[{id: 1, tags: ["disk", "p2"], owner: {team: "ops"}}] | flatten_paths(".") | ., unflatten_fields("."), ({host: "web01", tags: ["", null, "p2"], owner: {team: ""}, ok: false} | drop_empty)
+```
+
+```json
+[
+  {"id": 1, "tags.0": "disk", "tags.1": "p2", "owner.team": "ops"}
+]
+[
+  {"id": 1, "tags": ["disk", "p2"], "owner": {"team": "ops"}}
+]
+{"host": "web01", "tags": ["p2"], "ok": false}
 ```
 <!-- /example -->
 

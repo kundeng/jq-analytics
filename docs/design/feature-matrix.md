@@ -1,6 +1,6 @@
 # Feature matrix
 
-What the library does, family by family, and how far each part is carried: the functions in `analytics.jq`, the test cases, the answer key, and the README. Counts are as of version 0.14.0 and come from `tests/cases.json` and the library file.
+What the library does, family by family, and how far each part is carried: the functions in `analytics.jq`, the test cases, the answer key, and the README. Counts are as of version 0.15.0 and come from `tests/cases.json` and the library file.
 
 ```mermaid
 flowchart LR
@@ -25,6 +25,11 @@ Legend: ✅ done · 🟡 partial · ⏳ planned · — not involved. A case coun
 | joins, shared-field-suffix | two tables; intervals for `join_overlap` | ✅ 10 | ✅ 38 | 15 | ✅ | five engines, 2026-11-19 | [59](../specs/59-shared-fields-in-joins/spec.md), [62](../specs/62-open-intervals-in-join-overlap/spec.md) |
 | rename-fields, prefix-fields | table | ✅ 2 | ✅ 12 | 0 | ✅ | five engines, 2026-11-19 | [61](../specs/61-rename-fields/spec.md) |
 | input-type-check | every table, list and object-of-tables function; tables passed as arguments | ✅ 4 internal; 73 functions check | ✅ 8 | 0 | ✅ | five engines, 2026-11-19 | [60](../specs/60-input-type-check/spec.md) |
+| table-output-inferred, tsv-and-text-table | table | ✅ 3 (`to_csv` extended, `to_tsv`, `to_table`) | ✅ 3 | 0 | ✅ | five engines, 2026-11-19 | [65](../specs/65-common-question-gaps/spec.md) |
+| csv-text-to-rows | the text of a CSV file | ✅ 2 | ✅ 5 | 1 | ✅ | five engines; equal to DuckDB read_csv, 2026-11-19 | [65](../specs/65-common-question-gaps/spec.md) |
+| drop-empty, diff-docs | any document | ✅ 2 | ✅ 3 | 0 | ✅ | five engines, 2026-11-19 | [65](../specs/65-common-question-gaps/spec.md) |
+| flatten-arrays, unflatten-fields | a nested record | ✅ 2 | ✅ 2 | 0 | ✅ | five engines, 2026-11-19 | [65](../specs/65-common-question-gaps/spec.md) |
+| format-local | an instant | ✅ 1 | ✅ 2 | 1 | ✅ | five engines; equal to DuckDB strftime with a time zone, 2026-11-19 | [65](../specs/65-common-question-gaps/spec.md) |
 | state-over-time | an event table, per entity | ✅ 4 | ✅ 5 | 4 | ✅ | five engines, 2026-11-18 | |
 | trees-and-graphs | tree, graph | ✅ 4 | ✅ 5 | 2 | ✅ | five engines, 2026-11-18 | |
 | measures-at-levels | star | ✅ 10 | ✅ 9 | 7 | ✅ | five engines, 2026-11-18 | |

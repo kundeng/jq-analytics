@@ -15,6 +15,7 @@ On this page, in the order of the file:
 | `tz` | Public function | The rules of one zone, looked up by name |
 | `tz_offset` | Public function | The zone's offset from UTC at one moment, in seconds |
 | `local_time` | Public function | The local clock reading of a moment in a zone, as an object with the date, the clock fields and the weekday |
+| `format_local` | Public function | An instant as readable local text: "2026-03-08 03:00" in Detroit rather than the UTC hour |
 | `hours_between` | Public function | The hours from one moment to another, with no rounding; null when either is missing |
 
 ---
@@ -281,6 +282,50 @@ Built into jq: `floor`, `gmtime`, `strftime`. From this library: `tz_offset`.
 
 ---
 
+## format_local
+
+**Public function** · `format_local($tz; $fmt)`
+
+An instant as readable local text: "2026-03-08 03:00" in Detroit rather than the UTC hour. jq's own `strftime` writes UTC, and `localtime` uses the machine's zone, which on a server is rarely the reader's.
+
+### format_local: the example
+
+Four instants around the start of daylight saving in Detroit, 2026-03-08 at 02:00 local:
+
+```jq
+[1772946000, 1772949600, 1772953200, 1773043200] | map(format_local("America/Detroit"; "%Y-%m-%d %H:%M %z"))
+```
+
+```json
+["2026-03-08 00:00 -0500","2026-03-08 01:00 -0500","2026-03-08 03:00 -0400","2026-03-09 04:00 -0400"]
+```
+
+The local clock jumps from 01:00 to 03:00 between the second and third instants, an hour apart in UTC, and the offset changes from `-0500` to `-0400`. DuckDB's `strftime` on `timezone('America/Detroit', ...)` gives the same times.
+
+### format_local: the definition
+
+`format_local/2`, lines 181 to 189:
+
+```jq
+# format_local: the input epoch as text in zone $tz with strftime directives ("%Y-%m-%d %H:%M"),
+# the zone's offset applied, daylight saving included; %z is written as +HHMM and %Z as the zone
+# name, from the zone tables, not from the machine's clock settings
+def format_local($tz; $fmt):
+  tz_offset($tz) as $o
+  | ($o | if . < 0 then "-" else "+" end) as $s | ($o | fabs) as $a
+  | "\($s)\(($a / 3600 | floor) | if . < 10 then "0\(.)" else tostring end)\((($a % 3600) / 60 | floor) | if . < 10 then "0\(.)" else tostring end)" as $z
+  | ($fmt | gsub("%z"; $z) | gsub("%Z"; if ($tz | type) == "string" then $tz else $z end)) as $f
+  | (. + $o) | floor | gmtime | strftime($f);
+```
+
+Built into jq: `fabs`, `floor`, `gmtime`, `gsub`, `strftime`, `tostring`, `type`. From this library: `tz_offset`.
+
+- `tz_offset($tz)` is the offset in seconds at that instant, from the zone tables.
+- `$z` writes it as `+HHMM` or `-HHMM`; `%z` in the format is replaced by it and `%Z` by the zone name (or by `$z` when a zone object was passed), before `strftime` sees the format, since `strftime` would print the machine's zone.
+- The instant plus the offset, read as UTC by `gmtime`, is the local wall clock, which `strftime` formats.
+
+---
+
 ## hours_between
 
 **Public function** · `hours_between(a; b)`
@@ -311,7 +356,7 @@ Both arguments are filters, run on the current input, which here is one row. `;`
 
 ### hours_between: the definition
 
-`hours_between/2`, lines 181 to 183:
+`hours_between/2`, lines 191 to 193:
 
 ```jq
 # hours from epoch a to epoch b, exact (no rounding); null when either is null

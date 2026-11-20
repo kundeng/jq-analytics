@@ -85,7 +85,7 @@ Step 2: for each position but the last, the slice of two code points starting th
 
 ### _bigrams and the others: the definition
 
-`_bigrams/0`, lines 1219 to 1222:
+`_bigrams/0`, lines 1327 to 1330:
 
 ```jq
 # the distinct two-character slices of a string, sorted
@@ -96,7 +96,7 @@ def _bigrams:
 
 Built into jq: `error`, `explode`, `implode`, `length`, `range`, `tojson`, `type`, `unique`.
 
-`_dice/2`, lines 1223 to 1225:
+`_dice/2`, lines 1331 to 1333:
 
 ```jq
 def _dice($x; $y):
@@ -154,7 +154,7 @@ Both arguments are filters, run on the input of `similarity`. In `map(similarity
 
 ### similarity: the definition
 
-`similarity/2`, lines 1227 to 1236:
+`similarity/2`, lines 1335 to 1344:
 
 ```jq
 # similarity: how alike two strings are, from 0 to 1: the Dice coefficient over their distinct
@@ -270,7 +270,7 @@ Step 4: the left row gets the field: `{similarity: 0.75, row: the web02 row}`, o
 
 ### join_fuzzy: the definition
 
-`join_fuzzy/7`, lines 1238 to 1254:
+`join_fuzzy/7`, lines 1346 to 1362:
 
 ```jq
 # join_fuzzy (left outer): each left row with field $as holding {similarity, row} for the right row

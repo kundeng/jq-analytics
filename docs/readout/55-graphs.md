@@ -110,7 +110,7 @@ Step 3, `from_entries`: the pairs become one object, the result at the top.
 
 ### _adj: the definition
 
-`_adj/2`, lines 533 to 534:
+`_adj/2`, lines 543 to 544:
 
 ```jq
 # node (as JSON text) -> the nodes its edges lead to, in input order
@@ -187,7 +187,7 @@ After the loop, `[.seen[]] | sort_by(.[0])` puts the five records in position or
 
 ### _search: the definition
 
-`_search/2`, lines 536 to 549:
+`_search/2`, lines 546 to 559:
 
 ```jq
 # breadth-first search from $start: the nodes reached, the start first, in the order met, as
@@ -250,7 +250,7 @@ Two values. From `compile` the build can go on to `test` and then `package`. Fro
 
 ### reachable and the others: the definition
 
-`reachable/3`, lines 551 to 554:
+`reachable/3`, lines 561 to 564:
 
 ```jq
 # reachable: every node that can be reached from $start along directed edges from -> to, at any
@@ -261,7 +261,7 @@ def reachable(from; to; $start): _table("reachable"; "the input") | _adj(from; t
 
 Built into jq: `map`. From this library: `_adj`, `_search`, `_table`.
 
-`hops/3`, lines 556 to 559:
+`hops/3`, lines 566 to 569:
 
 ```jq
 # hops: one row per node that can be reached from $start along directed edges, the start itself
@@ -340,7 +340,7 @@ Step 3: `reverse` turns goal to start into start to goal, and the goal's `hops` 
 
 ### shortest_path: the definition
 
-`shortest_path/4`, lines 561 to 570:
+`shortest_path/4`, lines 571 to 580:
 
 ```jq
 # shortest_path, four arguments: the route from $start to $goal with the fewest edges, as
@@ -451,7 +451,7 @@ Step 4: the path is read from `d` as in the four-argument form, following each n
 
 ### shortest_path: the definition
 
-`shortest_path/5`, lines 572 to 599:
+`shortest_path/5`, lines 582 to 609:
 
 ```jq
 # shortest_path, five arguments: the route with the lowest total weight (weights are numbers >= 0;
@@ -563,7 +563,7 @@ Step 3: all six nodes were given a level, so there is no cycle, and the rows are
 
 ### topo_order: the definition
 
-`topo_order/2`, lines 601 to 624:
+`topo_order/2`, lines 611 to 634:
 
 ```jq
 # topo_order: a dependency order of the nodes of a directed graph. One row per node: {node, level},
@@ -664,7 +664,7 @@ Step 3: each member is labelled with the node that started its search, and the r
 
 ### components: the definition
 
-`components/2`, lines 626 to 637:
+`components/2`, lines 636 to 647:
 
 ```jq
 # components: connected groups, edges read as undirected. One row per node: {node, component},

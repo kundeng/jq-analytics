@@ -288,3 +288,30 @@ Step 3: each key is looked up in both. A hand trace:
 - `$n[$j] as $a | $o[$j] as $b`: the new and old row for a key, null when that table lacks it.
 - `elif $a == $b then empty`: equal rows emit nothing.
 - `fields`: `[($a | keys[]), ($b | keys[])] | unique` is the field names of both rows. `select(... ($a | has($f)) != ($b | has($f)) or $a[$f] != $b[$f])` keeps a field that is on one side only or has different values.
+
+## _diff/3, diff_docs/1
+<!-- code: d99dd442 -->
+
+What changed between two versions of a document of any shape, such as a configuration before and after: one row per path that differs. `diff_tables` (above) compares tables row by row on a key; this compares anything, field by field.
+
+### The example
+
+```jq run
+{host: "web01", tags: ["disk", "p2"], owner: {team: "ops"}}
+| diff_docs({host: "web01", tags: ["disk"], owner: {team: "net", lead: "kim"}, gone: 1})
+```
+
+The input is the new version and the argument the old. Four rows, sorted by path: `gone` and `owner.lead` were removed, `owner.team` changed, and the second tag was added. `host` and the first tag are equal and give no row. A path is a list jq's `getpath` takes, so `getpath(["owner", "team"])` reads the value back.
+
+### Reading the result
+
+- Arrays are compared by position. An item inserted at the front makes every later item "changed"; for lists of records, match them by a key with `diff_tables` instead.
+- A field whose value changed kind, say from a string to an object, is one "changed" row with both values whole.
+- Equal documents give `[]`.
+
+### The definition
+
+<!-- definition -->
+
+- `_diff` walks the two values side by side. Two objects: every key of either, sorted; a key in both is walked further, a key only in the new one is "added", only in the old one "removed". Two arrays: every position up to the longer length, the same way. Otherwise two equal values give nothing and two different ones a "changed" row.
+- `diff_docs` collects the rows of `_diff` from the old value to the input.

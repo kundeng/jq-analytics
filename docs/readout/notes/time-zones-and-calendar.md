@@ -149,6 +149,29 @@ Step 4: the object is built from that array. The month gets 1 added (7 becomes 8
 - `second: ($g[5] + ($l - ($l | floor)))`: the whole seconds plus the fraction.
 - `offset_s` and `local_epoch` are kept so that a caller can go back to UTC, or compare two local times as numbers.
 
+## format_local/2
+<!-- code: 0e7b273d -->
+
+An instant as readable local text: "2026-03-08 03:00" in Detroit rather than the UTC hour. jq's own `strftime` writes UTC, and `localtime` uses the machine's zone, which on a server is rarely the reader's.
+
+### The example
+
+Four instants around the start of daylight saving in Detroit, 2026-03-08 at 02:00 local:
+
+```jq run
+[1772946000, 1772949600, 1772953200, 1773043200] | map(format_local("America/Detroit"; "%Y-%m-%d %H:%M %z"))
+```
+
+The local clock jumps from 01:00 to 03:00 between the second and third instants, an hour apart in UTC, and the offset changes from `-0500` to `-0400`. DuckDB's `strftime` on `timezone('America/Detroit', ...)` gives the same times.
+
+### The definition
+
+<!-- definition -->
+
+- `tz_offset($tz)` is the offset in seconds at that instant, from the zone tables.
+- `$z` writes it as `+HHMM` or `-HHMM`; `%z` in the format is replaced by it and `%Z` by the zone name (or by `$z` when a zone object was passed), before `strftime` sees the format, since `strftime` would print the machine's zone.
+- The instant plus the offset, read as UTC by `gmtime`, is the local wall clock, which `strftime` formats.
+
 ## hours_between/2
 <!-- code: ecb9b38e -->
 

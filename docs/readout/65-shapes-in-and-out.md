@@ -31,7 +31,10 @@ On this page, in the order of the file:
 | `to_map` | Public function | Rows become an object keyed by `key`, for looking a row up by id |
 | `_nest`, `nested_from_nodes` | Public functions and internal helpers | The reverse of `nodes_from_nested`: node rows with an id and a parent become a nested tree, each node's children in an array in field `$as` |
 | `node_link` | Public function | Edge rows become the `{nodes, links}` object that graph tools such as networkx, d3 and Cytoscape read |
-| `to_csv` | Public function | A table as CSV text: a header line, then one line per row, with the columns in the order of `$cols` |
+| `_cell`, `_cols`, `to_csv`, `to_tsv`, `to_table` | Public functions and internal helpers | A table as text for another tool or a person: CSV, TSV, or padded columns for a terminal |
+| `rows_from_arrays`, `from_csv` | Public functions | CSV text into rows, the other direction |
+| `flatten_paths`, `_setp`, `unflatten_fields` | Public functions and internal helpers | Nested rows as flat columns and back |
+| `drop_empty` | Public function | A document without empty values at any depth: null, `""`, `[]` and `{}` go, as fields and as array items, and a container that ends up empty goes with them |
 
 ---
 
@@ -73,7 +76,7 @@ Step 2, `[.s[]] | sort_by(.[0]) | map(.[1])`: the four pairs sorted by position,
 
 ### _distinct_in_order: the definition
 
-`_distinct_in_order/0`, lines 756 to 760:
+`_distinct_in_order/0`, lines 766 to 770:
 
 ```jq
 # the distinct values of an array in order of first appearance (jq's unique sorts them)
@@ -160,7 +163,7 @@ Step 2 in `unnest_outer`: an empty array is first replaced by `[null]`, so its r
 
 ### _unnest_arr and the others: the definition
 
-`_unnest_arr/2`, lines 762 to 766:
+`_unnest_arr/2`, lines 772 to 776:
 
 ```jq
 # the array at f for one row: [] for null, an error naming the row for anything else
@@ -172,7 +175,7 @@ def _unnest_arr(f; $i):
 
 Built into jq: `error`, `type`.
 
-`unnest/2`, lines 768 to 773:
+`unnest/2`, lines 778 to 783:
 
 ```jq
 # unnest: one row per element of the array at f, the element in field $as. A row whose array is
@@ -185,7 +188,7 @@ def unnest(f; $as): _table("unnest"; "the input") |
 
 Built into jq: `to_entries`. From this library: `_table`, `_unnest_arr`.
 
-`unnest_outer/2`, lines 774 to 776:
+`unnest_outer/2`, lines 784 to 786:
 
 ```jq
 def unnest_outer(f; $as): _table("unnest_outer"; "the input") |
@@ -255,7 +258,7 @@ Step 2, `from_entries`: the pairs become one object, the row of the result at th
 
 ### _flat and the others: the definition
 
-`_flat/2`, lines 778 to 782:
+`_flat/2`, lines 788 to 792:
 
 ```jq
 # one value flattened to {key: path, value} pairs; a non-empty object recurses, anything else is a leaf
@@ -267,7 +270,7 @@ def _flat($p; $sep):
 
 Built into jq: `length`, `to_entries`, `type`.
 
-`flatten_fields/1`, lines 784 to 794:
+`flatten_fields/1`, lines 794 to 804:
 
 ```jq
 # flatten_fields: nested objects become columns named by their path joined with $sep
@@ -343,7 +346,7 @@ Four rows, one per node, in depth-first order: a node, then everything under it,
 
 ### _nodes and the others: the definition
 
-`_nodes/3`, lines 796 to 798:
+`_nodes/3`, lines 806 to 808:
 
 ```jq
 # one nested node and its descendants as rows, depth first, each with its parent's id
@@ -353,7 +356,7 @@ def _nodes(id; children; $p): . as $n
 
 Built into jq: `del`.
 
-`nodes_from_nested/2`, lines 800 to 803:
+`nodes_from_nested/2`, lines 810 to 813:
 
 ```jq
 # nodes_from_nested: a nested tree (each node holding its children in an array at `children`)
@@ -424,7 +427,7 @@ Step 2: each pair becomes a row. For `db01`, `{host: "db01"} + {ram: 64}`. That 
 
 ### rows_from_map: the definition
 
-`rows_from_map/1`, lines 805 to 814:
+`rows_from_map/1`, lines 815 to 824:
 
 ```jq
 # rows_from_map: an object keyed by id becomes rows, the key in field $as, sorted by key. A value
@@ -548,7 +551,7 @@ For `["a"]` at time 60 there is no entry in `$ix`, so the row is `{"g":"a"} + {"
 
 ### fill_grid: the definition
 
-`fill_grid/4`, lines 816 to 833:
+`fill_grid/4`, lines 826 to 843:
 
 ```jq
 # fill_grid: every combination of the $keys fields' values (in first appearance) at every time from
@@ -613,7 +616,7 @@ The key is turned into a string, because an object key has to be one. So a repea
 
 ### to_map: the definition
 
-`to_map/1`, lines 835 to 839:
+`to_map/1`, lines 845 to 849:
 
 ```jq
 # to_map: rows become an object keyed by `key` (as a string). A duplicate key is an error; jq's
@@ -692,7 +695,7 @@ Step 3: each root is expanded by `_nest`, which adds field `reports` holding the
 
 ### _nest and the others: the definition
 
-`_nest/3`, lines 841 to 842:
+`_nest/3`, lines 851 to 852:
 
 ```jq
 # one node with its children, and theirs, nested under field $as
@@ -701,7 +704,7 @@ def _nest($by; id; $as): . as $n | $n + {($as): [($by[$n | id | tojson] // [])[]
 
 Built into jq: `tojson`.
 
-`nested_from_nodes/3`, lines 844 to 850:
+`nested_from_nodes/3`, lines 854 to 860:
 
 ```jq
 # nested_from_nodes: node rows (id, parent) become a nested tree, each node's children in an array
@@ -745,7 +748,7 @@ Edge rows become the `{nodes, links}` object that graph tools such as networkx, 
 
 ### node_link: the definition
 
-`node_link/2`, lines 852 to 856:
+`node_link/2`, lines 862 to 866:
 
 ```jq
 # node_link: edge rows become the node-link form graph tools read (networkx, d3, Cytoscape):
@@ -762,39 +765,383 @@ Built into jq: `map`. From this library: `_distinct_in_order`, `_table`.
 
 ---
 
-## to_csv
+## _cell, _cols, to_csv, to_tsv, to_table
 
-**Public function** · `to_csv($cols)`
+**Public functions and internal helpers** · `_cell`, `_cols($cols)`, `to_csv($cols)`, `to_tsv($cols)`, `to_table($cols)`
 
-A table as CSV text: a header line, then one line per row, with the columns in the order of `$cols`.
+A table as text for another tool or a person: CSV, TSV, or padded columns for a terminal. Since 0.15.0 the columns can be left to the function (`null`) and a nested value is written as its JSON text instead of stopping the run, the two things people most often trip on when they turn JSON into CSV.
 
-### to_csv: the example
+### _cell and the others: the example
 
-Two rows; one host name contains a comma, and one `ram` is null.
+Three rows: a host name with a comma in its note, a list of tags, an owner object, and nulls.
 
 ```jq
-[{host: "web01", ram: 16}, {host: "db, 01", ram: null}] | [to_csv(["host", "ram"])]
+[{id: 1, host: "web01", note: "disk full, again", tags: ["disk", "p2"], owner: {team: "ops"}},
+ {id: 2, host: "db01", note: "said \"restart\"", tags: [], owner: null},
+ {id: 3, host: "app07", note: null}]
+| [to_csv(null)], [to_tsv(["id", "note", "tags"])], [to_table(["id", "host", "note"])]
 ```
 
 ```json
-["\"host\",\"ram\"","\"web01\",16","\"db, 01\","]
+["\"host\",\"id\",\"note\",\"owner\",\"tags\"","\"web01\",1,\"disk full, again\",\"{\"\"team\"\":\"\"ops\"\"}\",\"[\"\"disk\"\",\"\"p2\"\"]\"","\"db01\",2,\"said \"\"restart\"\"\",,\"[]\"","\"app07\",3,,,"]
+["id\tnote\ttags","1\tdisk full, again\t[\"disk\",\"p2\"]","2\tsaid \"restart\"\t[]","3\t\t"]
+["id  host   note","1   web01  disk full, again","2   db01   said \"restart\"","3   app07"]
 ```
 
-`to_csv` emits three strings, one per line; the run collects them in an array to show them as JSON. Strings are quoted, which keeps the comma inside `"db, 01"` in one cell. The null is an empty cell. Run jq with `-r` to get the plain lines.
+Each function emits one string per line; the run collects them in arrays to show them as JSON. Run jq with `-r` to get the plain lines.
 
-### to_csv: the definition
+- `to_csv(null)`: the columns are every field name of the table, sorted: `host, id, note, owner, tags`. The comma and the quotes inside a note stay in one cell (`@csv` quotes strings and doubles their quotes). The tags and the owner come out as JSON text in one cell; a null or a missing field is an empty cell.
+- `to_tsv`: tabs between cells, no quotes; a tab, line break or backslash inside a value would be written as `\t`, `\n`, `\\`.
+- `to_table`: each column as wide as its longest value, two spaces between columns, no trailing spaces, so the last row ends after `app07`.
 
-`to_csv/1`, lines 858 to 861:
+### _cell and the others: what happens inside, on the example
+
+`_cols(null)` collects every row's keys and keeps each name once, sorted:
 
 ```jq
-# to_csv: a header line, then one CSV line per row, columns in the order of $cols; a stream of
-# strings, so run jq with -r. A null is an empty cell. A nested value in a cell is an error from
-# @csv itself: flatten_fields first.
-def to_csv($cols): _table("to_csv"; "the input") | ($cols | @csv), (.[] | [.[$cols[]]] | @csv);
+[{id: 1, host: "web01"}, {id: 3, note: null}] | _cols(null)
 ```
 
-From this library: `_table`.
+```json
+["host","id","note"]
+```
 
-- `$cols | @csv` is the header.
-- `.[] | [.[$cols[]]] | @csv`: for each row, its values for the columns in order, formatted by `@csv`. A column the row lacks is null, so an empty cell.
-- A nested value in a cell, an object or an array, is an error from `@csv` itself, worded differently by each engine. Run `flatten_fields` first.
+`_cell` leaves a string, number, boolean or null alone and turns an array or object into its JSON text:
+
+```jq
+[1, "a, b", null, ["x"], {team: "ops"}] | map(_cell)
+```
+
+```json
+[1,"a, b",null,"[\"x\"]","{\"team\":\"ops\"}"]
+```
+
+`to_table` first builds a grid of strings, the header row first, with null as the empty string; then the width of each column is its longest string; then each cell is padded to that width and the row joined with two spaces:
+
+```jq
+[{id: 1, host: "web01"}, {id: 12, host: "db"}] | [to_table(null)]
+```
+
+```json
+["host   id","web01  1","db     12"]
+```
+
+### _cell and the others: why the inferred columns are sorted
+
+The order in which fields first appear would be the natural choice, but gojq does not keep an object's key order, so the same program would give different columns on different engines. Sorted names are the same everywhere. Pass the list to choose the order.
+
+### _cell and the others: the definition
+
+`_cell/0`, lines 868 to 869:
+
+```jq
+# a cell's value for text output: an array or object becomes its JSON text, anything else stays
+def _cell: if type == "object" or type == "array" then tojson else . end;
+```
+
+Built into jq: `tojson`, `type`.
+
+`_cols/1`, lines 871 to 873:
+
+```jq
+# the columns for text output: $cols as given, or with null every field name of the table, sorted
+# (sorted, not first seen, because gojq does not keep an object's key order)
+def _cols($cols): if $cols == null then [.[] | keys[]] | unique else $cols end;
+```
+
+Built into jq: `keys`, `unique`.
+
+`to_csv/1`, lines 875 to 878:
+
+```jq
+# to_csv: a header line, then one CSV line per row, columns in the order of $cols (null: every
+# field name, sorted); a stream of strings, so run jq with -r. A null is an empty cell; a nested
+# value is written as its JSON text.
+def to_csv($cols): _table("to_csv"; "the input") | _cols($cols) as $c | ($c | @csv), (.[] | [.[$c[]] | _cell] | @csv);
+```
+
+From this library: `_cell`, `_cols`, `_table`.
+
+`to_tsv/1`, lines 880 to 881:
+
+```jq
+# to_tsv: as to_csv, with tabs; a tab, line break or backslash in a value is escaped as jq's @tsv does
+def to_tsv($cols): _table("to_tsv"; "the input") | _cols($cols) as $c | ($c | @tsv), (.[] | [.[$c[]] | _cell] | @tsv);
+```
+
+From this library: `_cell`, `_cols`, `_table`.
+
+`to_table/1`, lines 883 to 888:
+
+```jq
+# to_table: the rows as plain-text columns for a terminal, a header line first, each column as wide
+# as its longest value, two spaces between, no trailing spaces; run jq with -r
+def to_table($cols): _table("to_table"; "the input") | _cols($cols) as $c
+  | ([$c] + map([.[$c[]] | _cell | if . == null then "" else tostring end])) as $g
+  | [range($c | length) as $j | $g | map(.[$j] | length) | max] as $w
+  | $g[] | [range($c | length) as $j | .[$j] + (" " * ($w[$j] - (.[$j] | length)) // "")] | join("  ") | sub(" +$"; "");
+```
+
+Built into jq: `join`, `length`, `map`, `max`, `range`, `sub`, `tostring`. From this library: `_cell`, `_cols`, `_table`.
+
+- `_cols($cols)`: the list as given, or `[.[] | keys[]] | unique` (keys of every row, sorted, each once).
+- `to_csv` and `to_tsv`: the header is the column list through `@csv` or `@tsv`; each row is its values for those columns, each through `_cell`, through the same format.
+- `to_table`: `$g` is the grid of strings; `$w` the width of each column (`max` of the lengths down the column); each cell gets `" " * (width - length)` spaces, which is null for zero in jq 1.7, hence `// ""`; `sub(" +$"; "")` removes the padding after the last column.
+
+---
+
+## rows_from_arrays, from_csv
+
+**Public functions** · `rows_from_arrays`, `from_csv`
+
+CSV text into rows, the other direction. `from_csv` reads the text of a CSV file, read whole with `jq -Rs`, by RFC 4180, the rules most CSV writers follow; `rows_from_arrays` turns a header and value arrays into rows, for data that is already split.
+
+### rows_from_arrays and the others: the example
+
+A file with a comma inside quotes, doubled quotes, a line break inside quotes, an empty field, Windows line ends and a blank line:
+
+```jq
+"id,host,note\r\n1,web01,\"disk full, again\"\r\n2,db01,\"said \"\"restart\"\"\"\r\n3,,\"line one\nline two\"\r\n\r\n" | from_csv
+```
+
+```json
+[
+  {"id": "1", "host": "web01", "note": "disk full, again"},
+  {"id": "2", "host": "db01", "note": "said \"restart\""},
+  {"id": "3", "host": "", "note": "line one\nline two"}
+]
+```
+
+Three rows. Every value is a string, `""` for the empty host: CSV has no types, so give the columns their types next with `cast_columns`. The blank line is skipped. DuckDB's `read_csv` with every column as text reads the test file the same way.
+
+`rows_from_arrays` on data already split into arrays; a short row gets nulls:
+
+```jq
+[["host", "site"], ["web01", "N"], ["db01"]] | rows_from_arrays
+```
+
+```json
+[
+  {"host": "web01", "site": "N"},
+  {"host": "db01", "site": null}
+]
+```
+
+### rows_from_arrays and the others: what happens inside, on the example
+
+`from_csv` turns the text into its characters' code points with `explode` and reads them one at a time with `reduce`, keeping a small state: the rows so far, the cells of the current row, the characters of the current cell, whether it is inside quotes (`q`), and whether the last character was a quote that may end the quoted part (`pq`):
+
+- Inside quotes, every character belongs to the cell, commas and line breaks included; a quote ends the quoted part for now.
+- A quote right after that (`pq`) was a doubled quote: one quote goes into the cell and the quoted part goes on.
+- Outside quotes, a comma ends the cell, a line feed ends the row, a carriage return is dropped (so CRLF and LF both work), anything else goes into the cell.
+- `-1`, added after the last character, ends the last row if it has anything in it.
+
+Then `rows_from_arrays` makes the first record the header.
+
+### rows_from_arrays and the others: what is refused
+
+```jq
+(try ([["host"], ["web01", "N"]] | rows_from_arrays) catch .),
+(try ([["host", "host"], ["a", "b"]] | rows_from_arrays) catch .),
+(try ([{id: 1}] | from_csv) catch .)
+```
+
+```json
+"rows_from_arrays: record 1 has 2 cells, the header 1"
+"rows_from_arrays: the header repeats a name: \"host\""
+"from_csv: the input is an array, not the text of a CSV file. Read the file with jq -Rs."
+```
+
+A record longer than the header (a cell would have no name), a header that repeats a name (one value would overwrite the other), and anything but text given to `from_csv`.
+
+### rows_from_arrays and the others: cost
+
+One step of `reduce` per character: about 5 seconds a megabyte in jq 1.7.1 and 2 in jaq (measured on a 0.5 MB file of 20,000 rows: 2.5 s, gojq 1.1 s, jaq 0.85 s). For files of more than a few megabytes, read them with DuckDB's `read_csv`.
+
+### rows_from_arrays and the others: the definition
+
+`rows_from_arrays/0`, lines 890 to 897:
+
+```jq
+# rows_from_arrays: [header, row, row, ...] as rows; a short row's missing cells are null, a row
+# longer than the header or a header that repeats a name is an error
+def rows_from_arrays: _table("rows_from_arrays"; "the input") | .[0] as $h
+  | if ($h | unique | length) != ($h | length)
+    then error("rows_from_arrays: the header repeats a name: \($h | group_by(.) | map(select(length > 1)[0])[0] | tojson)") else . end
+  | [.[1:] | to_entries[] | .key as $i | .value
+     | if length > ($h | length) then error("rows_from_arrays: record \($i + 1) has \(length) cells, the header \($h | length)") else . end
+     | . as $r | [range($h | length) as $j | {key: $h[$j], value: $r[$j]}] | from_entries];
+```
+
+Built into jq: `error`, `from_entries`, `group_by`, `length`, `map`, `range`, `select`, `to_entries`, `tojson`, `unique`. From this library: `_table`.
+
+`from_csv/0`, lines 899 to 915:
+
+```jq
+# from_csv: the text of a CSV file (jq -Rs) as rows, by RFC 4180: the first record names the
+# fields; quoted fields may hold commas, line breaks and doubled quotes; CRLF or LF line ends; blank
+# lines skipped. Every value stays a string, for cast_columns. Reads one character at a time:
+# about 5 s a megabyte in jq 1.7, 2 s in jaq; past a few megabytes, DuckDB's read_csv.
+def from_csv:
+  if type != "string" then error("from_csv: the input is \(_what), not the text of a CSV file. Read the file with jq -Rs.") else . end
+  | explode
+  | reduce (.[], -1) as $c ({rows: [], row: [], f: [], q: false, pq: false, any: false};
+      if $c == -1 then (if .any or (.row | length) > 0 then .rows += [.row + [.f | implode]] else . end)
+      elif .q then (if $c == 34 then .q = false | .pq = true else .f += [$c] end)
+      elif $c == 34 then (if .pq then .f += [34] | .q = true | .pq = false else .q = true | .any = true end)
+      else .pq = false
+        | if $c == 44 then .row += [.f | implode] | .f = [] | .any = true
+          elif $c == 10 then (if .any or (.row | length) > 0 then .rows += [.row + [.f | implode]] else . end) | .row = [] | .f = [] | .any = false
+          elif $c == 13 then .
+          else .f += [$c] | .any = true end end)
+  | .rows | rows_from_arrays;
+```
+
+Built into jq: `error`, `explode`, `implode`, `length`, `type`. From this library: `_what`, `rows_from_arrays`.
+
+- `rows_from_arrays`: the header check, then for each later record its cells paired with the header names by position; `from_entries` makes the row.
+- `from_csv`: the type check (a CSV file must be read with `-Rs` to arrive as one string), `explode`, the `reduce` described above with `-1` as the end marker, then `.rows | rows_from_arrays`. `any` records that the current row has started, so that a row of one empty cell (`""` alone on a line, written as `,` would be two) is kept while a blank line is not.
+
+---
+
+## flatten_paths, _setp, unflatten_fields
+
+**Public functions and internal helpers** · `flatten_paths($sep)`, `_setp($p; $v)`, `unflatten_fields($sep)`
+
+Nested rows as flat columns and back. `flatten_fields` (above) flattens only objects and leaves arrays for `unnest`; `flatten_paths` flattens arrays too, naming each item by its position, which is what a spreadsheet or a CSV needs. `unflatten_fields` rebuilds the nesting from such names.
+
+### flatten_paths and the others: the example
+
+```jq
+[{id: 1, tags: ["disk", "p2"], owner: {team: "ops"}}, {id: 2, tags: [], owner: null}]
+| . as $rows
+| flatten_paths(".") | ., (unflatten_fields(".") == $rows)
+```
+
+```json
+[{"id":1,"tags.0":"disk","tags.1":"p2","owner.team":"ops"},{"id":2,"tags":[],"owner":null}]
+true
+```
+
+The first row's tags become `tags.0` and `tags.1`, its owner `owner.team`. The second keeps `tags: []` and `owner: null`, since an empty array and a null are leaves. Unflattening gives the rows back exactly.
+
+### flatten_paths and the others: what happens inside, on the example
+
+`flatten_paths` asks jq for the path of every leaf (`paths(f)` with `f` true for a scalar or an empty container), then names each by joining the path's parts:
+
+```jq
+{id: 1, tags: ["disk", "p2"]} | [paths(type != "object" and type != "array" or length == 0)]
+```
+
+```json
+[
+  ["id"],
+  ["tags", 0],
+  ["tags", 1]
+]
+```
+
+`unflatten_fields` splits each name back into parts, reads a part made only of digits as an array position, and sets the value at that path with `_setp`, which makes an array where it meets a number and pads it with nulls up to the position:
+
+```jq
+[{"a.1": "x", "a.0": "y", "c.2": 1}] | unflatten_fields(".")
+```
+
+```json
+[
+  {"a": ["y", "x"], "c": [null, null, 1]}
+]
+```
+
+### flatten_paths and the others: limits
+
+A key made only of digits, such as an object keyed by year, comes back as an array position, not a key. Two paths that flatten to the same name (a field literally called `"tags.0"` next to a list `tags`) are an error, as in `flatten_fields`.
+
+### flatten_paths and the others: the definition
+
+`flatten_paths/1`, lines 917 to 926:
+
+```jq
+# flatten_paths: like flatten_fields, arrays included: every leaf becomes a column named by its
+# path joined with $sep, array positions as numbers ({"tags": ["x"]} gives "tags.0"); an empty
+# array or object stays as the value. Two paths that give the same name are an error.
+def flatten_paths($sep): _table("flatten_paths"; "the input")
+  | map(. as $r | [paths(type != "object" and type != "array" or length == 0)]
+        | map({key: (map(tostring) | join($sep)), value: (. as $p | $r | getpath($p))}) as $e
+        | ($e | from_entries) as $o
+        | if ($o | length) != ($e | length)
+          then error("flatten_paths: two paths flatten to the same name: \($e | map(.key) | group_by(.) | map(select(length > 1)[0]) | tojson)")
+          else $o end);
+```
+
+Built into jq: `error`, `from_entries`, `getpath`, `group_by`, `join`, `length`, `map`, `paths`, `select`, `tojson`, `tostring`, `type`. From this library: `_table`.
+
+`_setp/2`, lines 928 to 935:
+
+```jq
+# set the value at path $p, making an array for a number and an object for a string where nothing
+# is yet, and padding an array with nulls up to a position (jaq will not assign past the end)
+def _setp($p; $v):
+  if ($p | length) == 0 then $v
+  else $p[0] as $k
+    | (if . == null then (if ($k | type) == "number" then [] else {} end) else . end)
+    | (if ($k | type) == "number" and $k >= length then . + [range(length; $k + 1) | null] else . end)
+    | .[$k] = (.[$k] | _setp($p[1:]; $v)) end;
+```
+
+Built into jq: `length`, `range`, `type`.
+
+`unflatten_fields/1`, lines 937 to 940:
+
+```jq
+# unflatten_fields: the reverse of flatten_paths and flatten_fields: a field "a.b.0" becomes
+# {a: {b: [value]}}; a part made only of digits is an array position, so a key "0" cannot survive
+def unflatten_fields($sep): _table("unflatten_fields"; "the input")
+  | map(reduce to_entries[] as $e ({}; _setp($e.key | split($sep) | map(if test("^[0-9]+$") then tonumber else . end); $e.value)));
+```
+
+Built into jq: `map`, `split`, `test`, `to_entries`, `tonumber`. From this library: `_setp`, `_table`.
+
+- `flatten_paths`: per row, the leaf paths, each as `{key: joined name, value: getpath(path)}`, then `from_entries`; fewer fields than paths means a name collided.
+- `_setp`: jq's own `setpath` does this on jq and gojq, but jaq will not create an array from null or assign past the end of one, so the library builds the step itself: null becomes `[]` or `{}` by the kind of the next part, and an array is padded with nulls before the assignment.
+- `unflatten_fields`: per row, `reduce` over its fields, setting each one's value at its path.
+
+---
+
+## drop_empty
+
+**Public function** · `drop_empty`
+
+A document without empty values at any depth: null, `""`, `[]` and `{}` go, as fields and as array items, and a container that ends up empty goes with them. `false` and `0` stay; they are values. For nulls alone, jq's own `del(.. | nulls)` does it.
+
+### drop_empty: the example
+
+```jq
+{host: "web01", tags: ["", null, "p2"], owner: {team: ""}, note: null, ok: false, n: 0, extra: [[], {}]} | drop_empty
+```
+
+```json
+{"host":"web01","tags":["p2"],"ok":false,"n":0}
+```
+
+`owner` held only an empty string, so it is empty after the cleanup and goes too; `extra` held two empty containers and goes the same way.
+
+### drop_empty: the definition
+
+`drop_empty/0`, lines 942 to 949:
+
+```jq
+# drop_empty: a document without null, "", [] or {} at any depth, fields and array items alike;
+# a container left empty by that is removed too. false and 0 stay. Any value in. (For nulls only,
+# jq's own del(.. | nulls).)
+def drop_empty:
+  def _e: . == null or . == "" or . == [] or . == {};
+  def d: if type == "object" then with_entries(.value |= d | select(.value | _e | not))
+         elif type == "array" then map(d | select(_e | not)) else . end;
+  d;
+```
+
+Built into jq: `map`, `not`, `select`, `type`, `with_entries`.
+
+- `d` works from the bottom up: it first cleans a field's value or an array's item, then tests whether what is left is empty, which is how a container emptied by the cleanup is removed in the same pass.
+- Any value can be the input, not only a table: a document, a row, a list.

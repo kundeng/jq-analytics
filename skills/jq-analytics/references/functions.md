@@ -119,6 +119,7 @@ A schema column that a row lacks is added to it as null, so every row comes out 
 | `tz($name)` | The rules of one zone, looked up by name |
 | `tz_offset($tz)` | The zone's offset from UTC at one moment, in seconds |
 | `local_time($tz)` | The local clock reading of a moment in a zone, as an object with the date, the clock fields and the weekday |
+| `format_local($tz; $fmt)` | An instant as readable local text: "2026-03-08 03:00" in Detroit rather than the UTC hour |
 | `hours_between(a; b)` | The hours from one moment to another, with no rounding; null when either is missing |
 
 `tz($name)`
@@ -142,6 +143,14 @@ UTC offset in seconds at the input epoch; $tz is a zone name or the object tz($n
 the local wall clock of the input epoch in zone $tz (a name or tz($name)), as an object:
 {date: "YYYY-MM-DD", year, month (1-12), day, hour, minute, second, weekday (0 = Sunday),
  offset_s, local_epoch (epoch of the wall clock read as if it were UTC)}
+```
+
+`format_local($tz; $fmt)`
+
+```text
+format_local: the input epoch as text in zone $tz with strftime directives ("%Y-%m-%d %H:%M"),
+the zone's offset applied, daylight saving included; %z is written as +HHMM and %Z as the zone
+name, from the zone tables, not from the machine's clock settings
 ```
 
 `hours_between(a; b)`
@@ -554,7 +563,10 @@ when the year is another filter). No filter on $dim: unchanged.
 | `to_map(key)` | Rows become an object keyed by `key`, for looking a row up by id |
 | `nested_from_nodes(id; parent; $as)` | The reverse of `nodes_from_nested`: node rows with an id and a parent become a nested tree, each node's children in an array in field `$as` |
 | `node_link(from; to)` | Edge rows become the `{nodes, links}` object that graph tools such as networkx, d3 and Cytoscape read |
-| `to_csv($cols)` | A table as CSV text: a header line, then one line per row, with the columns in the order of `$cols` |
+| `to_csv($cols)`, `to_tsv($cols)`, `to_table($cols)` | A table as text for another tool or a person: CSV, TSV, or padded columns for a terminal |
+| `rows_from_arrays`, `from_csv` | CSV text into rows, the other direction |
+| `flatten_paths($sep)`, `unflatten_fields($sep)` | Nested rows as flat columns and back |
+| `drop_empty` | A document without empty values at any depth: null, `""`, `[]` and `{}` go, as fields and as array items, and a container that ends up empty goes with them |
 
 `unnest(f; $as)`
 
@@ -627,9 +639,61 @@ node_link: edge rows become the node-link form graph tools read (networkx, d3, C
 `to_csv($cols)`
 
 ```text
-to_csv: a header line, then one CSV line per row, columns in the order of $cols; a stream of
-strings, so run jq with -r. A null is an empty cell. A nested value in a cell is an error from
-@csv itself: flatten_fields first.
+to_csv: a header line, then one CSV line per row, columns in the order of $cols (null: every
+field name, sorted); a stream of strings, so run jq with -r. A null is an empty cell; a nested
+value is written as its JSON text.
+```
+
+`to_tsv($cols)`
+
+```text
+to_tsv: as to_csv, with tabs; a tab, line break or backslash in a value is escaped as jq's @tsv does
+```
+
+`to_table($cols)`
+
+```text
+to_table: the rows as plain-text columns for a terminal, a header line first, each column as wide
+as its longest value, two spaces between, no trailing spaces; run jq with -r
+```
+
+`rows_from_arrays`
+
+```text
+rows_from_arrays: [header, row, row, ...] as rows; a short row's missing cells are null, a row
+longer than the header or a header that repeats a name is an error
+```
+
+`from_csv`
+
+```text
+from_csv: the text of a CSV file (jq -Rs) as rows, by RFC 4180: the first record names the
+fields; quoted fields may hold commas, line breaks and doubled quotes; CRLF or LF line ends; blank
+lines skipped. Every value stays a string, for cast_columns. Reads one character at a time:
+about 5 s a megabyte in jq 1.7, 2 s in jaq; past a few megabytes, DuckDB's read_csv.
+```
+
+`flatten_paths($sep)`
+
+```text
+flatten_paths: like flatten_fields, arrays included: every leaf becomes a column named by its
+path joined with $sep, array positions as numbers ({"tags": ["x"]} gives "tags.0"); an empty
+array or object stays as the value. Two paths that give the same name are an error.
+```
+
+`unflatten_fields($sep)`
+
+```text
+unflatten_fields: the reverse of flatten_paths and flatten_fields: a field "a.b.0" becomes
+{a: {b: [value]}}; a part made only of digits is an array position, so a key "0" cannot survive
+```
+
+`drop_empty`
+
+```text
+drop_empty: a document without null, "", [] or {} at any depth, fields and array items alike;
+a container left empty by that is removed too. false and 0 stay. Any value in. (For nulls only,
+jq's own del(.. | nulls).)
 ```
 
 ## Intervals
@@ -772,6 +836,7 @@ the cohort is active has a row with 0. Periods with no first-time entities form 
 | `corr(x; y)` | Pearson's correlation of two columns: 1 when they rise together on a straight line, -1 when one falls as the other rises, near 0 when there is no straight-line relation |
 | `profile` | A first look at a table: one row per column, saying how many rows have it, how many are null or empty, how many distinct values it holds, of which types, and its smallest and largest value |
 | `diff_tables($old; key)` | `diff_tables` reports what changed between two versions of a table that share a key: one row per key that was added, removed or changed |
+| `diff_docs($old)` | What changed between two versions of a document of any shape, such as a configuration before and after: one row per path that differs |
 
 `mode`
 
@@ -829,6 +894,14 @@ table, $old the old one. One row per key that was added, removed or changed, sor
 differ, in name order; a field present on one side only counts), old, new (the rows; null on the
 side that has none)}. Unchanged rows are left out. A key that appears twice in either table, or
 a null key, is an error.
+```
+
+`diff_docs($old)`
+
+```text
+diff_docs: what changed from document $old to the input, any shape: one row per path,
+{path, change, old, new}, change "added", "removed" or "changed"; path as getpath takes it.
+Objects compare by key, arrays by position (an item moved counts as changed). [] when equal.
 ```
 
 ## Approximate matching

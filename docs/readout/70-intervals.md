@@ -61,7 +61,7 @@ The first emits nothing, so the array collected around it is empty; its second e
 
 ### _iv_check: the definition
 
-`_iv_check/2`, lines 868 to 875:
+`_iv_check/2`, lines 956 to 963:
 
 ```jq
 # an event's kind must be one of the three and, when it has a kind, it needs a time
@@ -182,7 +182,7 @@ The four intervals that close in the trace are the four rows of the result.
 
 ### intervals_from_events: the definition
 
-`intervals_from_events/5`, lines 877 to 926:
+`intervals_from_events/5`, lines 965 to 1014:
 
 ```jq
 # intervals_from_events: validity intervals built from an event log. A resource (an address, a
@@ -371,7 +371,7 @@ Step 4: a left row that stopped on an interval containing its time is merged wit
 
 ### join_within: the definition
 
-`join_within/6`, lines 928 to 953:
+`join_within/6`, lines 1016 to 1041:
 
 ```jq
 # join_within (left outer): each left row with the interval of the same key whose [rstart, rend)
@@ -488,7 +488,7 @@ For room B, 7 to 8 joins because the open interval has no end.
 
 ### merge_intervals: the definition
 
-`merge_intervals/3`, lines 955 to 974:
+`merge_intervals/3`, lines 1043 to 1062:
 
 ```jq
 # merge_intervals: per key, intervals that overlap or touch become one row
@@ -598,7 +598,7 @@ Step 3: the `foreach` keeps a running sum of the net changes, 1, 2, 1, 2, 1, and
 
 ### concurrency: the definition
 
-`concurrency/2`, lines 976 to 985:
+`concurrency/2`, lines 1064 to 1073:
 
 ```jq
 # concurrency: how many intervals are open over time: one row {t, open} per moment the count

@@ -1,0 +1,1 @@
+"id,host,note,opened_at\r\n1,web01,\"disk full, again\",2026-03-08 06:30:00\r\n2,db01,\"said \"\"restart\"\" twice\",\"2026-03-08 07:30:00\"\r\n3,,\"line one\nline two\",\r\n\r\n4,app07,plain,2026-03-09 12:00:00\r\n"

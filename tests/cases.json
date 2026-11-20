@@ -2217,5 +2217,221 @@
     "input": "tests/fixtures/rename_rows.json",
     "expect_value": 2,
     "jq": "map(.site) | count_nonnull"
+  },
+  {
+    "name": "to_csv_inferred_columns",
+    "input": "tests/fixtures/text_out.json",
+    "jq": "[to_csv(null)]",
+    "expect_value": [
+      "\"host\",\"id\",\"note\",\"owner\",\"tags\"",
+      "\"web01\",1,\"disk full, again\",\"{\"\"team\"\":\"\"ops\"\"}\",\"[\"\"disk\"\",\"\"p2\"\"]\"",
+      "\"db01\",2,\"said \"\"restart\"\"\",,\"[]\"",
+      "\"app07\",3,,,"
+    ]
+  },
+  {
+    "name": "to_tsv_nested_as_json",
+    "input": "tests/fixtures/text_out.json",
+    "jq": "[to_tsv([\"id\", \"note\", \"tags\"])]",
+    "expect_value": [
+      "id\tnote\ttags",
+      "1\tdisk full, again\t[\"disk\",\"p2\"]",
+      "2\tsaid \"restart\"\t[]",
+      "3\t\t"
+    ]
+  },
+  {
+    "name": "to_table_padded",
+    "input": "tests/fixtures/text_out.json",
+    "jq": "[to_table([\"id\", \"host\", \"note\"])]",
+    "expect_value": [
+      "id  host   note",
+      "1   web01  disk full, again",
+      "2   db01   said \"restart\"",
+      "3   app07"
+    ]
+  },
+  {
+    "name": "from_csv_like_duckdb",
+    "input": "tests/fixtures/requests_csv_text.json",
+    "sql": "from_csv.sql",
+    "jq": "from_csv"
+  },
+  {
+    "name": "from_csv_then_cast",
+    "input": "tests/fixtures/requests_csv_text.json",
+    "jq": "from_csv | cast_columns({id: \"number\", opened_at: \"timestamp\"}) | map({id, opened_at})",
+    "expect_value": [
+      {
+        "id": 1,
+        "opened_at": 1772951400
+      },
+      {
+        "id": 2,
+        "opened_at": 1772955000
+      },
+      {
+        "id": 3,
+        "opened_at": null
+      },
+      {
+        "id": 4,
+        "opened_at": 1773057600
+      }
+    ]
+  },
+  {
+    "name": "from_csv_not_text_error",
+    "input": "tests/fixtures/text_out.json",
+    "jq": "from_csv",
+    "expect_error": "from_csv: the input is an array, not the text of a CSV file. Read the file with jq -Rs."
+  },
+  {
+    "name": "rows_from_arrays_basic",
+    "input": "tests/fixtures/text_out.json",
+    "jq": "[[\"host\", \"site\"], [\"web01\", \"N\"], [\"db01\"]] | rows_from_arrays",
+    "expect_value": [
+      {
+        "host": "web01",
+        "site": "N"
+      },
+      {
+        "host": "db01",
+        "site": null
+      }
+    ]
+  },
+  {
+    "name": "rows_from_arrays_long_row_error",
+    "input": "tests/fixtures/text_out.json",
+    "jq": "[[\"host\"], [\"web01\", \"N\"]] | rows_from_arrays",
+    "expect_error": "rows_from_arrays: record 1 has 2 cells, the header 1"
+  },
+  {
+    "name": "drop_empty_nested",
+    "input": "tests/fixtures/text_out.json",
+    "jq": "{host: \"web01\", tags: [\"\", null, \"p2\"], owner: {team: \"\"}, note: null, ok: false, n: 0, extra: [[], {}]} | drop_empty",
+    "expect_value": {
+      "host": "web01",
+      "tags": [
+        "p2"
+      ],
+      "ok": false,
+      "n": 0
+    }
+  },
+  {
+    "name": "diff_docs_paths",
+    "input": "tests/fixtures/text_out.json",
+    "jq": "{host: \"web01\", tags: [\"disk\", \"p2\"], owner: {team: \"ops\"}} | diff_docs({host: \"web01\", tags: [\"disk\"], owner: {team: \"net\", lead: \"kim\"}, gone: 1})",
+    "expect_value": [
+      {
+        "path": [
+          "gone"
+        ],
+        "change": "removed",
+        "old": 1,
+        "new": null
+      },
+      {
+        "path": [
+          "owner",
+          "lead"
+        ],
+        "change": "removed",
+        "old": "kim",
+        "new": null
+      },
+      {
+        "path": [
+          "owner",
+          "team"
+        ],
+        "change": "changed",
+        "old": "net",
+        "new": "ops"
+      },
+      {
+        "path": [
+          "tags",
+          1
+        ],
+        "change": "added",
+        "old": null,
+        "new": "p2"
+      }
+    ]
+  },
+  {
+    "name": "diff_docs_equal",
+    "input": "tests/fixtures/text_out.json",
+    "jq": "diff_docs(.)",
+    "expect_value": []
+  },
+  {
+    "name": "flatten_paths_round_trip",
+    "input": "tests/fixtures/text_out.json",
+    "jq": ". as $o | {flat: flatten_paths(\".\"), back: (flatten_paths(\".\") | unflatten_fields(\".\") == $o)}",
+    "expect_value": {
+      "flat": [
+        {
+          "id": 1,
+          "host": "web01",
+          "note": "disk full, again",
+          "tags.0": "disk",
+          "tags.1": "p2",
+          "owner.team": "ops"
+        },
+        {
+          "id": 2,
+          "host": "db01",
+          "note": "said \"restart\"",
+          "tags": [],
+          "owner": null
+        },
+        {
+          "id": 3,
+          "host": "app07",
+          "note": null
+        }
+      ],
+      "back": true
+    }
+  },
+  {
+    "name": "unflatten_fields_pads_arrays",
+    "input": "tests/fixtures/text_out.json",
+    "jq": "[{\"a.1\": \"x\", \"a.0\": \"y\", \"c.2\": 1, \"d\": {}}] | unflatten_fields(\".\")",
+    "expect_value": [
+      {
+        "a": [
+          "y",
+          "x"
+        ],
+        "c": [
+          null,
+          null,
+          1
+        ],
+        "d": {}
+      }
+    ]
+  },
+  {
+    "name": "format_local_across_dst",
+    "input": "tests/fixtures/dst_instants.json",
+    "sql": "format_local.sql",
+    "jq": "map(format_local(\"America/Detroit\"; \"%Y-%m-%d %H:%M\"))"
+  },
+  {
+    "name": "format_local_offset_and_zone",
+    "input": "tests/fixtures/dst_instants.json",
+    "jq": "map(format_local(\"America/Detroit\"; \"%H:%M %z %Z\"))",
+    "expect_value": [
+      "00:00 -0500 America/Detroit",
+      "01:00 -0500 America/Detroit",
+      "03:00 -0400 America/Detroit",
+      "04:00 -0400 America/Detroit"
+    ]
   }
 ]

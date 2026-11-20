@@ -196,7 +196,7 @@ Two rows with the same `ord` keep their input order, because the sort is stable.
 
 ### window: the definition
 
-`window/4`, lines 373 to 383:
+`window/4`, lines 383 to 393:
 
 ```jq
 # Window over partitions: split rows by part (first appearance), sort each partition by ord
@@ -247,7 +247,7 @@ Inside `window` the partition is already sorted, so this numbers the rows of eac
 
 ### row_number: the definition
 
-`row_number/0`, lines 385 to 386:
+`row_number/0`, lines 395 to 396:
 
 ```jq
 # window value functions: input is one sorted partition (array of rows)
@@ -345,7 +345,7 @@ Step 4, `sort_by(.i) | map(.r)`: the ranks back in row order, which is the resul
 
 ### rank_by: the definition
 
-`rank_by/1`, lines 387 to 392:
+`rank_by/1`, lines 397 to 402:
 
 ```jq
 # rank with gaps (SQL RANK) by f over the partition's order: tied f values share a rank
@@ -391,7 +391,7 @@ The first argument, `.x`, is a filter run on the row that is `$k` places away. T
 
 ### lag and the others: the definition
 
-`lag/2`, line 393:
+`lag/2`, line 403:
 
 ```jq
 def lag(f; $k): . as $a | [range(length) as $i | if $i - $k >= 0 then ($a[$i - $k] | f) else null end];
@@ -399,7 +399,7 @@ def lag(f; $k): . as $a | [range(length) as $i | if $i - $k >= 0 then ($a[$i - $
 
 Built into jq: `length`, `range`.
 
-`lead/2`, line 394:
+`lead/2`, line 404:
 
 ```jq
 def lead(f; $k): . as $a | length as $n | [range($n) as $i | if $i + $k < $n then ($a[$i + $k] | f) else null end];
@@ -449,7 +449,7 @@ There is one stage. `foreach .[] as $r (null; update; .)` starts with a state of
 
 ### running_sum: the definition
 
-`running_sum/1`, lines 395 to 396:
+`running_sum/1`, lines 405 to 406:
 
 ```jq
 # running sum of f, ROWS frame from the partition start: nulls skipped; null until the first non-null
@@ -517,7 +517,7 @@ Step 3, `mean` of each list. It is the library's own `mean` from the math page, 
 
 ### moving_mean: the definition
 
-`moving_mean/2`, lines 397 to 398:
+`moving_mean/2`, lines 407 to 408:
 
 ```jq
 # moving mean of f over the current row and the $n - 1 rows before it (fewer at the start); nulls skipped

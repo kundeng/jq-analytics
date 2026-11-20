@@ -84,7 +84,7 @@ Three values, one per call. The first keeps the one E row with rev 15 or more. T
 
 ### _where: the definition
 
-`_where/1`, lines 648 to 654:
+`_where/1`, lines 658 to 664:
 
 ```jq
 # rows matching $at by scan. {field: value} is equality; {field: {from, to}} is a closed range that
@@ -184,7 +184,7 @@ Three values, and each takes a different path:
 
 ### _ctx_rows: the definition
 
-`_ctx_rows/0`, lines 656 to 670:
+`_ctx_rows/0`, lines 666 to 680:
 
 ```jq
 # the rows of the context given as input. A context whose fields are one of the report's levels is
@@ -314,7 +314,7 @@ Step 4: `cell` runs with each context as its input, and the output row is `.at`,
 
 ### rollup_levels: the definition
 
-`rollup_levels/2`, lines 672 to 692:
+`rollup_levels/2`, lines 682 to 702:
 
 ```jq
 # rollup_levels: one output row per group at each listed level. $levels is a list of field lists,
@@ -396,7 +396,7 @@ The one step before `rollup_levels` is the list of levels:
 
 ### rollup: the definition
 
-`rollup/2`, lines 694 to 696:
+`rollup/2`, lines 704 to 706:
 
 ```jq
 # rollup: the hierarchy of $dims: every field, then one fewer from the right, down to the grand
@@ -496,14 +496,14 @@ A change can leave no context: `shift` past the first value marks the context `v
 
 ### measure and the others: the definition
 
-`measure/1`, lines 698 to 699:
+`measure/1`, lines 708 to 709:
 
 ```jq
 # inside a cell: measure f on the cell's own rows
 def measure(f): .rows | f;
 ```
 
-`measure_with/2`, lines 701 to 704:
+`measure_with/2`, lines 711 to 714:
 
 ```jq
 # inside a cell: measure f on the rows of a changed context (DAX's CALCULATE). change is one or
@@ -514,7 +514,7 @@ def measure_with(f; change): (change) as $c | if $c.void then null else ($c | _c
 
 From this library: `_ctx_rows`.
 
-`share_of/2`, lines 706 to 708:
+`share_of/2`, lines 716 to 718:
 
 ```jq
 # inside a cell: measure f here divided by f in the changed context; null when that is null or 0
@@ -556,7 +556,7 @@ Four contexts. `without_filter("month")` leaves the region. `only_filters(["mont
 
 ### without_filter and the others: the definition
 
-`without_filter/1`, lines 710 to 713:
+`without_filter/1`, lines 720 to 723:
 
 ```jq
 # context changes. Each takes a context and returns one.
@@ -567,7 +567,7 @@ def without_filter($dim): .at |= del(.[$dim]);
 
 Built into jq: `del`.
 
-`only_filters/1`, line 714:
+`only_filters/1`, line 724:
 
 ```jq
 def only_filters($dims): .at |= with_entries(select(.key as $k | $dims | any(. == $k)));   # ALLEXCEPT
@@ -575,7 +575,7 @@ def only_filters($dims): .at |= with_entries(select(.key as $k | $dims | any(. =
 
 Built into jq: `any`, `select`, `with_entries`.
 
-`with_filter/1`, line 715:
+`with_filter/1`, line 725:
 
 ```jq
 def with_filter($at): .at += $at;                     # add or replace filters; a value or {from, to}
@@ -640,7 +640,7 @@ A field with a filter but no member list is refused. Here the report's only leve
 
 ### shift: the definition
 
-`shift/2`, lines 722 to 734:
+`shift/2`, lines 732 to 744:
 
 ```jq
 # move to the $k-th neighbouring value of $dim (-1 is the previous one). Neighbours are the field's
@@ -717,7 +717,7 @@ For E in March, the previous month that has rows is January (30). The previous c
 
 ### on_calendar: the definition
 
-`on_calendar/2`, lines 736 to 742:
+`on_calendar/2`, lines 746 to 752:
 
 ```jq
 # on_calendar: make shift and to_date on $dim step through $values, in the order given, instead of
@@ -781,7 +781,7 @@ Hand check: E's running total is 30 after January and 30 + 10 = 40 after March. 
 
 ### to_date: the definition
 
-`to_date/1`, lines 744 to 749:
+`to_date/1`, lines 754 to 759:
 
 ```jq
 # everything up to and including this value of $dim, other filters kept (a running total, DATESYTD

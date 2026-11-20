@@ -60,7 +60,7 @@ Events that all have a time pass through unchanged. One event with no time is th
 
 ### _time_check: the definition
 
-`_time_check/2`, lines 441 to 442:
+`_time_check/2`, lines 451 to 452:
 
 ```jq
 # an event with a null time cannot be placed in time: an error naming the calling function
@@ -149,7 +149,7 @@ That is the first block of the result at the top.
 
 ### _blocks: the definition
 
-`_blocks/2`, lines 444 to 454:
+`_blocks/2`, lines 454 to 464:
 
 ```jq
 # the blocks of one entity's events, already sorted by time
@@ -265,7 +265,7 @@ Step 3, `[.[] | del(.blocks) as $k | .blocks[] | $k + .]`: the nested blocks are
 
 ### state_blocks: the definition
 
-`state_blocks/3`, lines 455 to 465:
+`state_blocks/3`, lines 465 to 475:
 
 ```jq
 # state_blocks: per entity, events sorted by time (stable), consecutive events with the same state
@@ -331,7 +331,7 @@ Steps 1 and 2 are those of `state_blocks`: the time check, then one row per enti
 
 ### transitions: the definition
 
-`transitions/3`, lines 467 to 472:
+`transitions/3`, lines 477 to 482:
 
 ```jq
 # transitions: one row per change of state: {entity key..., from, to, at (time of the change)}
@@ -423,7 +423,7 @@ A gap of exactly `$gap` does not start a new session, because the test is "great
 
 ### sessions: the definition
 
-`sessions/3`, lines 474 to 484:
+`sessions/3`, lines 484 to 494:
 
 ```jq
 # sessions: per entity, events sorted by time; a new session starts when the gap since the previous
@@ -502,7 +502,7 @@ Step 2: run `$j` starts at `$i = $st[$j]`, and its length `n` is the next start 
 
 ### runs: the definition
 
-`runs/1`, lines 486 to 492:
+`runs/1`, lines 496 to 502:
 
 ```jq
 # runs: run-length encoding of an array in its given order: consecutive items with the same f value

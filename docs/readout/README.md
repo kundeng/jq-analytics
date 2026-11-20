@@ -7,7 +7,7 @@ How each definition in `src/jq_analytics/analytics.jq` is written: the code as i
 | [00](00-input-checks.md) | input checks | 4 |
 | [05](05-math.md) | math: arrays of numbers | 18 |
 | [10](10-types.md) | types | 3 |
-| [15](15-time-zones-and-calendar.md) | time zones and calendar | 4 |
+| [15](15-time-zones-and-calendar.md) | time zones and calendar | 5 |
 | [20](20-grouping.md) | grouping | 2 |
 | [25](25-several-tables-at-once.md) | several tables at once | 3 |
 | [30](30-joins.md) | joins | 18 |
@@ -17,9 +17,9 @@ How each definition in `src/jq_analytics/analytics.jq` is written: the code as i
 | [50](50-hierarchies.md) | hierarchies | 2 |
 | [55](55-graphs.md) | graphs | 8 |
 | [60](60-measures-in-a-context.md) | measures in a context | 13 |
-| [65](65-shapes-in-and-out.md) | shapes in and out | 15 |
+| [65](65-shapes-in-and-out.md) | shapes in and out | 25 |
 | [70](70-intervals.md) | intervals | 5 |
 | [75](75-calendar.md) | calendar | 8 |
 | [80](80-event-paths.md) | event paths: funnels, cohorts, retention | 8 |
-| [85](85-distributions-profiles-diffs.md) | distributions, profiles, diffs | 8 |
+| [85](85-distributions-profiles-diffs.md) | distributions, profiles, diffs | 10 |
 | [90](90-approximate-matching.md) | approximate matching | 4 |

@@ -130,6 +130,11 @@ PROFILE_EXAMPLES: dict[str, tuple[str, bool, bool]] = {
     "distributions": ('[{x: 16, y: 1, label: "a"}, {x: 32, y: 2, label: "b"}, {x: 64, y: 5, label: "b"}, {x: 64, y: 4, label: null}, {x: 8, y: 1, label: "c"}] | {mode: (map(.label) | mode), counts: (map(.label) | value_counts), histogram: (map(.x) | histogram(bin_edges(0; 64; 4))), corr: (corr(.x; .y) | round_to(4))}', False, True),
     "profile": (HOSTS_NEW + " | profile", False, True),
     "diff_tables": (HOSTS_OLD + " as $yesterday | " + HOSTS_NEW + " | diff_tables($yesterday; .host) | map({key, change, fields, was: (.old.ram // null), now: (.new.ram // null)})", False, True),
+    "format_local": ('[1772946000, 1772949600, 1772953200] | map(format_local("America/Detroit"; "%Y-%m-%d %H:%M %z"))', False, True),
+    "text_out": ('[{id: 1, host: "web01", tags: ["disk", "p2"]}, {id: 2, host: "db01", note: "said \\"restart\\""}] | [to_csv(null)], [to_table(["id", "host", "note"])]', False, True),
+    "csv_in": ('"id,host,opened_at\\r\\n1,\\"web01, annex\\",2026-03-08 06:30:00\\r\\n2,db01,\\r\\n" | from_csv | cast_columns({id: "number", opened_at: "timestamp"})', False, True),
+    "flatten_drop": ('[{id: 1, tags: ["disk", "p2"], owner: {team: "ops"}}] | flatten_paths(".") | ., unflatten_fields("."), ({host: "web01", tags: ["", null, "p2"], owner: {team: ""}, ok: false} | drop_empty)', False, True),
+    "diff_docs": ('{host: "web01", tags: ["disk", "p2"], owner: {team: "ops"}} | diff_docs({host: "web01", tags: ["disk"], owner: {team: "net", lead: "kim"}})', False, True),
 }
 EXAMPLES.update(PROFILE_EXAMPLES)
 

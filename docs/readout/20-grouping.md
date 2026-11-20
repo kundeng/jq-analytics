@@ -133,7 +133,7 @@ For `_groups` the first two forms give the same result. They differ only in `gro
 
 ### _groups: the definition
 
-`_groups/1`, lines 187 to 192:
+`_groups/1`, lines 197 to 202:
 
 ```jq
 # rows grouped by f: an array of groups in order of first appearance, each group in input order.
@@ -292,7 +292,7 @@ Not much, and that is deliberate. The same count with the builtin and with the l
 
 ### group_agg: the definition
 
-`group_agg/2`, lines 194 to 199:
+`group_agg/2`, lines 204 to 209:
 
 ```jq
 # group rows by keyf and aggregate each group with aggf (applied to the group's array of rows).
