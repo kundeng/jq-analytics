@@ -11,7 +11,7 @@ flowchart TD
 ```
 
 ## tree_paths/2
-<!-- code: d56459c6 -->
+<!-- code: d6007051 -->
 
 Adds to every node its `ancestry`, the ids from its root down to itself, and its `depth`, 0 for a root. It does what a recursive query (`WITH RECURSIVE`) does in SQL, and what `PATH` does in DAX.
 
@@ -101,7 +101,7 @@ Three kinds of input stop with an error: a cycle, a parent id that is not a node
 - `| .m) as $anc`: only the lookup is kept; the last line is step 3.
 
 ## tree_rollup/3
-<!-- code: 425ecb0a -->
+<!-- code: fc26a287 -->
 
 Adds to every node the total of a value over the node and everything below it. It answers "how many people work under each manager", or "what does each assembly cost with all its parts".
 

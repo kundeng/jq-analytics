@@ -65,7 +65,7 @@ try tz("Mars/Olympus") catch .
 
 ### tz: the definition
 
-`tz/1`, lines 135 to 139:
+`tz/1`, lines 159 to 163:
 
 ```jq
 # the transition rules of one IANA zone, from the generated tzdata block above (from the tzdata package; covers
@@ -171,7 +171,7 @@ tz("America/Detroit") | .t | bsearch(1772953200)
 
 ### tz_offset: the definition
 
-`tz_offset/1`, lines 141 to 146:
+`tz_offset/1`, lines 165 to 170:
 
 ```jq
 # UTC offset in seconds at the input epoch; $tz is a zone name or the object tz($name) returned
@@ -258,7 +258,7 @@ Step 4: the object is built from that array. The month gets 1 added (7 becomes 8
 
 ### local_time: the definition
 
-`local_time/1`, lines 148 to 155:
+`local_time/1`, lines 172 to 179:
 
 ```jq
 # the local wall clock of the input epoch in zone $tz (a name or tz($name)), as an object:
@@ -311,7 +311,7 @@ Both arguments are filters, run on the current input, which here is one row. `;`
 
 ### hours_between: the definition
 
-`hours_between/2`, lines 157 to 159:
+`hours_between/2`, lines 181 to 183:
 
 ```jq
 # hours from epoch a to epoch b, exact (no rounding); null when either is null

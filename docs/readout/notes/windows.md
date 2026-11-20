@@ -10,7 +10,7 @@ flowchart TD
 A partition is the set of rows that share a value, such as all rows of one site. A window function sees one partition at a time, as an array of rows already in order.
 
 ## window/4
-<!-- code: e6b8ced2 -->
+<!-- code: 0c7d4eb4 -->
 
 Adds one column to a table, computed per partition in a chosen order, and returns the rows in the order they came in. It is SQL's `SELECT *, f(...) OVER (PARTITION BY part ORDER BY ord) AS col`.
 

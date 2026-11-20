@@ -41,7 +41,7 @@ Each of these is a mistake agents make with this library. The first three fail l
 
 ```text
 right:  $rows | group_agg({site}; {n: length})
-wrong:  $rows[] | group_agg({site}; {n: length})      jq: Cannot index string with string "site"
+wrong:  $rows[] | group_agg({site}; {n: length})      group_agg: the input is one object, not a table (an array of rows). ...
 ```
 
 A file with one JSON object per line is many values: collect it first with `--slurp` or `[inputs]`.
@@ -244,7 +244,8 @@ Was this opened in office hours in Detroit? The text is UTC.
 
 | Message | Cause | Fix |
 |---|---|---|
-| `Cannot index string with string "x"`, `Cannot index number with ...` | a row was passed where a table is expected (rule 1), or a list of values where rows are expected | remove the `.[]`, or `map(.x)` only where the function wants a list |
+| `<function>: the input is one object, not a table (an array of rows)`, `... not a list of values` | a row was passed where a table or a list is expected (rule 1) | remove the `.[]`; for a list function, `map(.x)` first |
+| `Cannot index string with string "x"`, `Cannot index number with ...` | a list of values was passed where rows are expected, so `.x` reads a string | pass the rows, or use `.` as the key |
 | `x/0 is not defined` | a bare field name as an argument (rule 2) | `.x` |
 | `string ("57") and number (2) cannot be divided`, `cannot be subtracted` | arithmetic on an uncast column (rule 3) | `cast_columns` first |
 | `join: field "x_right" already exists, so the right table's "x" cannot take that name; pass another suffix` | a table already has a field with the suffixed name | `join_on(...; "inner"; "_r2")`, or drop the field first |
@@ -252,7 +253,6 @@ Was this opened in office hours in Detroit? The text is UTC.
 | `has no keys`, `Cannot iterate over null` | the input is null or a scalar, often a wrong path into the document | print the input of that stage |
 | a message that starts with a function's name | the library refused the input and says why | read it; it names the value |
 | one group where you expected many | the key is a constant: `"site"` instead of `.site` (rule 2) | `.site` or `{site}` |
-| a count that equals the number of fields | `mode`, `value_counts` or `count_nonnull` was given one row, not a list | `map(.x)` first |
 
 ## What not to do
 

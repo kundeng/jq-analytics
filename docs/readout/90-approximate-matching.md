@@ -85,7 +85,7 @@ Step 2: for each position but the last, the slice of two code points starting th
 
 ### _bigrams and the others: the definition
 
-`_bigrams/0`, lines 1193 to 1196:
+`_bigrams/0`, lines 1219 to 1222:
 
 ```jq
 # the distinct two-character slices of a string, sorted
@@ -96,7 +96,7 @@ def _bigrams:
 
 Built into jq: `error`, `explode`, `implode`, `length`, `range`, `tojson`, `type`, `unique`.
 
-`_dice/2`, lines 1197 to 1199:
+`_dice/2`, lines 1223 to 1225:
 
 ```jq
 def _dice($x; $y):
@@ -154,7 +154,7 @@ Both arguments are filters, run on the input of `similarity`. In `map(similarity
 
 ### similarity: the definition
 
-`similarity/2`, lines 1201 to 1210:
+`similarity/2`, lines 1227 to 1236:
 
 ```jq
 # similarity: how alike two strings are, from 0 to 1: the Dice coefficient over their distinct
@@ -270,7 +270,7 @@ Step 4: the left row gets the field: `{similarity: 0.75, row: the web02 row}`, o
 
 ### join_fuzzy: the definition
 
-`join_fuzzy/7`, lines 1212 to 1228:
+`join_fuzzy/7`, lines 1238 to 1254:
 
 ```jq
 # join_fuzzy (left outer): each left row with field $as holding {similarity, row} for the right row
@@ -279,7 +279,7 @@ Step 4: the left row gets the field: `{similarity: 0.75, row: the web02 row}`, o
 # compared at all (a site, a first letter): the cost is one comparison per pair of rows that share
 # a block, so choose blocks that stay small. Among equally similar right rows, the first in input
 # order. A null block or a null string never matches.
-def join_fuzzy($right; lblock; rblock; lstr; rstr; $min; $as):
+def join_fuzzy($right; lblock; rblock; lstr; rstr; $min; $as): _table("join_fuzzy"; "the input") | ($right | _table("join_fuzzy"; "the right table")) as $right |
   ([$right[] | select((rblock) != null and (rstr) != null) | {b: (rblock | tojson), s: (rstr), g: (rstr | _bigrams), r: .}]
    | group_by(.b) | map({key: .[0].b, value: .}) | from_entries) as $ix
   | map(. as $l | ($l | lblock) as $bk | ($l | lstr) as $s
@@ -292,7 +292,7 @@ def join_fuzzy($right; lblock; rblock; lstr; rstr; $min; $as):
       | $l + {($as): $m});
 ```
 
-Built into jq: `from_entries`, `group_by`, `map`, `select`, `tojson`. From this library: `_bigrams`, `_dice`.
+Built into jq: `from_entries`, `group_by`, `map`, `select`, `tojson`. From this library: `_bigrams`, `_dice`, `_table`.
 
 - `select((rblock) != null and (rstr) != null)`: a right row with no block or no string is left out of the index. Storing `g` in the index means each right row's bigrams are computed once, however many left rows it is compared with.
 - `if $bk == null or $s == null then null`: a left row with no block or no string gets null.

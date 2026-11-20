@@ -110,7 +110,7 @@ Step 3, `from_entries`: the pairs become one object, the result at the top.
 
 ### _adj: the definition
 
-`_adj/2`, lines 507 to 508:
+`_adj/2`, lines 533 to 534:
 
 ```jq
 # node (as JSON text) -> the nodes its edges lead to, in input order
@@ -187,7 +187,7 @@ After the loop, `[.seen[]] | sort_by(.[0])` puts the five records in position or
 
 ### _search: the definition
 
-`_search/2`, lines 510 to 523:
+`_search/2`, lines 536 to 549:
 
 ```jq
 # breadth-first search from $start: the nodes reached, the start first, in the order met, as
@@ -250,27 +250,27 @@ Two values. From `compile` the build can go on to `test` and then `package`. Fro
 
 ### reachable and the others: the definition
 
-`reachable/3`, lines 525 to 528:
+`reachable/3`, lines 551 to 554:
 
 ```jq
 # reachable: every node that can be reached from $start along directed edges from -> to, at any
 # number of hops, nearest first. $start itself is never listed, even when a cycle leads back to it:
 # each node appears once and the start counts as already seen. Cycles are safe.
-def reachable(from; to; $start): _adj(from; to) as $adj | _search($adj; $start) | .[1:] | map(.node);
+def reachable(from; to; $start): _table("reachable"; "the input") | _adj(from; to) as $adj | _search($adj; $start) | .[1:] | map(.node);
 ```
 
-Built into jq: `map`. From this library: `_adj`, `_search`.
+Built into jq: `map`. From this library: `_adj`, `_search`, `_table`.
 
-`hops/3`, lines 530 to 533:
+`hops/3`, lines 556 to 559:
 
 ```jq
 # hops: one row per node that can be reached from $start along directed edges, the start itself
 # included at 0: {node, hops}, where hops is the number of edges on the shortest route; nearest
 # first, and within one distance in the order the search meets them.
-def hops(from; to; $start): _adj(from; to) as $adj | _search($adj; $start) | map({node, hops});
+def hops(from; to; $start): _table("hops"; "the input") | _adj(from; to) as $adj | _search($adj; $start) | map({node, hops});
 ```
 
-Built into jq: `map`. From this library: `_adj`, `_search`.
+Built into jq: `map`. From this library: `_adj`, `_search`, `_table`.
 
 Both run `_adj` and then `_search`, and differ in what they keep of the search result:
 
@@ -340,14 +340,14 @@ Step 3: `reverse` turns goal to start into start to goal, and the goal's `hops` 
 
 ### shortest_path: the definition
 
-`shortest_path/4`, lines 535 to 544:
+`shortest_path/4`, lines 561 to 570:
 
 ```jq
 # shortest_path, four arguments: the route from $start to $goal with the fewest edges, as
 # {path: [the nodes from start to goal], cost: the number of edges}; null when there is none;
 # {path: [$start], cost: 0} when they are the same node. Among routes of equal length, the one a
 # breadth-first search following edges in input order finds first.
-def shortest_path(from; to; $start; $goal):
+def shortest_path(from; to; $start; $goal): _table("shortest_path"; "the input") |
   _adj(from; to) as $adj
   | (reduce _search($adj; $start)[] as $r ({}; .[$r.node | tojson] = $r)) as $ix
   | if $ix[$goal | tojson] == null then null
@@ -355,7 +355,7 @@ def shortest_path(from; to; $start; $goal):
     end;
 ```
 
-Built into jq: `recurse`, `reverse`, `select`, `tojson`. From this library: `_adj`, `_search`.
+Built into jq: `recurse`, `reverse`, `select`, `tojson`. From this library: `_adj`, `_search`, `_table`.
 
 - `reduce _search(...)[] as $r ({}; ...)` builds `$ix`, one entry per node the search met.
 - `if $ix[$goal | tojson] == null then null`: a goal the search never met has no route.
@@ -451,14 +451,14 @@ Step 4: the path is read from `d` as in the four-argument form, following each n
 
 ### shortest_path: the definition
 
-`shortest_path/5`, lines 546 to 573:
+`shortest_path/5`, lines 572 to 599:
 
 ```jq
 # shortest_path, five arguments: the route with the lowest total weight (weights are numbers >= 0;
 # anything else is an error), same output with cost the total. Among routes of equal cost, the one
 # found first. It settles the nearest open node by scanning them all, with no priority queue: fine
 # for a few thousand nodes, slow beyond.
-def shortest_path(from; to; weight; $start; $goal):
+def shortest_path(from; to; weight; $start; $goal): _table("shortest_path"; "the input") |
   (first(.[] | (weight) | select(type != "number" or . < 0) | [.]) // null) as $bad
   | if $bad != null then error("shortest_path: an edge has weight \($bad[0] | tojson); weights must be numbers >= 0")
     else
@@ -484,7 +484,7 @@ def shortest_path(from; to; weight; $start; $goal):
     end;
 ```
 
-Built into jq: `del`, `error`, `first`, `from_entries`, `group_by`, `length`, `map`, `min_by`, `recurse`, `reverse`, `select`, `tojson`, `type`, `until`.
+Built into jq: `del`, `error`, `first`, `from_entries`, `group_by`, `length`, `map`, `min_by`, `recurse`, `reverse`, `select`, `tojson`, `type`, `until`. From this library: `_table`.
 
 - `first(.[] | (weight) | select(type != "number" or . < 0) | [.]) // null` finds the first bad weight. It is wrapped in an array so that a weight of `null` or `false` is still found.
 - Each entry of `d` and `open` is `[cost, order found, node, via]`.
@@ -563,14 +563,14 @@ Step 3: all six nodes were given a level, so there is no cycle, and the rows are
 
 ### topo_order: the definition
 
-`topo_order/2`, lines 575 to 598:
+`topo_order/2`, lines 601 to 624:
 
 ```jq
 # topo_order: a dependency order of the nodes of a directed graph. One row per node: {node, level},
 # sorted by level then node: level 0 for a node nothing points to, otherwise one more than the
 # highest level among the nodes that point to it, so every edge goes from a lower level to a higher
 # one and the nodes of one level do not depend on each other. A cycle is an error naming a node on it.
-def topo_order(from; to):
+def topo_order(from; to): _table("topo_order"; "the input") |
   ([.[] | (from), (to)] | unique) as $nodes
   | _adj(from; to) as $adj
   | (reduce .[] as $e (reduce $nodes[] as $n ({}; .[$n | tojson] = 0); .[$e | to | tojson] += 1)) as $deg0
@@ -592,7 +592,7 @@ def topo_order(from; to):
     else [.out[][]] | sort_by([.level, .node]) end;
 ```
 
-Built into jq: `error`, `length`, `map`, `select`, `sort`, `sort_by`, `tojson`, `tostring`, `unique`, `until`. From this library: `_adj`.
+Built into jq: `error`, `length`, `map`, `select`, `sort`, `sort_by`, `tojson`, `tostring`, `unique`, `until`. From this library: `_adj`, `_table`.
 
 - `[.[] | (from), (to)] | unique` is `$nodes`. `$deg0` starts every node at 0 and adds one per edge to the edge's target.
 - `left` counts the nodes with no level yet. `out` collects each round's rows under the round number, for the same reason `_search` writes to objects.
@@ -664,12 +664,12 @@ Step 3: each member is labelled with the node that started its search, and the r
 
 ### components: the definition
 
-`components/2`, lines 600 to 611:
+`components/2`, lines 626 to 637:
 
 ```jq
 # components: connected groups, edges read as undirected. One row per node: {node, component},
 # where component is the smallest node of its group in jq's sort order. Rows sorted by node.
-def components(a; b):
+def components(a; b): _table("components"; "the input") |
   ([.[] | [(a), (b)], [(b), (a)]] | group_by(.[0]) | map({key: (.[0][0] | tojson), value: map(.[1])}) | from_entries) as $adj
   | ([.[] | (a), (b)] | unique) as $nodes
   | reduce $nodes[] as $n ({seen: {}, parts: {}, k: 0};
@@ -681,7 +681,7 @@ def components(a; b):
   | [.parts[][]] | sort_by(.node);
 ```
 
-Built into jq: `from_entries`, `group_by`, `map`, `sort_by`, `tojson`, `tostring`, `unique`. From this library: `_search`.
+Built into jq: `from_entries`, `group_by`, `map`, `sort_by`, `tojson`, `tostring`, `unique`. From this library: `_search`, `_table`.
 
 - `[.[] | [(a), (b)], [(b), (a)]]` emits each edge twice, once per direction, before grouping.
 - `reduce $nodes[] as $n (...)` visits the nodes in sorted order. `if .seen[$n | tojson] then .` skips a node that an earlier search met.

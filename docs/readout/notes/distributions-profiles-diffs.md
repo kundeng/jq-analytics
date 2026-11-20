@@ -3,7 +3,7 @@ Eight definitions for the first questions asked of a table: which values are com
 The first four take a plain list of values as input, so a column is first pulled out of a table with `map(.field)`. `corr` and `diff_tables` take a table and filter arguments; in jq a `;` separates arguments, and an argument such as `.x` is a filter run on each row.
 
 ## mode/0
-<!-- code: 9f8c2210 -->
+<!-- code: 8146f90d -->
 
 The most frequent non-null value of a list. SQL has `mode() WITHIN GROUP`; a spreadsheet has `MODE`.
 
@@ -44,7 +44,7 @@ Step 3, `min | .[1]`: arrays compare element by element, so the smallest pair is
 One `min` does both the "most frequent" and the tie rule, because the size is negated. `if length == 0 then null` covers the empty case before grouping.
 
 ## value_counts/0
-<!-- code: fe09028c -->
+<!-- code: 22da6115 -->
 
 One row per distinct non-null value of a list, with its count and its share of the non-null values, most frequent first. It is SQL's `SELECT v, count(*) ... GROUP BY v ORDER BY 2 DESC`, and what pandas calls `value_counts`.
 
@@ -65,7 +65,7 @@ Four non-null values. `a` appears twice, a share of 2 / 4 = 0.5. `b` and `c` tie
 - `sort_by([-.count, .value])`: highest count first, ties by value.
 
 ## bin_edges/3, histogram/1
-<!-- code: f37385df -->
+<!-- code: bd27b4a5 -->
 
 A histogram of a list of numbers: how many fall in each bin. `bin_edges($lo; $hi; $n)` makes the edges of `$n` equal bins; `histogram($edges)` counts. A spreadsheet's `FREQUENCY` and numpy's `histogram` do the same.
 
@@ -115,7 +115,7 @@ Step 3: the counts per bin number are 1, 1, 1 and 2, and the last line lays them
 - `$c[tostring] // 0` reads a bin's count, 0 when the bin has no entry.
 
 ## corr/2
-<!-- code: ba2570e9 -->
+<!-- code: 4f91a295 -->
 
 Pearson's correlation of two columns: 1 when they rise together on a straight line, -1 when one falls as the other rises, near 0 when there is no straight-line relation. It matches SQL's `corr(y, x)` and a spreadsheet's `CORREL`.
 
@@ -172,7 +172,7 @@ Step 4: the first sum divided by the square root of the product of the other two
 - `if $s[1] == 0 or $s[2] == 0 then null`: a sum of squares of 0 means that side never varies, and the division would be by 0.
 
 ## profile/0
-<!-- code: 567b502b -->
+<!-- code: 98412ab7 -->
 
 A first look at a table: one row per column, saying how many rows have it, how many are null or empty, how many distinct values it holds, of which types, and its smallest and largest value.
 
@@ -223,7 +223,7 @@ Step 3: the output row is counted from those lists. For `ram`: `present` 4 (the 
 - Each column is one pass over the rows, so the cost grows with rows times columns.
 
 ## _diff_index/2, diff_tables/2
-<!-- code: 24dd34d0 -->
+<!-- code: 578d7b70 -->
 
 `diff_tables` reports what changed between two versions of a table that share a key: one row per key that was added, removed or changed. The input is the new table and `$old` is the old one. `_diff_index` is its helper: a table as a lookup from key to row.
 

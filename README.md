@@ -128,7 +128,16 @@ The functions whose input is not a table:
 | a nested tree: one root object or an array of roots | `nodes_from_nested` |
 | a measure context, inside a cell of `rollup` or `rollup_levels` | `measure`, `measure_with`, `share_of`, `without_filter`, `only_filters`, `with_filter`, `shift`, `on_calendar`, `to_date` |
 
-What happens when the rule is broken (as of 0.9.2; the library does not check its input's type yet). Given one row where a table is expected, most functions stop, but with jq's own message, which names neither the function nor the cause: `group_agg`, the joins, `window`, `state_blocks`, `tree_paths`, `rollup` and `to_map` say `Cannot index string with string "g"`; `profile` and `unpivot` say `string ("b") has no keys`. Three do not stop: `mode`, `value_counts` and `count_nonnull` treat the row's field values as the list and answer about them. `[{"g":"b","x":1}][] | count_nonnull` is 2, the number of fields, not the number of rows.
+What happens when the rule is broken. Since 0.14.0 every function whose input is a table, a list or an object of tables checks that it got one, and stops with a message that names itself and says what to write instead; a table passed as an argument (the right table of a join, `lookup`'s dimension) is checked the same way. Only the outer type is checked, not the items, so a table of plain values such as `map(.site) | group_agg({site: .}; {n: length})` still works.
+
+```text
+[{site: "N"}, {site: "S"}][] | group_agg({site}; {n: length})
+  group_agg: the input is one object, not a table (an array of rows). Pass the whole table as one value: $rows | group_agg(...), not $rows[] | group_agg(...).
+[{site: "N"}, {site: "S"}][] | count_nonnull
+  count_nonnull: the input is one object, not a list of values. Make the list first, such as map(.site) | count_nonnull.
+```
+
+Before 0.14.0 most functions stopped with jq's own message (`Cannot index string with string "g"`), and `mode`, `value_counts` and `count_nonnull` gave a wrong answer about the one row's fields with no error. The functions that do not check are the window functions (`window` hands them a partition), the measure-context functions (`rollup` calls them), the single-value functions and those that read only their arguments.
 
 ## Tracing the question
 

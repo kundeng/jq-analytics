@@ -283,7 +283,7 @@ def main() -> None:
             if opens and opens.group(1) != d["key"].split("/")[0] and opens.group(1) in names:
                 problems.append(f"{family['slug']}: the comment above {d['key']} describes {opens.group(1)}; move it above that function")
     for n, family in enumerate(families):
-        number = f"{(n + 1) * 5:02d}"
+        number = f"{n * 5:02d}"   # the input checks come first, as page 00; the rest keep 05 on
         if only and family["slug"] not in only:
             continue
         path = NOTES / (family["slug"] + ".md")

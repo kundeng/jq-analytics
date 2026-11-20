@@ -293,8 +293,8 @@ Step 5, `select(.value as $r | {l: $l, r: $r} | cond)`: each match found is kept
 - `$ix[$k | tojson][]?`: the lookup. The matches come out in right-table order, because step 2 kept that order inside each group, on every engine.
 - `select(...)`: step 5. `cond` runs only on pairs that already share a key.
 
-## join_on/6, join_on/5
-<!-- code: f0ed3dc1 -->
+## _join/7, join_on/6, join_on/5
+<!-- code: 70fe000d -->
 
 The general flat join: one output row per matching pair, with the fields of both rows. It is SQL's `FROM l JOIN r ON l.k = r.k AND cond`, with the kind of join as an argument.
 
@@ -440,6 +440,7 @@ A kind that is not one of the five is an error, not an empty result. So is a suf
 
 <!-- definition -->
 
+- The first line checks that the input and `$right` are tables (page 00), naming the function the user called: `_join` carries that name in `$who`, so a mistake in `join_left` says `join_left`, not `join_on`.
 - `. as $left` keeps the left table for the plan. The plan is made only for `"inner"`, `"left"` and `"full"`; the other two kinds merge nothing.
 - `_matches(...) as $rows`: step 1.
 - `"inner"`: `.m[] | _merge($l; .value; $plan)` gives one row per match and nothing for an entry with no matches.
@@ -447,10 +448,10 @@ A kind that is not one of the five is an error, not an empty result. So is a suf
 - `"semi"` and `"anti"`: `select` on whether `m` is empty; the left row `.l` is emitted as it is, once.
 - `"full"`: `$hit` is step 3. The position goes through `tostring` because object keys are strings. The left part is the same expression as `"left"`, and the unmatched right rows follow it, each merged into an empty row so that its shared fields take the suffixed names.
 - The last `else`: the unknown-kind error.
-- The five-argument form calls the six-argument form with `"_right"`.
+- `join_on` is `_join` with the name `"join_on"`; its five-argument form adds `"_right"` as the suffix.
 
 ## join_inner/3, join_left/3, join_full/3, join_semi/3, join_anti/3
-<!-- code: 0a54328b -->
+<!-- code: aa1314f1 -->
 
 The five kinds of equality join under their own names. Each is `join_on` with `true` for the condition and its kind fixed, so the common case reads as one word and has three arguments.
 
@@ -479,10 +480,10 @@ Request 1 matches the second record. Request 2 matches neither.
 
 <!-- definition -->
 
-Each line passes its three arguments through to `join_on` and adds `true` and the kind.
+Each line passes its three arguments through to `_join` (under `join_on` above) and adds `true`, the kind, the suffix `"_right"` and its own name for the messages.
 
 ## join_nest/5
-<!-- code: b669d9a4 -->
+<!-- code: 142ae4d5 -->
 
 Every left row exactly once, with one new field holding the array of its matching right rows. It never multiplies rows and never clashes on a field name. It is Power Query's `Table.NestedJoin`. Use it when the right side is "many" and the next step counts or summarises the matches per left row.
 
@@ -517,7 +518,7 @@ Step 1: `_matches`, as shown in its own section. Step 2, on the entry of request
 - `.l + {($as): [.m[].value]}`: step 2. The parentheses in `{($as): ...}` make the field name come from the variable. A left row that already has a field of that name gets it replaced.
 
 ## lookup/4
-<!-- code: cdb7e6e2 -->
+<!-- code: feb13d09 -->
 
 Attaches the one matching row of a second table under a new field. It is a spreadsheet's `VLOOKUP` or `XLOOKUP`, or SQL's left join to a table with a unique key. The second table is called the dimension: one row per key, such as one row per site.
 
@@ -603,7 +604,7 @@ The first input is fine and comes back as it was. The other two are the two erro
 `any(.[]; cond)` is true when the condition holds for at least one row. `$who` is the name of the calling function, for the message. `else .` returns the input.
 
 ## join_overlap/7
-<!-- code: c0c27eba -->
+<!-- code: a6a383db -->
 
 Pairs with the same key whose time intervals overlap. It is SQL's `JOIN ... ON l.k = r.k AND l.start < r.end AND r.start < l.end`. Each interval is closed at its start and open at its end, written `[start, end)`. An interval whose end is null is still open: it overlaps everything of its key that starts after its start.
 
@@ -685,7 +686,7 @@ try ([{mac: "aa", start: 1, end: 5}] | join_overlap([{mac: "aa", s: 9, e: 3}]; .
 - The condition is checked only for pairs with the same key, so the cost follows the number of same-key pairs.
 
 ## join_asof/6, join_asof/5
-<!-- code: f7caf903 -->
+<!-- code: 57b5abcd -->
 
 For each left row, the right row with the same key and the latest time at or before the left row's time. It is DuckDB's `ASOF LEFT JOIN` and pandas' `merge_asof`. It answers "which value was in force when this happened", for a table of changes such as prices or settings.
 

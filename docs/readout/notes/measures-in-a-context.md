@@ -125,7 +125,7 @@ Three values, and each takes a different path:
 - The index makes a changed context cheap in the common case. A filter on a field that is not a level scans every row once per cell, so the cost grows with rows times cells.
 
 ## rollup_levels/2
-<!-- code: a561ee02 -->
+<!-- code: a03bf0c3 -->
 
 A report at several levels: one output row per group at each level listed. It is SQL's `GROUP BY GROUPING SETS`. Every level is computed from the rows, so a median or a ratio is right at a total.
 
@@ -195,7 +195,7 @@ Step 4: `cell` runs with each context as its input, and the output row is `.at`,
 - `.at + {level: ...} + cell`: a cell field named like a level field, or named `level`, would overwrite it.
 
 ## rollup/2
-<!-- code: 3adb2706 -->
+<!-- code: dbf871e0 -->
 
 The levels of a hierarchy: all the fields, then one fewer from the right, down to the grand total. It is SQL's `GROUP BY ROLLUP(region, month)`.
 

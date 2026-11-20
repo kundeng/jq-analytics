@@ -60,7 +60,7 @@ Events that all have a time pass through unchanged. One event with no time is th
 
 ### _time_check: the definition
 
-`_time_check/2`, lines 415 to 416:
+`_time_check/2`, lines 441 to 442:
 
 ```jq
 # an event with a null time cannot be placed in time: an error naming the calling function
@@ -149,7 +149,7 @@ That is the first block of the result at the top.
 
 ### _blocks: the definition
 
-`_blocks/2`, lines 418 to 428:
+`_blocks/2`, lines 444 to 454:
 
 ```jq
 # the blocks of one entity's events, already sorted by time
@@ -265,7 +265,7 @@ Step 3, `[.[] | del(.blocks) as $k | .blocks[] | $k + .]`: the nested blocks are
 
 ### state_blocks: the definition
 
-`state_blocks/3`, lines 429 to 439:
+`state_blocks/3`, lines 455 to 465:
 
 ```jq
 # state_blocks: per entity, events sorted by time (stable), consecutive events with the same state
@@ -275,13 +275,13 @@ Step 3, `[.[] | del(.blocks) as $k | .blocks[] | $k + .]`: the nested blocks are
 # assignee change while the status stays Open is still the same Open block. The entity key is
 # merged in as group_agg does (an object key's fields, or field "key"). Order: entities by first
 # appearance, blocks by time. An event with a null time is an error.
-def state_blocks(entity; time; state):
+def state_blocks(entity; time; state): _table("state_blocks"; "the input") |
   _time_check(time; "state_blocks")
   | group_agg(entity; {blocks: (sort_by(time) | _blocks(time; state))})
   | [.[] | del(.blocks) as $k | .blocks[] | $k + .];
 ```
 
-Built into jq: `del`, `sort_by`. From this library: `_blocks`, `_time_check`, `group_agg`.
+Built into jq: `del`, `sort_by`. From this library: `_blocks`, `_table`, `_time_check`, `group_agg`.
 
 The three lines are steps 1, 2 and 3. `sort_by` is stable, so two events of one entity with the same time keep their input order.
 
@@ -331,18 +331,18 @@ Steps 1 and 2 are those of `state_blocks`: the time check, then one row per enti
 
 ### transitions: the definition
 
-`transitions/3`, lines 441 to 446:
+`transitions/3`, lines 467 to 472:
 
 ```jq
 # transitions: one row per change of state: {entity key..., from, to, at (time of the change)}
-def transitions(entity; time; state):
+def transitions(entity; time; state): _table("transitions"; "the input") |
   _time_check(time; "transitions")
   | group_agg(entity; {blocks: (sort_by(time) | _blocks(time; state))})
   | [.[] | del(.blocks) as $k | .blocks as $b | range(1; $b | length) as $i
      | $k + {from: $b[$i - 1].state, to: $b[$i].state, at: $b[$i].start}];
 ```
 
-Built into jq: `del`, `length`, `range`, `sort_by`. From this library: `_blocks`, `_time_check`, `group_agg`.
+Built into jq: `del`, `length`, `range`, `sort_by`. From this library: `_blocks`, `_table`, `_time_check`, `group_agg`.
 
 - The first two lines are the same as in `state_blocks`, with the function's own name in the time check.
 - `range(1; $b | length) as $i`: from 1, because the first block has nothing before it.
@@ -423,13 +423,13 @@ A gap of exactly `$gap` does not start a new session, because the test is "great
 
 ### sessions: the definition
 
-`sessions/3`, lines 448 to 458:
+`sessions/3`, lines 474 to 484:
 
 ```jq
 # sessions: per entity, events sorted by time; a new session starts when the gap since the previous
 # event is greater than $gap. Rows: {entity key..., session (1, 2, ... within the entity), start,
 # end (time of its last event), events}.
-def sessions(entity; time; $gap):
+def sessions(entity; time; $gap): _table("sessions"; "the input") |
   _time_check(time; "sessions")
   | group_agg(entity; {sessions: (sort_by(time) | . as $a | length as $n
       | [range($n) | select(. == 0 or (($a[.] | time) - ($a[. - 1] | time)) > $gap)] as $st
@@ -439,7 +439,7 @@ def sessions(entity; time; $gap):
   | [.[] | del(.sessions) as $k | .sessions[] | $k + .];
 ```
 
-Built into jq: `del`, `length`, `range`, `select`, `sort_by`. From this library: `_time_check`, `group_agg`.
+Built into jq: `del`, `length`, `range`, `select`, `sort_by`. From this library: `_table`, `_time_check`, `group_agg`.
 
 - `_time_check(time; "sessions")`: the guard. Without it the subtraction in step 3 would fail on a null.
 - `group_agg(entity; {sessions: (sort_by(time) | ...)})`: one row per entity.
@@ -502,19 +502,19 @@ Step 2: run `$j` starts at `$i = $st[$j]`, and its length `n` is the next start 
 
 ### runs: the definition
 
-`runs/1`, lines 460 to 466:
+`runs/1`, lines 486 to 492:
 
 ```jq
 # runs: run-length encoding of an array in its given order: consecutive items with the same f value
 # become {value, start (0-based position of the first), n}. Streaks are the long runs.
-def runs(f):
+def runs(f): _list("runs") |
   . as $a | length as $n
   | [range($n) | select(. == 0 or (($a[.] | f) != ($a[. - 1] | f)))] as $st
   | [range($st | length) as $j | $st[$j] as $i
      | {value: ($a[$i] | f), start: $i, n: ((if $j + 1 < ($st | length) then $st[$j + 1] else $n end) - $i)}];
 ```
 
-Built into jq: `length`, `range`, `select`.
+Built into jq: `length`, `range`, `select`. From this library: `_list`.
 
 - The `$st` line: step 1, the same cut as in `_blocks`.
 - The object: `value` is `f` on the run's first item, `start` its position counting from 0, and `n` step 2.

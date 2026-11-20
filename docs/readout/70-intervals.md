@@ -61,7 +61,7 @@ The first emits nothing, so the array collected around it is empty; its second e
 
 ### _iv_check: the definition
 
-`_iv_check/2`, lines 842 to 849:
+`_iv_check/2`, lines 868 to 875:
 
 ```jq
 # an event's kind must be one of the three and, when it has a kind, it needs a time
@@ -182,7 +182,7 @@ The four intervals that close in the trace are the four rows of the result.
 
 ### intervals_from_events: the definition
 
-`intervals_from_events/5`, lines 851 to 900:
+`intervals_from_events/5`, lines 877 to 926:
 
 ```jq
 # intervals_from_events: validity intervals built from an event log. A resource (an address, a
@@ -205,7 +205,7 @@ The four intervals that close in the trace are the four rows of the result.
 # One row per interval: {resource, holder, start, end, last, events, start_seen, ended_by}; resources in
 # order of first appearance, intervals in time order. Intervals of one resource never overlap.
 # A kind other than the three, or a null time on an event with a kind, is an error naming the event.
-def intervals_from_events(resource; holder; time; kind; ttl):
+def intervals_from_events(resource; holder; time; kind; ttl): _table("intervals_from_events"; "the input") |
   ([_iv_check(time; kind)] | length) as $_
   | [map(select((kind) != null)) | _groups(resource)[]
      | (.[0] | resource) as $res
@@ -237,7 +237,7 @@ def intervals_from_events(resource; holder; time; kind; ttl):
          .out[])];
 ```
 
-Built into jq: `length`, `map`, `max`, `select`, `sort_by`. From this library: `_groups`, `_iv_check`.
+Built into jq: `length`, `map`, `max`, `select`, `sort_by`. From this library: `_groups`, `_iv_check`, `_table`.
 
 Before the loop:
 
@@ -371,7 +371,7 @@ Step 4: a left row that stopped on an interval containing its time is merged wit
 
 ### join_within: the definition
 
-`join_within/6`, lines 902 to 927:
+`join_within/6`, lines 928 to 953:
 
 ```jq
 # join_within (left outer): each left row with the interval of the same key whose [rstart, rend)
@@ -379,7 +379,7 @@ Step 4: a left row that stopped on an interval containing its time is merged wit
 # time on the left: the left row alone. When several intervals of a key contain the time, the one
 # that started last. Merged like every flat join: a field name on both sides that is not the
 # key comes out twice, the right one with "_right". Use it for "who held this at T"; join_asof is for "the latest value at or before T".
-def join_within($intervals; lkey; rkey; ltime; rstart; rend):
+def join_within($intervals; lkey; rkey; ltime; rstart; rend): _table("join_within"; "the input") | ($intervals | _table("join_within"; "the intervals table")) as $intervals |
   1.7976931348623157e308 as $inf
   | _merge_plan(.; $intervals; lkey; rkey; "_right") as $plan
   | ([$intervals[] | select((rkey) != null and (rstart) != null)] | group_by(rkey)
@@ -402,7 +402,7 @@ def join_within($intervals; lkey; rkey; ltime; rstart; rend):
        end];
 ```
 
-Built into jq: `bsearch`, `from_entries`, `group_by`, `length`, `map`, `select`, `sort_by`, `tojson`, `until`. From this library: `_merge`, `_merge_plan`.
+Built into jq: `bsearch`, `from_entries`, `group_by`, `length`, `map`, `select`, `sort_by`, `tojson`, `until`. From this library: `_merge`, `_merge_plan`, `_table`.
 
 - `select((rkey) != null and (rstart) != null)`: intervals with no key or no start are left out of the index.
 - `if $k == null or $t == null or $ix[$k | tojson] == null then $l`: a left row with no key, no time, or a key with no intervals comes back alone.
@@ -488,13 +488,13 @@ For room B, 7 to 8 joins because the open interval has no end.
 
 ### merge_intervals: the definition
 
-`merge_intervals/3`, lines 929 to 948:
+`merge_intervals/3`, lines 955 to 974:
 
 ```jq
 # merge_intervals: per key, intervals that overlap or touch become one row
 # {key..., start, end, merged (how many went in)}; keys in order of first appearance, intervals in
 # time order. A null end is open-ended and absorbs everything of its key that starts after it.
-def merge_intervals(key; start; fin):
+def merge_intervals(key; start; fin): _table("merge_intervals"; "the input") |
   _iv_order_check(start; fin; "merge_intervals")
   | [_groups(key)[]
      | (.[0] | key | if type == "object" then . else {key: .} end) as $k
@@ -513,7 +513,7 @@ def merge_intervals(key; start; fin):
          .out[])];
 ```
 
-Built into jq: `max`, `sort_by`, `type`. From this library: `_groups`, `_iv_order_check`.
+Built into jq: `max`, `sort_by`, `type`. From this library: `_groups`, `_iv_order_check`, `_table`.
 
 - `$k` is the key as fields for the output row: the key itself when it is an object, otherwise `{key: value}`.
 - `if .cur != null and (.cur.end == null or $s <= .cur.end)`: the join test. `<=`, not `<`, so an interval that starts exactly where the open one ends is merged with it.
@@ -598,13 +598,13 @@ Step 3: the `foreach` keeps a running sum of the net changes, 1, 2, 1, 2, 1, and
 
 ### concurrency: the definition
 
-`concurrency/2`, lines 950 to 959:
+`concurrency/2`, lines 976 to 985:
 
 ```jq
 # concurrency: how many intervals are open over time: one row {t, open} per moment the count
 # changes, in time order (`end` is a jq keyword, so the parameter is called fin). An interval counts from its start up to, not including, its end; one
 # with a null end never stops counting. The peak is `concurrency(...) | max_by(.open)`.
-def concurrency(start; fin):
+def concurrency(start; fin): _table("concurrency"; "the input") |
   _iv_order_check(start; fin; "concurrency")
   | [.[] | {t: (start), d: 1}, ((fin) as $e | if $e == null then empty else {t: $e, d: -1} end)]
   | group_by(.t)
@@ -613,7 +613,7 @@ def concurrency(start; fin):
        select(.net != 0) | {t, open})];
 ```
 
-Built into jq: `add`, `empty`, `group_by`, `map`, `select`. From this library: `_iv_order_check`.
+Built into jq: `add`, `empty`, `group_by`, `map`, `select`. From this library: `_iv_order_check`, `_table`.
 
 - An interval counts from its start up to, not including, its end, because the `-1` lands exactly at the end.
 - The `foreach` state is `{open, t, net}`; the first part of its body computes `$net` for the moment's group.

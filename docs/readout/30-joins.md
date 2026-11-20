@@ -55,7 +55,7 @@ On this page, in the order of the file:
 | `_merge_plan` | Internal helper, not for callers | The plan for merging the rows of two tables, made once per join: which fields are the key, and the new name of every other field name that both tables have |
 | `_merge` | Internal helper, not for callers | One left row and one right row made into one output row, by the plan |
 | `_matches` | Internal helper, not for callers | The pairing step that every join here shares, except `lookup` and `join_asof` |
-| `join_on` | Public function | The general flat join: one output row per matching pair, with the fields of both rows |
+| `_join`, `join_on` | Public functions and internal helpers | The general flat join: one output row per matching pair, with the fields of both rows |
 | `join_inner`, `join_left`, `join_full`, `join_semi`, `join_anti` | Public functions | The five kinds of equality join under their own names |
 | `join_nest` | Public function | Every left row exactly once, with one new field holding the array of its matching right rows |
 | `lookup` | Public function | Attaches the one matching row of a second table under a new field |
@@ -153,7 +153,7 @@ _key_fields(["a", "b"]; ["a", "b"]; [.a, .b]; [.b, .a])
 
 ### _key_fields: the definition
 
-`_key_fields/4`, lines 222 to 230:
+`_key_fields/4`, lines 246 to 254:
 
 ```jq
 # the field names lkey and rkey both read directly, at the same place of the key
@@ -244,7 +244,7 @@ _merge_plan([{a: 1}]; [{a: 1}]; .a; .a; null)
 
 ### _merge_plan: the definition
 
-`_merge_plan/5`, lines 232 to 248:
+`_merge_plan/5`, lines 256 to 272:
 
 ```jq
 # the plan for merging rows of two tables: {strict}, or {keys: {name: true}, names: {name: new name}}
@@ -345,7 +345,7 @@ _merge({id: 2, host: "db01"}; {host: "db01", site: "S"}; {strict: true}),
 
 ### _merge: the definition
 
-`_merge/3`, lines 250 to 260:
+`_merge/3`, lines 274 to 284:
 
 ```jq
 def _merge($l; $r; $plan):
@@ -481,7 +481,7 @@ Step 5, `select(.value as $r | {l: $l, r: $r} | cond)`: each match found is kept
 
 ### _matches: the definition
 
-`_matches/4`, lines 262 to 268:
+`_matches/4`, lines 286 to 292:
 
 ```jq
 # each left row with its matching right rows: [{l: row, m: [{key: right position, value: right row}]}]
@@ -503,13 +503,13 @@ Built into jq: `empty`, `from_entries`, `group_by`, `map`, `select`, `to_entries
 
 ---
 
-## join_on
+## _join, join_on
 
-**Public function** · `join_on($right; lkey; rkey; cond; $kind; $suffix)`, `join_on($right; lkey; rkey; cond; $kind)`
+**Public functions and internal helpers** · `_join($right; lkey; rkey; cond; $kind; $suffix; $who)`, `join_on($right; lkey; rkey; cond; $kind; $suffix)`, `join_on($right; lkey; rkey; cond; $kind)`
 
 The general flat join: one output row per matching pair, with the fields of both rows. It is SQL's `FROM l JOIN r ON l.k = r.k AND cond`, with the kind of join as an argument.
 
-### join_on: the example
+### _join and the others: the example
 
 A left join of the requests to the hosts.
 
@@ -531,7 +531,7 @@ A left join of the requests to the hosts.
 
 Five rows from four requests. Request 1 has its site. Request 2 appears twice, once per `db01` record: a duplicate key on the right multiplies rows. Requests 3 and 4 have no match and come back as they were, with no `site` field.
 
-### join_on: reading the call
+### _join and the others: reading the call
 
 The first four arguments are those of `_matches` above. The fifth, `$kind`, is a value, one of five strings. The sixth, `$suffix`, may be left out and is then `"_right"`; it is explained under "A field name on both sides" below.
 
@@ -543,7 +543,7 @@ The first four arguments are those of `_matches` above. The fifth, `$kind`, is a
 | `"anti"` | the left row when it has no match |
 | `"full"` | the `left` output, then the right rows no left row matched, in right order |
 
-### join_on: the other four kinds
+### _join and the others: the other four kinds
 
 The same call with `"inner"`, `"semi"` and `"anti"`. Each kind's result is one array, printed on its own line.
 
@@ -585,7 +585,7 @@ The same call with `"inner"`, `"semi"` and `"anti"`. Each kind's result is one a
 
 The first five rows are the left join. The last two are the right rows that no request matched: `app07`, and the record with a null host. They have no `id`.
 
-### join_on: what happens inside, on the example
+### _join and the others: what happens inside, on the example
 
 Step 1, `_merge_plan(...) as $plan`: the plan, made once, for the three kinds that merge rows. Here it is `{keys: {host: true}, names: {}}`: `host` is the key and no other name is on both sides. Then `_matches($right; lkey; rkey; cond) as $rows`: the array of `{l, m}` entries shown under `_matches` above.
 
@@ -636,7 +636,7 @@ Positions 0, 1 and 2 matched. The right rows at the other positions, 3 and 4, ar
 ]
 ```
 
-### join_on: a condition, and a join with no key
+### _join and the others: a condition, and a join with no key
 
 `cond` is a filter over the pair `{l: left row, r: right row}`. With `true` for both keys every right row shares the one key `true`, so every pair is checked. A left join of three amounts to the bands that contain them:
 
@@ -656,7 +656,7 @@ Positions 0, 1 and 2 matched. The right rows at the other positions, 3 and 4, ar
 
 Amount 500 is in no band and comes back alone. This form checks left rows times right rows pairs, so it is for small right tables.
 
-### join_on: a field name on both sides
+### _join and the others: a field name on both sides
 
 Here the requests carry a `site` of their own, the site the request came from. The hosts have a `site` too. Both are kept: the left one under its name, the right one as `site_right`.
 
@@ -719,7 +719,7 @@ In a full join the right rows that matched nothing carry their shared fields und
 
 When the key is computed, as in `.host | ascii_downcase`, the library cannot tell that `host` is the key, and `host` comes out twice like any other shared field (`_key_fields` above).
 
-### join_on: what is refused
+### _join and the others: what is refused
 
 A kind that is not one of the five is an error, not an empty result. So is a suffixed name that one of the tables already has.
 
@@ -733,14 +733,15 @@ A kind that is not one of the five is an error, not an empty result. So is a suf
 "join: field \"site_right\" already exists, so the right table's \"site\" cannot take that name; pass another suffix"
 ```
 
-### join_on: the definition
+### _join and the others: the definition
 
-`join_on/6`, lines 270 to 286:
+`_join/7`, lines 294 to 311:
 
 ```jq
 # the general flat join; $suffix goes on the right table's shared field names ("_right" by default), null = the strict rule
-def join_on($right; lkey; rkey; cond; $kind; $suffix):
-  . as $left
+def _join($right; lkey; rkey; cond; $kind; $suffix; $who):
+  _table($who; "the input") | ($right | _table($who; "the right table")) as $right
+  | . as $left
   | (if $kind == "inner" or $kind == "left" or $kind == "full" then _merge_plan($left; $right; lkey; rkey; $suffix) else null end) as $plan
   | _matches($right; lkey; rkey; cond) as $rows
   | if $kind == "inner" then [$rows[] | .l as $l | .m[] | _merge($l; .value; $plan)]
@@ -754,17 +755,28 @@ def join_on($right; lkey; rkey; cond; $kind; $suffix):
       | [$rows[] | .l as $l | if (.m | length) > 0 then .m[] | _merge($l; .value; $plan) else $l end]
         + [$right | to_entries[] | select($hit[.key | tostring] | not) | .value
            | if $plan.strict then . else _merge({}; .; $plan) end]
-    else error("join_on: unknown kind \($kind | tojson)") end;
+    else error("\($who): unknown kind \($kind | tojson)") end;
 ```
 
-Built into jq: `error`, `from_entries`, `length`, `not`, `select`, `to_entries`, `tojson`, `tostring`. From this library: `_matches`, `_merge`, `_merge_plan`.
+Built into jq: `error`, `from_entries`, `length`, `not`, `select`, `to_entries`, `tojson`, `tostring`. From this library: `_matches`, `_merge`, `_merge_plan`, `_table`.
 
-`join_on/5`, line 287:
+`join_on/6`, line 312:
 
 ```jq
-def join_on($right; lkey; rkey; cond; $kind): join_on($right; lkey; rkey; cond; $kind; "_right");
+def join_on($right; lkey; rkey; cond; $kind; $suffix): _join($right; lkey; rkey; cond; $kind; $suffix; "join_on");
 ```
 
+From this library: `_join`.
+
+`join_on/5`, line 313:
+
+```jq
+def join_on($right; lkey; rkey; cond; $kind): _join($right; lkey; rkey; cond; $kind; "_right"; "join_on");
+```
+
+From this library: `_join`.
+
+- The first line checks that the input and `$right` are tables (page 00), naming the function the user called: `_join` carries that name in `$who`, so a mistake in `join_left` says `join_left`, not `join_on`.
 - `. as $left` keeps the left table for the plan. The plan is made only for `"inner"`, `"left"` and `"full"`; the other two kinds merge nothing.
 - `_matches(...) as $rows`: step 1.
 - `"inner"`: `.m[] | _merge($l; .value; $plan)` gives one row per match and nothing for an entry with no matches.
@@ -772,7 +784,7 @@ def join_on($right; lkey; rkey; cond; $kind): join_on($right; lkey; rkey; cond; 
 - `"semi"` and `"anti"`: `select` on whether `m` is empty; the left row `.l` is emitted as it is, once.
 - `"full"`: `$hit` is step 3. The position goes through `tostring` because object keys are strings. The left part is the same expression as `"left"`, and the unmatched right rows follow it, each merged into an empty row so that its shared fields take the suffixed names.
 - The last `else`: the unknown-kind error.
-- The five-argument form calls the six-argument form with `"_right"`.
+- `join_on` is `_join` with the name `"join_on"`; its five-argument form adds `"_right"` as the suffix.
 
 ---
 
@@ -816,48 +828,48 @@ Request 1 matches the second record. Request 2 matches neither.
 
 ### join_inner and the others: the definition
 
-`join_inner/3`, lines 289 to 290:
+`join_inner/3`, lines 315 to 316:
 
 ```jq
 # equality joins: join_on with no condition; semi and anti return left rows only, with no right fields
-def join_inner($right; lkey; rkey): join_on($right; lkey; rkey; true; "inner");
+def join_inner($right; lkey; rkey): _join($right; lkey; rkey; true; "inner"; "_right"; "join_inner");
 ```
 
-From this library: `join_on`.
+From this library: `_join`.
 
-`join_left/3`, line 291:
+`join_left/3`, line 317:
 
 ```jq
-def join_left($right; lkey; rkey): join_on($right; lkey; rkey; true; "left");
+def join_left($right; lkey; rkey): _join($right; lkey; rkey; true; "left"; "_right"; "join_left");
 ```
 
-From this library: `join_on`.
+From this library: `_join`.
 
-`join_full/3`, line 292:
+`join_full/3`, line 318:
 
 ```jq
-def join_full($right; lkey; rkey): join_on($right; lkey; rkey; true; "full");
+def join_full($right; lkey; rkey): _join($right; lkey; rkey; true; "full"; "_right"; "join_full");
 ```
 
-From this library: `join_on`.
+From this library: `_join`.
 
-`join_semi/3`, line 293:
+`join_semi/3`, line 319:
 
 ```jq
-def join_semi($right; lkey; rkey): join_on($right; lkey; rkey; true; "semi");
+def join_semi($right; lkey; rkey): _join($right; lkey; rkey; true; "semi"; "_right"; "join_semi");
 ```
 
-From this library: `join_on`.
+From this library: `_join`.
 
-`join_anti/3`, line 294:
+`join_anti/3`, line 320:
 
 ```jq
-def join_anti($right; lkey; rkey): join_on($right; lkey; rkey; true; "anti");
+def join_anti($right; lkey; rkey): _join($right; lkey; rkey; true; "anti"; "_right"; "join_anti");
 ```
 
-From this library: `join_on`.
+From this library: `_join`.
 
-Each line passes its three arguments through to `join_on` and adds `true` and the kind.
+Each line passes its three arguments through to `_join` (under `join_on` above) and adds `true`, the kind, the suffix `"_right"` and its own name for the messages.
 
 ---
 
@@ -906,16 +918,16 @@ Step 1: `_matches`, as shown in its own section. Step 2, on the entry of request
 
 ### join_nest: the definition
 
-`join_nest/5`, lines 296 to 299:
+`join_nest/5`, lines 322 to 325:
 
 ```jq
 # nested join: every left row once, with field $as holding the array of its matching right rows
 # (empty when none). Never multiplies rows. Power Query's Table.NestedJoin.
-def join_nest($right; lkey; rkey; cond; $as):
+def join_nest($right; lkey; rkey; cond; $as): _table("join_nest"; "the input") | ($right | _table("join_nest"; "the right table")) as $right |
   [_matches($right; lkey; rkey; cond)[] | .l + {($as): [.m[].value]}];
 ```
 
-From this library: `_matches`.
+From this library: `_matches`, `_table`.
 
 - `[_matches(...)[] | ...]`: one output row per entry, so one per left row.
 - `.l + {($as): [.m[].value]}`: step 2. The parentheses in `{($as): ...}` make the field name come from the variable. A left row that already has a field of that name gets it replaced.
@@ -1008,12 +1020,12 @@ try ([{id: 1, site: "N"}] | lookup([{site: "N", name: "North"}, {site: "S", name
 
 ### lookup: the definition
 
-`lookup/4`, lines 301 to 309:
+`lookup/4`, lines 327 to 335:
 
 ```jq
 # lookup: attach exactly one record of a dimension table under field $as (null when none).
 # A key that appears twice in the dimension is an error, so a lookup can never multiply rows.
-def lookup($dim; lkey; dkey; $as):
+def lookup($dim; lkey; dkey; $as): _table("lookup"; "the input") | ($dim | _table("lookup"; "the dimension table")) as $dim |
   ($dim | group_by(dkey)
    | map(select((.[0] | dkey) != null)
          | if length > 1 then error("lookup: key \(.[0] | dkey | tojson) appears more than once in the dimension")
@@ -1022,7 +1034,7 @@ def lookup($dim; lkey; dkey; $as):
   | map(. as $l | ($l | lkey) as $k | $l + {($as): (if $k == null then null else $ix[$k | tojson] end)});
 ```
 
-Built into jq: `error`, `from_entries`, `group_by`, `length`, `map`, `select`, `tojson`.
+Built into jq: `error`, `from_entries`, `group_by`, `length`, `map`, `select`, `tojson`. From this library: `_table`.
 
 - `$dim | group_by(dkey)`: step 1.
 - `select((.[0] | dkey) != null)`: dimension rows with a null key are left out of the index.
@@ -1056,7 +1068,7 @@ The first input is fine and comes back as it was. The other two are the two erro
 
 ### _iv_order_check: the definition
 
-`_iv_order_check/3`, lines 311 to 314:
+`_iv_order_check/3`, lines 337 to 340:
 
 ```jq
 # an interval needs a start, and an end that is not before it
@@ -1171,18 +1183,18 @@ try ([{mac: "aa", start: 1, end: 5}] | join_overlap([{mac: "aa", s: 9, e: 3}]; .
 
 ### join_overlap: the definition
 
-`join_overlap/7`, lines 316 to 321:
+`join_overlap/7`, lines 342 to 347:
 
 ```jq
 # interval overlap: pairs with the same key whose intervals overlap, each closed at its start and open at its end ([start, end)); a null end means still open. Flat and inner; a start or end field named the same on both sides comes out twice, the right one with "_right". An interval with no start, or one that ends before it starts, is an error (as in merge_intervals).
-def join_overlap($right; lkey; rkey; lstart; lend; rstart; rend):
+def join_overlap($right; lkey; rkey; lstart; lend; rstart; rend): _table("join_overlap"; "the input") | ($right | _table("join_overlap"; "the right table")) as $right |
   1.7976931348623157e308 as $inf
   | _iv_order_check(lstart; lend; "join_overlap (left table)")
   | ($right | _iv_order_check(rstart; rend; "join_overlap (right table)")) as $r
   | join_on($r; lkey; rkey; (.l | lstart) < ((.r | rend) // $inf) and (.r | rstart) < ((.l | lend) // $inf); "inner");
 ```
 
-From this library: `_iv_order_check`, `join_on`.
+From this library: `_iv_order_check`, `_table`, `join_on`.
 
 - `1.7976931348623157e308 as $inf`: the largest number jq has, standing for "no end yet".
 - The two `_iv_order_check` lines check the left table, then the right one, and bind the right one as `$r`.
@@ -1340,7 +1352,7 @@ A left row with a null key or a null time comes back alone. Right rows with a nu
 
 ### join_asof: the definition
 
-`join_asof/6`, lines 323 to 342:
+`join_asof/6`, lines 349 to 368:
 
 ```jq
 # As-of join (left outer): for each left row, the right row with the same key whose rtime is the
@@ -1349,7 +1361,7 @@ A left row with a null key or a null time comes back alone. Right rows with a nu
 # Ties on rtime: the first such right row in input order (DuckDB 2.0.0 gave the same on the test
 # fixture; pandas merge_asof takes the last; SQL leaves it open). No match, or a null key or time
 # on the left: the left row alone. Right rows with a null key or time are dropped.
-def join_asof($right; lkey; rkey; ltime; rtime; $max_age):
+def join_asof($right; lkey; rkey; ltime; rtime; $max_age): _table("join_asof"; "the input") | ($right | _table("join_asof"; "the right table")) as $right |
   _merge_plan(.; $right; lkey; rkey; "_right") as $plan
   | ([$right[] | select((rkey) != null and (rtime) != null)] | group_by(rkey)
    | map({key: (.[0] | rkey | tojson), value: (sort_by(rtime) | {rows: ., t: map(rtime)})}) | from_entries) as $ix
@@ -1365,9 +1377,9 @@ def join_asof($right; lkey; rkey; ltime; rtime; $max_age):
        end];
 ```
 
-Built into jq: `bsearch`, `from_entries`, `group_by`, `map`, `select`, `sort_by`, `tojson`, `until`. From this library: `_merge`, `_merge_plan`.
+Built into jq: `bsearch`, `from_entries`, `group_by`, `map`, `select`, `sort_by`, `tojson`, `until`. From this library: `_merge`, `_merge_plan`, `_table`.
 
-`join_asof/5`, line 343:
+`join_asof/5`, line 369:
 
 ```jq
 def join_asof($right; lkey; rkey; ltime; rtime): join_asof($right; lkey; rkey; ltime; rtime; null);

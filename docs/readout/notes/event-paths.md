@@ -55,7 +55,7 @@ One good call, then the three errors:
 - An event whose step is not in the list may have a null time: it is ignored later anyway.
 
 ## funnel_steps/5
-<!-- code: a166429e -->
+<!-- code: 04bb0e27 -->
 
 How far each entity gets through an ordered list of steps. An entity reaches step n when it has events for steps 1 to n in time order. One row per entity that reaches step 1: its key, `depth`, and the time of each step reached.
 
@@ -150,7 +150,7 @@ Step 4: an entity with a chain gets a row: its key, the chain's length as `depth
 - Taking the earliest usable time at every step is safe. For a fixed first event, an earlier next step leaves at least as many choices for the steps after it as a later one.
 
 ## funnel/5
-<!-- code: 3e514044 -->
+<!-- code: 08b5e8d5 -->
 
 The funnel as a table: one row per step with how many entities reached it, and that count as a fraction of the previous step's and of the first step's.
 
@@ -221,7 +221,7 @@ The keys are the periods as JSON text. `"2026-03"` is at position 2. A period th
 - `_period_idx`: `(period) as $p` runs the caller's filter on the event; `$pos[$p | tojson]` is the position, and null means not in the list.
 
 ## cohorts/3
-<!-- code: 9d8b18de -->
+<!-- code: fdaa047c -->
 
 One row per entity: its key and `cohort`, the earliest period in which it has an event. A cohort is the group of entities that were first seen in the same period.
 
@@ -265,7 +265,7 @@ Step 2: the smallest position of each entity, turned back into a period: 0 is `"
 - `$periods` is every period in order, for example `calendar(...) | map(.year_month) | unique`.
 
 ## retention/3
-<!-- code: 2419087b -->
+<!-- code: d4e29a9a -->
 
 Of the entities first seen in a period, how many have at least one event in each later period. One row per cohort and period, from the cohort's own period to the last in the list.
 

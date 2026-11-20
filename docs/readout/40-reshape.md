@@ -100,19 +100,19 @@ The outer `[...]` collects the rows of all input rows into one array.
 
 ### unpivot: the definition
 
-`unpivot/3`, lines 376 to 382:
+`unpivot/3`, lines 402 to 408:
 
 ```jq
 # unpivot: every field not in $keep becomes its own row {keep fields..., $name: field, $value: value}.
 # Null values are kept (Power Query's example drops them). Within a row, fields come out sorted by
 # name, so every engine agrees (jq and jaq keep insertion order, gojq sorts keys).
-def unpivot($keep; $name; $value):
+def unpivot($keep; $name; $value): _table("unpivot"; "the input") |
   [.[] as $r | ($r | with_entries(select(.key as $k | $keep | any(. == $k)))) as $base
    | $r | to_entries | sort_by(.key)[] | select(.key as $k | $keep | any(. == $k) | not)
    | $base + {($name): .key, ($value): .value}];
 ```
 
-Built into jq: `any`, `not`, `select`, `sort_by`, `to_entries`, `with_entries`.
+Built into jq: `any`, `not`, `select`, `sort_by`, `to_entries`, `with_entries`. From this library: `_table`.
 
 - `[.[] as $r | ...]`: one pass per input row `$r`.
 - The `$base` line: step 1. `any(. == $k)` asks whether the field's name is in `$keep`.
@@ -204,18 +204,18 @@ For `db01`, `$cells` has `ram` and `disk`. `$cells["cpu"]` is null, so the `cpu`
 
 ### pivot: the definition
 
-`pivot/5`, lines 384 to 389:
+`pivot/5`, lines 410 to 415:
 
 ```jq
 # pivot: one output row per rowkey (an object) and one column per name in $cols (Power Query's
 # pivotValues), holding agg applied to the array of valf values whose colf (as a string) is that
 # name. A name with no matching rows gives null; colf values not in $cols are dropped.
-def pivot($cols; rowkey; colf; valf; agg):
+def pivot($cols; rowkey; colf; valf; agg): _table("pivot"; "the input") |
   group_agg(rowkey; (group_by(colf | tostring) | map({key: (.[0] | colf | tostring), value: map(valf)}) | from_entries) as $cells
     | reduce $cols[] as $c ({}; .[$c] = ($cells[$c] | if . == null then null else agg end)));
 ```
 
-Built into jq: `from_entries`, `group_by`, `map`, `tostring`. From this library: `group_agg`.
+Built into jq: `from_entries`, `group_by`, `map`, `tostring`. From this library: `_table`, `group_agg`.
 
 - `group_agg(rowkey; ...)`: step 1. The row key should be an object, such as `{host}`, so that its fields become the first columns.
 - The `$cells` expression: step 2. `tostring` is applied to the column value because the names in `$cols` are strings. Inside a group, `group_by` keeps input order, so the values reach `agg` in input order.
@@ -342,14 +342,14 @@ try ([{host: "db01"}] | rename_fields({host: 1})) catch .
 
 ### rename_fields: the definition
 
-`rename_fields/1`, lines 391 to 402:
+`rename_fields/1`, lines 417 to 428:
 
 ```jq
 # rename_fields: $names is an object {old name: new name}. Every row's field with an old name gets
 # the new one and keeps its value and its place in the row; a row without the field is left as it
 # is. All names change at once, so {a: "b", b: "a"} swaps two fields. A new name that is already
 # another field of the row is an error: one of the two values would be lost.
-def rename_fields($names):
+def rename_fields($names): _table("rename_fields"; "the input") |
   if ($names | type) != "object" or any($names[]; type != "string")
   then error("rename_fields: the argument is an object of old name to new name, such as {\"host\": \"hostname\"}; got \($names | tojson)")
   else map((to_entries | map(.key = ($names[.key] // .key))) as $e | ($e | from_entries) as $o
@@ -359,7 +359,7 @@ def rename_fields($names):
   end;
 ```
 
-Built into jq: `any`, `error`, `from_entries`, `group_by`, `length`, `map`, `select`, `to_entries`, `tojson`, `type`.
+Built into jq: `any`, `error`, `from_entries`, `group_by`, `length`, `map`, `select`, `to_entries`, `tojson`, `type`. From this library: `_table`.
 
 - The first `if` checks the argument: an object, all of whose values are strings.
 - `map(...)`: one row at a time.
@@ -428,18 +428,18 @@ Two fields cannot end up with the same name, because two different names stay di
 
 ### prefix_fields: the definition
 
-`prefix_fields/1`, lines 404 to 409:
+`prefix_fields/1`, lines 430 to 435:
 
 ```jq
 # prefix_fields: every field name of every row with $prefix in front ("cmdb_" turns site into
 # cmdb_site). Put on one table before a join, it makes every output field show which table it came from.
-def prefix_fields($prefix):
+def prefix_fields($prefix): _table("prefix_fields"; "the input") |
   if ($prefix | type) != "string"
   then error("prefix_fields: the prefix is a string, such as \"cmdb_\"; got \($prefix | tojson)")
   else map(with_entries(.key = $prefix + .key)) end;
 ```
 
-Built into jq: `error`, `map`, `tojson`, `type`, `with_entries`.
+Built into jq: `error`, `map`, `tojson`, `type`, `with_entries`. From this library: `_table`.
 
 - The `if` checks that the prefix is a string.
 - `map(with_entries(.key = $prefix + .key))`: for each row, `with_entries` turns the row into `{key, value}` entries, puts the prefix in front of each key, and builds the row again. On strings, `+` joins.

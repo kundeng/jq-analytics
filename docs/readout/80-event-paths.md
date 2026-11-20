@@ -52,7 +52,7 @@ So `funnel_steps({user}; ...)` gives rows with a `user` column, and `funnel_step
 
 ### _entity_key: the definition
 
-`_entity_key/0`, line 1014:
+`_entity_key/0`, line 1040:
 
 ```jq
 def _entity_key: if type == "object" then . else {key: .} end;
@@ -90,7 +90,7 @@ One good call, then the three errors:
 
 ### _funnel_check: the definition
 
-`_funnel_check/3`, lines 1016 to 1022:
+`_funnel_check/3`, lines 1042 to 1048:
 
 ```jq
 def _funnel_check(time; step; $steps):
@@ -229,7 +229,7 @@ Step 4: an entity with a chain gets a row: its key, the chain's length as `depth
 
 ### funnel_steps: the definition
 
-`funnel_steps/5`, lines 1024 to 1052:
+`funnel_steps/5`, lines 1050 to 1078:
 
 ```jq
 # funnel_steps: how far each entity gets through the ordered steps in $steps. An entity reaches
@@ -241,7 +241,7 @@ Step 4: an entity with a chain gets a row: its key, the chain's length as `depth
 # {entity key..., depth (1 to the number of steps), times (the time of each step reached)}.
 # Events whose step is not listed are ignored. An empty step list, a step listed twice, or a null
 # time on an event of a listed step is an error.
-def funnel_steps(entity; time; step; $steps; $within):
+def funnel_steps(entity; time; step; $steps; $within): _table("funnel_steps"; "the input") |
   _funnel_check(time; step; $steps)
   | ($steps | length) as $n
   | [map(select((step) as $s | any($steps[]; . == $s))) | _groups(entity)[]
@@ -263,7 +263,7 @@ def funnel_steps(entity; time; step; $steps; $within):
      | select($best != null) | $k + {depth: ($best | length), times: $best}];
 ```
 
-Built into jq: `any`, `first`, `length`, `map`, `not`, `range`, `select`, `sort`. From this library: `_entity_key`, `_funnel_check`, `_groups`.
+Built into jq: `any`, `first`, `length`, `map`, `not`, `range`, `select`, `sort`. From this library: `_entity_key`, `_funnel_check`, `_groups`, `_table`.
 
 - `map(select((step) as $s | any($steps[]; . == $s)))` keeps the events of listed steps.
 - `$k` is the entity key as fields, through `_entity_key`. `$t` is the list of step 2.
@@ -339,13 +339,13 @@ Step 3: one row per step from `$c`, with the two ratios.
 
 ### funnel: the definition
 
-`funnel/5`, lines 1054 to 1063:
+`funnel/5`, lines 1080 to 1089:
 
 ```jq
 # funnel: one row per step, in order: {step, entities (how many reached it), from_previous,
 # from_first}: the count divided by the previous step's and by the first step's; null where the
 # divisor is zero, and from_previous is null on the first step. A funnel only narrows.
-def funnel(entity; time; step; $steps; $within):
+def funnel(entity; time; step; $steps; $within): _table("funnel"; "the input") |
   (funnel_steps(entity; time; step; $steps; $within) | map(.depth)) as $d
   | [range(0; $steps | length) as $i | ($d | map(select(. > $i)) | length)] as $c
   | [range(0; $steps | length) as $i
@@ -354,7 +354,7 @@ def funnel(entity; time; step; $steps; $within):
         from_first: (if $c[0] == 0 then null else $c[$i] / $c[0] end)}];
 ```
 
-Built into jq: `length`, `map`, `range`, `select`. From this library: `funnel_steps`.
+Built into jq: `length`, `map`, `range`, `select`. From this library: `_table`, `funnel_steps`.
 
 - `from_previous` is `$c[$i] / $c[$i - 1]`, null on the first step and where the previous count is 0.
 - `from_first` is `$c[$i] / $c[0]`, null where the first count is 0.
@@ -386,7 +386,7 @@ The keys are the periods as JSON text. `"2026-03"` is at position 2. A period th
 
 ### _period_pos and the others: the definition
 
-`_period_pos/0`, line 1065:
+`_period_pos/0`, line 1091:
 
 ```jq
 def _period_pos: . as $p | reduce range(0; length) as $i ({}; .[$p[$i] | tojson] = $i);
@@ -394,7 +394,7 @@ def _period_pos: . as $p | reduce range(0; length) as $i ({}; .[$p[$i] | tojson]
 
 Built into jq: `length`, `range`, `tojson`.
 
-`_period_idx/3`, lines 1066 to 1068:
+`_period_idx/3`, lines 1092 to 1094:
 
 ```jq
 def _period_idx(period; $pos; $who):
@@ -464,18 +464,18 @@ Step 2: the smallest position of each entity, turned back into a period: 0 is `"
 
 ### cohorts: the definition
 
-`cohorts/3`, lines 1070 to 1075:
+`cohorts/3`, lines 1096 to 1101:
 
 ```jq
 # cohorts: one row per entity, in order of first appearance: {entity key..., cohort}, the earliest
 # period, in $periods order, in which it has an event. $periods is every period in order, for
 # example calendar(...) | map(.year_month) | unique. A period not in the list is an error.
-def cohorts(entity; period; $periods):
+def cohorts(entity; period; $periods): _table("cohorts"; "the input") |
   ($periods | _period_pos) as $pos
   | [_groups(entity)[] | (.[0] | entity | _entity_key) + {cohort: $periods[map(_period_idx(period; $pos; "cohorts")) | min]}];
 ```
 
-Built into jq: `map`, `min`. From this library: `_entity_key`, `_groups`, `_period_idx`, `_period_pos`.
+Built into jq: `map`, `min`. From this library: `_entity_key`, `_groups`, `_period_idx`, `_period_pos`, `_table`.
 
 - `(.[0] | entity | _entity_key)` is the entity's key as fields.
 - `$periods[map(_period_idx(period; $pos; "cohorts")) | min]`: the positions, their minimum, and the period at that position.
@@ -559,7 +559,7 @@ Step 4: for each position from the cohort's own to the last, one row with that c
 
 ### retention: the definition
 
-`retention/3`, lines 1077 to 1091:
+`retention/3`, lines 1103 to 1117:
 
 ```jq
 # retention: of the entities first seen in a period (a cohort), how many have at least one event
@@ -567,7 +567,7 @@ Step 4: for each position from the cohort's own to the last, one row with that c
 # $periods: {cohort, period, offset (periods after the cohort's; 0 for its own), entities,
 # cohort_size, rate (entities / cohort_size)}. The table is complete: a period in which nobody of
 # the cohort is active has a row with 0. Periods with no first-time entities form no cohort.
-def retention(entity; period; $periods):
+def retention(entity; period; $periods): _table("retention"; "the input") |
   ($periods | _period_pos) as $pos
   | [_groups(entity)[] | map(_period_idx(period; $pos; "retention")) | {c: min, a: unique}] as $e
   | ($periods | length) as $np
@@ -579,7 +579,7 @@ def retention(entity; period; $periods):
         cohort_size: ($m | length), rate: ($n / ($m | length))}];
 ```
 
-Built into jq: `from_entries`, `group_by`, `length`, `map`, `min`, `range`, `select`, `tostring`, `unique`. From this library: `_groups`, `_period_idx`, `_period_pos`.
+Built into jq: `from_entries`, `group_by`, `length`, `map`, `min`, `range`, `select`, `tostring`, `unique`. From this library: `_groups`, `_period_idx`, `_period_pos`, `_table`.
 
 - `{c: min, a: unique}` runs on one entity's list of positions.
 - `range(0; $np) as $c | ($byc[$c | tostring] // []) as $m | select(($m | length) > 0)` walks the periods in order and keeps those that are some entity's cohort.

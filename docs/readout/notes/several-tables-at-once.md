@@ -3,7 +3,7 @@ Three small definitions for a program that carries several tables in one object,
 An object of tables has no row order of its own: jq and jaq print its tables in the order they were made, and gojq prints them sorted by name. The rows inside each table keep their order on every engine.
 
 ## split_by/1
-<!-- code: 3636e7a7 -->
+<!-- code: 2965c7cc -->
 
 One list of rows into an object of tables, one table per value of a tag. It is the first step when several tables arrive mixed in one stream.
 
@@ -81,7 +81,7 @@ Groups are formed by the tag's value and tables are named by its text. The numbe
 - `else map({key, value}) | from_entries end`: step 4. `{key, value}` is short for `{key: .key, value: .value}`.
 
 ## keep_tables/1
-<!-- code: cf8264d7 -->
+<!-- code: 3231f1fb -->
 
 Only the named tables of an object of tables. It is used to drop work tables before a heavy step or before output.
 
@@ -103,7 +103,7 @@ Three tables, of which two are wanted. The list also names a table that does not
 - `select(.key as $k | $names | any(. == $k))` keeps an entry when its key equals some name in `$names`. `$names` has a `$`, so it is a value: the list is passed as it is.
 
 ## shape/0
-<!-- code: 26a6c462 -->
+<!-- code: 6a233f64 -->
 
 For each table: how many rows it has and which fields its rows use. It is for looking at a pipeline midway without printing the data.
 

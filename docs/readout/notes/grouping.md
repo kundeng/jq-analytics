@@ -77,7 +77,7 @@ For `_groups` the first two forms give the same result. They differ only in `gro
 The comment says why this is not written as a `reduce` that appends each row to its group: appending inside a `reduce` copies the growing array each time, so the cost grows with the square of the group's size, and an object keyed by group would come out in a different key order on gojq.
 
 ## group_agg/2
-<!-- code: 2c78cb5d -->
+<!-- code: 3781f1e5 -->
 
 Group a table by a key and compute something per group: one output row per group, holding the key and the results. It is SQL's `SELECT site, count(*), avg(x) ... GROUP BY site`.
 

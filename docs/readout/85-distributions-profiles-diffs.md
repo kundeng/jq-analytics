@@ -81,15 +81,15 @@ Step 3, `min | .[1]`: arrays compare element by element, so the smallest pair is
 
 ### mode: the definition
 
-`mode/0`, lines 1095 to 1097:
+`mode/0`, lines 1121 to 1123:
 
 ```jq
 # mode: the most frequent non-null value of a list; among equally frequent values the smallest in
 # jq's sort order; null when there is none.
-def mode: nonnull | if length == 0 then null else group_by(.) | map([-length, .[0]]) | min | .[1] end;
+def mode: _list("mode") | nonnull | if length == 0 then null else group_by(.) | map([-length, .[0]]) | min | .[1] end;
 ```
 
-Built into jq: `group_by`, `length`, `map`, `min`. From this library: `nonnull`.
+Built into jq: `group_by`, `length`, `map`, `min`. From this library: `_list`, `nonnull`.
 
 One `min` does both the "most frequent" and the tie rule, because the size is negated. `if length == 0 then null` covers the empty case before grouping.
 
@@ -119,16 +119,16 @@ Four non-null values. `a` appears twice, a share of 2 / 4 = 0.5. `b` and `c` tie
 
 ### value_counts: the definition
 
-`value_counts/0`, lines 1099 to 1102:
+`value_counts/0`, lines 1125 to 1128:
 
 ```jq
 # value_counts: one row per distinct non-null value of a list: {value, count, share (of the non-null
 # values)}, most frequent first, ties by value.
-def value_counts:
+def value_counts: _list("value_counts") |
   nonnull | length as $n | group_by(.) | map({value: .[0], count: length, share: (length / $n)}) | sort_by([-.count, .value]);
 ```
 
-Built into jq: `group_by`, `length`, `map`, `sort_by`. From this library: `nonnull`.
+Built into jq: `group_by`, `length`, `map`, `sort_by`. From this library: `_list`, `nonnull`.
 
 - `nonnull | length as $n` drops nulls and remembers how many values are left. `as` binds `$n` without changing the input.
 - `group_by(.) | map({value: .[0], count: length, share: (length / $n)})`: one row per group of equal values.
@@ -200,7 +200,7 @@ Step 3: the counts per bin number are 1, 1, 1 and 2, and the last line lays them
 
 ### bin_edges and the others: the definition
 
-`bin_edges/3`, lines 1104 to 1107:
+`bin_edges/3`, lines 1130 to 1133:
 
 ```jq
 # bin_edges: $n + 1 equally spaced numbers from $lo to $hi, the edges of $n bins
@@ -211,14 +211,14 @@ def bin_edges($lo; $hi; $n):
 
 Built into jq: `error`, `not`, `range`.
 
-`histogram/1`, lines 1109 to 1126:
+`histogram/1`, lines 1135 to 1152:
 
 ```jq
 # histogram: counts of a list of numbers per bin, the bins given by their edges (bin_edges, or any
 # increasing list): one row per bin {from, to, count}. A bin holds from <= v < to, and the last bin
 # also holds v == to, as numpy's histogram does. Nulls are skipped. A value outside the edges is an
 # error, not a dropped value; so are edges that are not at least two increasing numbers.
-def histogram($edges):
+def histogram($edges): _list("histogram") |
   ($edges | length) as $k
   | if $k < 2 or ($edges | any(type != "number")) or ([range(1; $k) | select($edges[.] <= $edges[. - 1])] | length) > 0
     then error("histogram: edges must be at least two increasing numbers")
@@ -234,7 +234,7 @@ def histogram($edges):
     end;
 ```
 
-Built into jq: `any`, `bsearch`, `error`, `length`, `range`, `select`, `tojson`, `tostring`, `type`. From this library: `nonnull`.
+Built into jq: `any`, `bsearch`, `error`, `length`, `range`, `select`, `tojson`, `tostring`, `type`. From this library: `_list`, `nonnull`.
 
 - `bin_edges`: `$lo + ($hi - $lo) * . / $n` computes each edge from the two ends, so the last edge is exactly `$hi`.
 - `[range(1; $k) | select($edges[.] <= $edges[. - 1])] | length) > 0` finds an edge that is not above the one before.
@@ -318,12 +318,12 @@ Step 4: the first sum divided by the square root of the product of the other two
 
 ### corr: the definition
 
-`corr/2`, lines 1128 to 1138:
+`corr/2`, lines 1154 to 1164:
 
 ```jq
 # corr: Pearson's correlation of x and y over the rows where both are non-null; null with fewer than
 # two such rows, or when either side does not vary. Matches SQL's corr.
-def corr(x; y):
+def corr(x; y): _table("corr"; "the input") |
   [.[] | [(x), (y)] | select(.[0] != null and .[1] != null)] as $p
   | ($p | length) as $n
   | if $n < 2 then null
@@ -334,7 +334,7 @@ def corr(x; y):
     end;
 ```
 
-Built into jq: `add`, `length`, `map`, `select`, `sqrt`.
+Built into jq: `add`, `length`, `map`, `select`, `sqrt`. From this library: `_table`.
 
 - `if $n < 2 then null`: one pair has no spread to compare.
 - `$mx`, `$my` are the means of step 2.
@@ -405,7 +405,7 @@ Step 3: the output row is counted from those lists. For `ram`: `present` 4 (the 
 
 ### profile: the definition
 
-`profile/0`, lines 1140 to 1157:
+`profile/0`, lines 1166 to 1183:
 
 ```jq
 # profile: one row per column of a table, columns in name order:
@@ -414,7 +414,7 @@ Step 3: the output row is counted from those lists. For `ram`: `present` 4 (the 
 #    types (jq type name -> count, over the rows that have the field),
 #    min, max (the smallest and largest non-null value when all non-null values are numbers or all
 #    are strings; null otherwise)}
-def profile:
+def profile: _table("profile"; "the input") |
   . as $rows | length as $n
   | ([.[] | keys[]] | unique) as $cols
   | [$cols[] as $c
@@ -428,7 +428,7 @@ def profile:
         max: (if $ts == ["number"] or $ts == ["string"] then ($nn | max) else null end)}];
 ```
 
-Built into jq: `from_entries`, `group_by`, `has`, `keys`, `length`, `map`, `max`, `min`, `select`, `type`, `unique`.
+Built into jq: `from_entries`, `group_by`, `has`, `keys`, `length`, `map`, `max`, `min`, `select`, `type`, `unique`. From this library: `_table`.
 
 - `nulls` is all rows minus the non-null values, so an absent field counts as null.
 - `types` groups `$pv` by jq type name and counts, nulls included.
@@ -523,7 +523,7 @@ Step 3: each key is looked up in both. A hand trace:
 
 ### _diff_index and the others: the definition
 
-`_diff_index/2`, lines 1159 to 1163:
+`_diff_index/2`, lines 1185 to 1189:
 
 ```jq
 def _diff_index(key; $who):
@@ -535,7 +535,7 @@ def _diff_index(key; $who):
 
 Built into jq: `error`, `has`, `tojson`.
 
-`diff_tables/2`, lines 1165 to 1182:
+`diff_tables/2`, lines 1191 to 1208:
 
 ```jq
 # diff_tables: what changed between two versions of a table that share a key. The input is the new
@@ -544,7 +544,7 @@ Built into jq: `error`, `has`, `tojson`.
 # differ, in name order; a field present on one side only counts), old, new (the rows; null on the
 # side that has none)}. Unchanged rows are left out. A key that appears twice in either table, or
 # a null key, is an error.
-def diff_tables($old; key):
+def diff_tables($old; key): _table("diff_tables"; "the input") | ($old | _table("diff_tables"; "the old table")) as $old |
   _diff_index(key; "new") as $n | ($old | _diff_index(key; "old")) as $o
   | ([.[] | key] + [$old[] | key] | unique) as $ks
   | [$ks[] as $k | ($k | tojson) as $j | $n[$j] as $a | $o[$j] as $b
@@ -558,7 +558,7 @@ def diff_tables($old; key):
        end];
 ```
 
-Built into jq: `empty`, `has`, `keys`, `map`, `select`, `tojson`, `unique`. From this library: `_diff_index`.
+Built into jq: `empty`, `has`, `keys`, `map`, `select`, `tojson`, `unique`. From this library: `_diff_index`, `_table`.
 
 - `_diff_index`: a `reduce` that writes each row under its key's JSON text. `if $k == null` and `elif has($k | tojson)` are the two errors; `$who` is "new" or "old".
 - `$n[$j] as $a | $o[$j] as $b`: the new and old row for a key, null when that table lacks it.

@@ -125,7 +125,7 @@ Groups are formed by the tag's value and tables are named by its text. The numbe
 
 ### split_by: the definition
 
-`split_by/1`, lines 183 to 193:
+`split_by/1`, lines 207 to 217:
 
 ```jq
 # split a stream of rows into an object of tables by a tag: rows with the same tagf value form one table,
@@ -133,7 +133,7 @@ Groups are formed by the tag's value and tables are named by its text. The numbe
 # stream hands over several tables this way: one stream, with a field saying which table each row belongs to.
 # Two different tags with the same name as text (1 and "1", or null and "null") are an error: one
 # table would otherwise replace the other.
-def split_by(tagf):
+def split_by(tagf): _table("split_by"; "the input") |
   [_groups(tagf)[] | {key: (.[0] | tagf | tostring), tag: (.[0] | tagf), value: .}]
   | (group_by(.key) | map(select(length > 1))[0]) as $dup
   | if $dup != null
@@ -141,7 +141,7 @@ def split_by(tagf):
     else map({key, value}) | from_entries end;
 ```
 
-Built into jq: `error`, `from_entries`, `group_by`, `length`, `map`, `select`, `tojson`, `tostring`. From this library: `_groups`.
+Built into jq: `error`, `from_entries`, `group_by`, `length`, `map`, `select`, `tojson`, `tostring`. From this library: `_groups`, `_table`.
 
 - The first line is steps 1 and 2.
 - The `$dup` line is step 3. `map(select(length > 1))` keeps the groups of two or more entries, and `[0]` takes the first, or null when there is none.
@@ -172,14 +172,14 @@ Three tables, of which two are wanted. The list also names a table that does not
 
 ### keep_tables: the definition
 
-`keep_tables/1`, lines 195 to 196:
+`keep_tables/1`, lines 219 to 220:
 
 ```jq
 # keep only the named tables (drop the rest before a heavy step or before output)
-def keep_tables($names): with_entries(select(.key as $k | $names | any(. == $k)));
+def keep_tables($names): _tables("keep_tables") | with_entries(select(.key as $k | $names | any(. == $k)));
 ```
 
-Built into jq: `any`, `select`, `with_entries`.
+Built into jq: `any`, `select`, `with_entries`. From this library: `_tables`.
 
 - `with_entries(f)` turns the object into `{key, value}` entries, runs `f` on each, and builds an object from what is left.
 - `select(.key as $k | $names | any(. == $k))` keeps an entry when its key equals some name in `$names`. `$names` has a `$`, so it is a value: the list is passed as it is.
@@ -233,14 +233,14 @@ null
 
 ### shape: the definition
 
-`shape/0`, lines 198 to 199:
+`shape/0`, lines 222 to 223:
 
 ```jq
 # for checking a pipeline midway: each table's row count and field names (sorted)
-def shape: map_values({rows: length, fields: (map(keys) | add // [] | unique)});
+def shape: _tables("shape") | map_values({rows: length, fields: (map(keys) | add // [] | unique)});
 ```
 
-Built into jq: `add`, `keys`, `length`, `map`, `map_values`, `unique`.
+Built into jq: `add`, `keys`, `length`, `map`, `map_values`, `unique`. From this library: `_tables`.
 
 - `map_values({rows: length, fields: (...)})`: one small object per table, under the table's name.
 - `map(keys) | add // [] | unique`: steps 1 to 3.

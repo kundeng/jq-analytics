@@ -3,7 +3,7 @@ Four definitions. Two are each other's opposite: `unpivot` turns columns into ro
 A table with one column per measurement (`cpu`, `ram`) is called wide. The same data with one row per measurement, and the measurement's name in a column of its own, is called long. Grouping and joining work on long tables; reports are usually wide.
 
 ## unpivot/3
-<!-- code: dcf3efa5 -->
+<!-- code: aa8d1d8d -->
 
 Wide to long: every column that is not kept becomes a row of its own. It is Power Query's "Unpivot Other Columns", SQL's `UNPIVOT`, and pandas' `melt`.
 
@@ -70,7 +70,7 @@ The outer `[...]` collects the rows of all input rows into one array.
 - `$base + {($name): .key, ($value): .value}`: step 3. The parentheses make the field names come from the variables. No `select` on the value follows, so a null value keeps its row.
 
 ## pivot/5
-<!-- code: 09ec9157 -->
+<!-- code: d965cb5b -->
 
 Long to wide: one output row per row key, and one column per name in a list the caller gives. It is a spreadsheet's pivot table, SQL's `PIVOT`, and Power Query's "Pivot Column".
 
@@ -141,7 +141,7 @@ For `db01`, `$cells` has `ram` and `disk`. `$cells["cpu"]` is null, so the `cpu`
 - `reduce $cols[] as $c ({}; .[$c] = ($cells[$c] | if . == null then null else agg end))`: step 3. A column with no rows gives null without calling `agg`.
 
 ## rename_fields/1
-<!-- code: 3887f440 -->
+<!-- code: 3e86fb3b -->
 
 New names for the fields listed, in every row of a table. It is SQL's `AS`, pandas' and Polars' `rename`, Power Query's "Rename Columns" and Splunk's `rename`.
 
@@ -229,7 +229,7 @@ try ([{host: "db01"}] | rename_fields({host: 1})) catch .
 - `if ($o | length) != ($e | length)`: the check of "What is refused". The message names the first name that occurs twice in `$e`.
 
 ## prefix_fields/1
-<!-- code: 35d1e120 -->
+<!-- code: 52cbd052 -->
 
 A prefix in front of every field name of a table. Put on one table before a join, it makes every field of the result show which table it came from, which is how Power Query names the columns of a merged table.
 

@@ -152,7 +152,7 @@ Both lines are the same number, and it is the first example's 13:05:00 plus a qu
 
 ### _ts_exact and the others: the definition
 
-`_ts_exact/1`, lines 82 to 87:
+`_ts_exact/1`, lines 106 to 111:
 
 ```jq
 # "YYYY-MM-DDTHH:MM:SSZ" to epoch seconds, refusing a date or time that does not exist. Some engines
@@ -165,7 +165,7 @@ def _ts_exact($s):
 
 Built into jq: `error`, `fromdateiso8601`, `todate`, `tojson`.
 
-`parse_ts/0`, lines 89 to 111:
+`parse_ts/0`, lines 113 to 135:
 
 ```jq
 # a timestamp string to UTC epoch seconds (fractions kept). Accepts "YYYY-MM-DD HH:MM:SS" or "T",
@@ -307,7 +307,7 @@ A schema column that a row does not have is added to it as null, so every row co
 
 ### cast_columns: the definition
 
-`cast_columns/1`, lines 113 to 131:
+`cast_columns/1`, lines 137 to 155:
 
 ```jq
 # cast the named columns of every row. $schema = {column: "number" | "timestamp" | "string" | "boolean"}.
@@ -315,7 +315,7 @@ A schema column that a row does not have is added to it as null, so every row co
 # (Power Query's rule), never a null. Numbers must look like JSON numbers: jq 1.7.1's tonumber
 # accepts " 12" and jq 1.8's refuses it, so the pattern decides instead of the version.
 # A schema column that a row lacks is added to it as null, so every row comes out with the same columns.
-def cast_columns($schema):
+def cast_columns($schema): _table("cast_columns"; "the input") |
   map(reduce ($schema | to_entries[]) as $c (.;
     .[$c.key] |= (
       if . == null or . == "" then null
@@ -331,7 +331,7 @@ def cast_columns($schema):
       else error("cast_columns: unknown type \($c.value | tojson) for \($c.key)") end)));
 ```
 
-Built into jq: `error`, `map`, `test`, `to_entries`, `tojson`, `tonumber`, `tostring`, `type`. From this library: `parse_ts`.
+Built into jq: `error`, `map`, `test`, `to_entries`, `tojson`, `tonumber`, `tostring`, `type`. From this library: `_table`, `parse_ts`.
 
 - `map(reduce ($schema | to_entries[]) as $c (.; ...))`: steps 1 and 2, for each row.
 - `.[$c.key] |= (...)`: rewrites that one column in place. `|=` runs the expression on the column's current value and stores the result. On a column the row lacks, the current value is null and the column is created.

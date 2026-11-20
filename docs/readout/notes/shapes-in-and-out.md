@@ -47,7 +47,7 @@ Step 2, `[.s[]] | sort_by(.[0]) | map(.[1])`: the four pairs sorted by position,
 The first sightings are written into an object by key and sorted once at the end. The shorter "append the value when it is new" copies the growing array on every append, so its cost grows with the square of the number of distinct values. The sort at the end is also what makes the order the same on engines that do not keep an object's key order.
 
 ## _unnest_arr/2, unnest/2, unnest_outer/2
-<!-- code: 605c5f11 -->
+<!-- code: 15e025e0 -->
 
 One row per element of an array field. `unnest` is SQL's `CROSS JOIN UNNEST(tags)`: a row with no elements disappears. `unnest_outer` is `LEFT JOIN LATERAL`: such a row is kept once, with a null. `_unnest_arr` is the helper that reads the array from one row.
 
@@ -99,7 +99,7 @@ Step 2 in `unnest_outer`: an empty array is first replaced by `[null]`, so its r
 - Elements come out in array order and rows in input order.
 
 ## _flat/2, flatten_fields/1
-<!-- code: 45aa83a0 -->
+<!-- code: 66c3aa65 -->
 
 Nested objects become columns named by their path, so `{"user": {"dept": "x"}}` gives a column `user.dept`. jq's own `flatten` flattens arrays; this flattens the objects inside each row.
 
@@ -219,7 +219,7 @@ Step 2: each pair becomes a row. For `db01`, `{host: "db01"} + {ram: 64}`. That 
 - `else {($as): $e.key} + $e.value`: the key first, then the value's fields.
 
 ## fill_grid/4
-<!-- code: a7376410 -->
+<!-- code: 449f76b2 -->
 
 Completes a time series: every combination of the key fields gets a row at every time step from the earliest time to the latest, and a missing combination gets a filler row. Without the filler rows, `lag` or `moving_mean` treats the row after a gap as the next period. In SQL this is a cross join of the keys with `generate_series`, left joined to the data.
 
@@ -291,7 +291,7 @@ For `["a"]` at time 60 there is no entry in `$ix`, so the row is `{"g":"a"} + {"
 - `($ix[...] // [filler])[]` emits the found rows, or the one filler. Rows come out combination by combination, each in time order.
 
 ## to_map/1
-<!-- code: 91913b64 -->
+<!-- code: 7f09dca0 -->
 
 Rows become an object keyed by `key`, for looking a row up by id. jq's own `INDEX(key)` does the same but keeps the last row when a key repeats; here a repeated key is an error.
 
@@ -317,7 +317,7 @@ The key is turned into a string, because an object key has to be one. So a repea
 `reduce .[] as $r ({}; ...)` adds one row at a time to an object that starts empty. `($r | key | tostring) as $k` runs the caller's filter on the row. `if has($k)` is the duplicate check; otherwise `.[$k] = $r`.
 
 ## _nest/3, nested_from_nodes/3
-<!-- code: 153a5eb6 -->
+<!-- code: 0c204e23 -->
 
 The reverse of `nodes_from_nested`: node rows with an id and a parent become a nested tree, each node's children in an array in field `$as`. This is the form a tree view or a JSON API wants.
 
@@ -367,7 +367,7 @@ Step 3: each root is expanded by `_nest`, which adds field `reports` holding the
 - `_nest`: `($by[$n | id | tojson] // [])[]` is the node's children, none when it has no entry. The recursion ends at nodes without children.
 
 ## node_link/2
-<!-- code: 93013b54 -->
+<!-- code: d230587a -->
 
 Edge rows become the `{nodes, links}` object that graph tools such as networkx, d3 and Cytoscape read.
 
@@ -387,7 +387,7 @@ Edge rows become the `{nodes, links}` object that graph tools such as networkx, 
 - `map(. + {source: (from), target: (to)})`: `from` and `to` are the caller's filters, run on each edge row.
 
 ## to_csv/1
-<!-- code: 5ef9958b -->
+<!-- code: ed0ecd28 -->
 
 A table as CSV text: a header line, then one line per row, with the columns in the order of `$cols`.
 

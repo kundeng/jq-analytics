@@ -196,7 +196,7 @@ Two rows with the same `ord` keep their input order, because the sort is stable.
 
 ### window: the definition
 
-`window/4`, lines 347 to 357:
+`window/4`, lines 373 to 383:
 
 ```jq
 # Window over partitions: split rows by part (first appearance), sort each partition by ord
@@ -204,7 +204,7 @@ Two rows with the same `ord` keep their input order, because the sort is stable.
 # return an array of the same length, and write its i-th value into field $col of the i-th row.
 # Rows come back in input order. Frames are ROWS frames (each row by itself), not SQL's default
 # RANGE frame, which gives tied rows the same running value.
-def window(part; ord; $col; wf):
+def window(part; ord; $col; wf): _table("window"; "the input") |
   . as $rows
   | [to_entries | map({i: .key, r: .value}) | group_by(.r | part)[]
      | sort_by(.r | ord) | (map(.r) | wf) as $v | to_entries[] | {i: .value.i, v: $v[.key]}]
@@ -212,7 +212,7 @@ def window(part; ord; $col; wf):
   | [$rows | to_entries[] | .value + {($col): $vals[.key]}];
 ```
 
-Built into jq: `group_by`, `map`, `sort_by`, `to_entries`.
+Built into jq: `group_by`, `map`, `sort_by`, `to_entries`. From this library: `_table`.
 
 - `. as $rows`: the input table, kept for the last line.
 - `to_entries | map({i: .key, r: .value})`: step 1.
@@ -247,7 +247,7 @@ Inside `window` the partition is already sorted, so this numbers the rows of eac
 
 ### row_number: the definition
 
-`row_number/0`, lines 359 to 360:
+`row_number/0`, lines 385 to 386:
 
 ```jq
 # window value functions: input is one sorted partition (array of rows)
@@ -345,7 +345,7 @@ Step 4, `sort_by(.i) | map(.r)`: the ranks back in row order, which is the resul
 
 ### rank_by: the definition
 
-`rank_by/1`, lines 361 to 366:
+`rank_by/1`, lines 387 to 392:
 
 ```jq
 # rank with gaps (SQL RANK) by f over the partition's order: tied f values share a rank
@@ -391,7 +391,7 @@ The first argument, `.x`, is a filter run on the row that is `$k` places away. T
 
 ### lag and the others: the definition
 
-`lag/2`, line 367:
+`lag/2`, line 393:
 
 ```jq
 def lag(f; $k): . as $a | [range(length) as $i | if $i - $k >= 0 then ($a[$i - $k] | f) else null end];
@@ -399,7 +399,7 @@ def lag(f; $k): . as $a | [range(length) as $i | if $i - $k >= 0 then ($a[$i - $
 
 Built into jq: `length`, `range`.
 
-`lead/2`, line 368:
+`lead/2`, line 394:
 
 ```jq
 def lead(f; $k): . as $a | length as $n | [range($n) as $i | if $i + $k < $n then ($a[$i + $k] | f) else null end];
@@ -449,7 +449,7 @@ There is one stage. `foreach .[] as $r (null; update; .)` starts with a state of
 
 ### running_sum: the definition
 
-`running_sum/1`, lines 369 to 370:
+`running_sum/1`, lines 395 to 396:
 
 ```jq
 # running sum of f, ROWS frame from the partition start: nulls skipped; null until the first non-null
@@ -517,7 +517,7 @@ Step 3, `mean` of each list. It is the library's own `mean` from the math page, 
 
 ### moving_mean: the definition
 
-`moving_mean/2`, lines 371 to 372:
+`moving_mean/2`, lines 397 to 398:
 
 ```jq
 # moving mean of f over the current row and the $n - 1 rows before it (fewer at the start); nulls skipped

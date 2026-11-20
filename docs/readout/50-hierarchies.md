@@ -137,7 +137,7 @@ Three kinds of input stop with an error: a cycle, a parent id that is not a node
 
 ### tree_paths: the definition
 
-`tree_paths/2`, lines 472 to 493:
+`tree_paths/2`, lines 498 to 519:
 
 ```jq
 # tree_paths: adds to every node `ancestry` (the ids from its root down to itself) and `depth`
@@ -145,7 +145,7 @@ Three kinds of input stop with an error: a cycle, a parent id that is not a node
 # Each node's ancestry is built once: a walk up stops at the first ancestor already done and the
 # ancestries are then filled in from there down, so the cost follows the size of the output, not
 # the square of the depth.
-def tree_paths(id; parent):
+def tree_paths(id; parent): _table("tree_paths"; "the input") |
   (reduce .[] as $n ({}; ($n | id | tojson) as $k
      | if has($k) then error("tree_paths: id \($k) appears twice") else .[$k] = [($n | parent)] end)) as $par
   | (reduce .[] as $n ({m: {}};
@@ -164,7 +164,7 @@ def tree_paths(id; parent):
   | map(. + ($anc[id | tojson] | {ancestry: ., depth: (length - 1)}));
 ```
 
-Built into jq: `error`, `has`, `length`, `map`, `reverse`, `tojson`, `until`.
+Built into jq: `error`, `has`, `length`, `map`, `reverse`, `tojson`, `until`. From this library: `_table`.
 
 - The first `reduce`: step 1. `if has($k) then error(...)` is the check for an id on two rows.
 - `if .m[$i | tojson] != null then .`: a node already done is skipped.
@@ -242,19 +242,19 @@ Step 3, the last line: each row gets its own entry of `$sum` as `subtree`.
 
 ### tree_rollup: the definition
 
-`tree_rollup/3`, lines 495 to 501:
+`tree_rollup/3`, lines 521 to 527:
 
 ```jq
 # tree_rollup: tree_paths, plus `subtree`: the node's own value plus the values of all its
 # descendants, at any depth. A null value counts as 0.
-def tree_rollup(id; parent; value):
+def tree_rollup(id; parent; value): _table("tree_rollup"; "the input") |
   tree_paths(id; parent) as $t
   | (reduce $t[] as $n ({}; ($n | value) as $v
        | reduce $n.ancestry[] as $a (.; .[$a | tojson] += ($v // 0)))) as $sum
   | $t | map(. + {subtree: $sum[id | tojson]});
 ```
 
-Built into jq: `map`, `tojson`. From this library: `tree_paths`.
+Built into jq: `map`, `tojson`. From this library: `_table`, `tree_paths`.
 
 - `tree_paths(id; parent) as $t`: step 1, with its errors.
 - `reduce $t[] as $n ({}; ($n | value) as $v | reduce $n.ancestry[] as $a (.; .[$a | tojson] += ($v // 0)))`: step 2. `$v // 0` counts a null value as 0. The keys go through `tojson`, as in `tree_paths`.

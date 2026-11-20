@@ -104,42 +104,42 @@ Step 2, `add / length` on that list: 4 / 2.
 
 ### nonnull and the others: the definition
 
-`nonnull/0`, lines 27 to 28:
+`nonnull/0`, lines 51 to 52:
 
 ```jq
 # the input array without nulls
-def nonnull: map(select(. != null));
+def nonnull: _list("nonnull") | map(select(. != null));
 ```
 
-Built into jq: `map`, `select`.
+Built into jq: `map`, `select`. From this library: `_list`.
 
-`count_nonnull/0`, lines 30 to 31:
+`count_nonnull/0`, lines 54 to 55:
 
 ```jq
 # number of non-null values
-def count_nonnull: nonnull | length;
+def count_nonnull: _list("count_nonnull") | nonnull | length;
 ```
 
-Built into jq: `length`. From this library: `nonnull`.
+Built into jq: `length`. From this library: `_list`, `nonnull`.
 
-`sum_nonnull/0`, lines 33 to 34:
+`sum_nonnull/0`, lines 57 to 58:
 
 ```jq
 # sum of non-null values; null when there are none (jq's add returns null for [] but counts nothing)
-def sum_nonnull: nonnull | if length == 0 then null else add end;
+def sum_nonnull: _list("sum_nonnull") | nonnull | if length == 0 then null else add end;
 ```
 
-Built into jq: `add`, `length`. From this library: `nonnull`.
+Built into jq: `add`, `length`. From this library: `_list`, `nonnull`.
 
-`mean/0`, lines 36 to 38:
+`mean/0`, lines 60 to 62:
 
 ```jq
 # arithmetic mean of non-null values; null when none. Plain `add / length` divides by a count
 # that includes nulls: [1, null, 3] gives 1.33 there and 2 here.
-def mean: nonnull | if length == 0 then null else add / length end;
+def mean: _list("mean") | nonnull | if length == 0 then null else add / length end;
 ```
 
-Built into jq: `add`, `length`. From this library: `nonnull`.
+Built into jq: `add`, `length`. From this library: `_list`, `nonnull`.
 
 - `nonnull` is `map(select(. != null))`: the list without its nulls. Everything below starts with it.
 - `count_nonnull` is its length. Plain `length` counts the nulls too.
@@ -232,41 +232,41 @@ Step 2, jq's `min_by(.x)` or `max_by(.x)` on those three rows gives the results 
 
 ### min_nonnull and the others: the definition
 
-`min_nonnull/0`, lines 40 to 42:
+`min_nonnull/0`, lines 64 to 66:
 
 ```jq
 # least and greatest non-null value; null when none, as SQL's MIN and MAX. jq's own min and max do
 # not skip nulls: null sorts below every number, so [null, 1, 3] | min is null there and 1 here.
-def min_nonnull: nonnull | min;
+def min_nonnull: _list("min_nonnull") | nonnull | min;
 ```
 
-Built into jq: `min`. From this library: `nonnull`.
+Built into jq: `min`. From this library: `_list`, `nonnull`.
 
-`max_nonnull/0`, line 43:
+`max_nonnull/0`, line 67:
 
 ```jq
-def max_nonnull: nonnull | max;
+def max_nonnull: _list("max_nonnull") | nonnull | max;
 ```
 
-Built into jq: `max`. From this library: `nonnull`.
+Built into jq: `max`. From this library: `_list`, `nonnull`.
 
-`min_by_nonnull/1`, lines 45 to 47:
+`min_by_nonnull/1`, lines 69 to 71:
 
 ```jq
 # the row whose f is least (greatest), rows with a null f left out; null when none (SQL ARG_MIN,
 # ARG_MAX). Ties: the first such row for min, the last for max, as jq's min_by and max_by.
-def min_by_nonnull(f): map(select((f) != null)) | min_by(f);
+def min_by_nonnull(f): _list("min_by_nonnull") | map(select((f) != null)) | min_by(f);
 ```
 
-Built into jq: `map`, `min_by`, `select`.
+Built into jq: `map`, `min_by`, `select`. From this library: `_list`.
 
-`max_by_nonnull/1`, line 48:
+`max_by_nonnull/1`, line 72:
 
 ```jq
-def max_by_nonnull(f): map(select((f) != null)) | max_by(f);
+def max_by_nonnull(f): _list("max_by_nonnull") | map(select((f) != null)) | max_by(f);
 ```
 
-Built into jq: `map`, `max_by`, `select`.
+Built into jq: `map`, `max_by`, `select`. From this library: `_list`.
 
 - `min_nonnull` and `max_nonnull` are jq's `min` and `max` after `nonnull`. Both builtins give null for an empty list, which is the "no values" rule.
 - `min_by_nonnull(f)` and `max_by_nonnull(f)` drop the rows whose `f` is null (step 1), then call `min_by(f)` or `max_by(f)` (step 2). The tie rule is the builtins' own: the first such row for `min_by`, the last for `max_by`.
@@ -361,41 +361,41 @@ null
 
 ### var_samp and the others: the definition
 
-`var_samp/0`, lines 50 to 53:
+`var_samp/0`, lines 74 to 77:
 
 ```jq
 # variance and standard deviation: sample (divide by n - 1, null below 2 values) and population
 # (divide by n, null when none). Two-pass: mean first, then squared deviations.
-def var_samp: nonnull | length as $n
+def var_samp: _list("var_samp") | nonnull | length as $n
   | if $n < 2 then null else (add / $n) as $m | (map((. - $m) * (. - $m)) | add) / ($n - 1) end;
 ```
 
-Built into jq: `add`, `length`, `map`. From this library: `nonnull`.
+Built into jq: `add`, `length`, `map`. From this library: `_list`, `nonnull`.
 
-`var_pop/0`, lines 54 to 55:
+`var_pop/0`, lines 78 to 79:
 
 ```jq
-def var_pop: nonnull | length as $n
+def var_pop: _list("var_pop") | nonnull | length as $n
   | if $n == 0 then null else (add / $n) as $m | (map((. - $m) * (. - $m)) | add) / $n end;
 ```
 
-Built into jq: `add`, `length`, `map`. From this library: `nonnull`.
+Built into jq: `add`, `length`, `map`. From this library: `_list`, `nonnull`.
 
-`stddev_samp/0`, line 56:
-
-```jq
-def stddev_samp: var_samp | if . == null then null else sqrt end;
-```
-
-Built into jq: `sqrt`. From this library: `var_samp`.
-
-`stddev_pop/0`, line 57:
+`stddev_samp/0`, line 80:
 
 ```jq
-def stddev_pop: var_pop | if . == null then null else sqrt end;
+def stddev_samp: _list("stddev_samp") | var_samp | if . == null then null else sqrt end;
 ```
 
-Built into jq: `sqrt`. From this library: `var_pop`.
+Built into jq: `sqrt`. From this library: `_list`, `var_samp`.
+
+`stddev_pop/0`, line 81:
+
+```jq
+def stddev_pop: _list("stddev_pop") | var_pop | if . == null then null else sqrt end;
+```
+
+Built into jq: `sqrt`. From this library: `_list`, `var_pop`.
 
 - `nonnull | length as $n`: step 1.
 - `if $n < 2 then null` in `var_samp`: one value has no sample variance, and the division would be by 0. `var_pop` is null only when `$n == 0`.
@@ -525,7 +525,7 @@ null
 
 ### quantile_disc and the others: the definition
 
-`quantile_disc/1`, lines 59 to 65:
+`quantile_disc/1`, lines 83 to 89:
 
 ```jq
 # Quantiles over non-null values, p in [0, 1]; null when none.
@@ -533,48 +533,48 @@ null
 #   sorted values, at least rank 1. DuckDB's quantile_disc gives the same (checked by the tests).
 # quantile_cont: linear interpolation at h = (n - 1) * p between the neighbours of h, the rule of
 #   DuckDB's quantile_cont and median, Excel PERCENTILE.INC and Power Query PercentileMode.ExcelInc.
-def quantile_disc($p): nonnull | sort as $x | length as $n
+def quantile_disc($p): _list("quantile_disc") | nonnull | sort as $x | length as $n
   | if $n == 0 then null else $x[([(($n * $p) | ceil), 1] | max) - 1] end;
 ```
 
-Built into jq: `ceil`, `length`, `max`, `sort`. From this library: `nonnull`.
+Built into jq: `ceil`, `length`, `max`, `sort`. From this library: `_list`, `nonnull`.
 
-`quantile_cont/1`, lines 66 to 70:
+`quantile_cont/1`, lines 90 to 94:
 
 ```jq
-def quantile_cont($p): nonnull | sort as $x | length as $n
+def quantile_cont($p): _list("quantile_cont") | nonnull | sort as $x | length as $n
   | if $n == 0 then null
     else (($n - 1) * $p) as $h | ($h | floor) as $lo
     | if $lo + 1 >= $n then $x[$lo] else $x[$lo] + ($h - $lo) * ($x[$lo + 1] - $x[$lo]) end
     end;
 ```
 
-Built into jq: `floor`, `length`, `sort`. From this library: `nonnull`.
+Built into jq: `floor`, `length`, `sort`. From this library: `_list`, `nonnull`.
 
-`median/0`, line 71:
+`median/0`, line 95:
 
 ```jq
-def median: quantile_cont(0.5);
+def median: _list("median") | quantile_cont(0.5);
 ```
 
-From this library: `quantile_cont`.
+From this library: `_list`, `quantile_cont`.
 
-`quantiles_disc/1`, lines 72 to 73:
+`quantiles_disc/1`, lines 96 to 97:
 
 ```jq
 # several quantiles at once, as DuckDB's list form: null (not a list of nulls) when no values
-def quantiles_disc($ps): if count_nonnull == 0 then null else [$ps[] as $p | quantile_disc($p)] end;
+def quantiles_disc($ps): _list("quantiles_disc") | if count_nonnull == 0 then null else [$ps[] as $p | quantile_disc($p)] end;
 ```
 
-From this library: `count_nonnull`, `quantile_disc`.
+From this library: `_list`, `count_nonnull`, `quantile_disc`.
 
-`quantiles_cont/1`, line 74:
+`quantiles_cont/1`, line 98:
 
 ```jq
-def quantiles_cont($ps): if count_nonnull == 0 then null else [$ps[] as $p | quantile_cont($p)] end;
+def quantiles_cont($ps): _list("quantiles_cont") | if count_nonnull == 0 then null else [$ps[] as $p | quantile_cont($p)] end;
 ```
 
-From this library: `count_nonnull`, `quantile_cont`.
+From this library: `_list`, `count_nonnull`, `quantile_cont`.
 
 - `nonnull | sort as $x | length as $n`: step 1, in both forms.
 - **`quantile_disc`**: `[(($n * $p) | ceil), 1] | max` is the rank, with 1 as its floor so that `$p = 0` gives the smallest value. The `- 1` turns the rank into a position.
@@ -637,7 +637,7 @@ The same steps 2 and 3 for 1.005:
 
 ### round_to: the definition
 
-`round_to/1`, lines 76 to 78:
+`round_to/1`, lines 100 to 102:
 
 ```jq
 # round to $d decimal places, halves away from zero, on the binary double (so 1.005 becomes 1.0,

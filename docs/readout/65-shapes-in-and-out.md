@@ -73,7 +73,7 @@ Step 2, `[.s[]] | sort_by(.[0]) | map(.[1])`: the four pairs sorted by position,
 
 ### _distinct_in_order: the definition
 
-`_distinct_in_order/0`, lines 730 to 734:
+`_distinct_in_order/0`, lines 756 to 760:
 
 ```jq
 # the distinct values of an array in order of first appearance (jq's unique sorts them)
@@ -160,7 +160,7 @@ Step 2 in `unnest_outer`: an empty array is first replaced by `[null]`, so its r
 
 ### _unnest_arr and the others: the definition
 
-`_unnest_arr/2`, lines 736 to 740:
+`_unnest_arr/2`, lines 762 to 766:
 
 ```jq
 # the array at f for one row: [] for null, an error naming the row for anything else
@@ -172,28 +172,28 @@ def _unnest_arr(f; $i):
 
 Built into jq: `error`, `type`.
 
-`unnest/2`, lines 742 to 747:
+`unnest/2`, lines 768 to 773:
 
 ```jq
 # unnest: one row per element of the array at f, the element in field $as. A row whose array is
 # empty or null is dropped, as SQL's UNNEST drops it; unnest_outer keeps it once with $as null
 # (LEFT JOIN LATERAL). A value at f that is neither an array nor null is an error naming the row's
 # position. Elements come out in array order, rows in input order.
-def unnest(f; $as):
+def unnest(f; $as): _table("unnest"; "the input") |
   [to_entries[] | .key as $i | .value as $r | ($r | _unnest_arr(f; $i))[] as $x | $r + {($as): $x}];
 ```
 
-Built into jq: `to_entries`. From this library: `_unnest_arr`.
+Built into jq: `to_entries`. From this library: `_table`, `_unnest_arr`.
 
-`unnest_outer/2`, lines 748 to 750:
+`unnest_outer/2`, lines 774 to 776:
 
 ```jq
-def unnest_outer(f; $as):
+def unnest_outer(f; $as): _table("unnest_outer"; "the input") |
   [to_entries[] | .key as $i | .value as $r
    | ($r | _unnest_arr(f; $i) | if length == 0 then [null] else . end)[] as $x | $r + {($as): $x}];
 ```
 
-Built into jq: `length`, `to_entries`. From this library: `_unnest_arr`.
+Built into jq: `length`, `to_entries`. From this library: `_table`, `_unnest_arr`.
 
 - `_unnest_arr`: `(f) as $a` runs the caller's filter on the row. Null gives `[]`, an array is returned as it is, anything else is the error.
 - `to_entries[] | .key as $i | .value as $r` walks the rows with their positions. `as` binds a name without changing the input.
@@ -255,7 +255,7 @@ Step 2, `from_entries`: the pairs become one object, the row of the result at th
 
 ### _flat and the others: the definition
 
-`_flat/2`, lines 752 to 756:
+`_flat/2`, lines 778 to 782:
 
 ```jq
 # one value flattened to {key: path, value} pairs; a non-empty object recurses, anything else is a leaf
@@ -267,14 +267,14 @@ def _flat($p; $sep):
 
 Built into jq: `length`, `to_entries`, `type`.
 
-`flatten_fields/1`, lines 758 to 768:
+`flatten_fields/1`, lines 784 to 794:
 
 ```jq
 # flatten_fields: nested objects become columns named by their path joined with $sep
 # ({"user": {"dept": "x"}} gives "user.dept"). Arrays and scalars are left as values, for unnest to
 # take; an empty object stays as the value {}. Two paths that flatten to the same name are an error.
 # (jq's own flatten flattens arrays; this flattens the objects inside each row.)
-def flatten_fields($sep):
+def flatten_fields($sep): _table("flatten_fields"; "the input") |
   map(if length == 0 then {}
       else [_flat(null; $sep)] as $e | ($e | from_entries) as $o
         | if ($o | length) != ($e | length)   # a repeated name collapsed in from_entries
@@ -283,7 +283,7 @@ def flatten_fields($sep):
       end);
 ```
 
-Built into jq: `error`, `from_entries`, `group_by`, `length`, `map`, `select`, `tojson`. From this library: `_flat`.
+Built into jq: `error`, `from_entries`, `group_by`, `length`, `map`, `select`, `tojson`. From this library: `_flat`, `_table`.
 
 - `_flat($p; $sep)`: a non-empty object recurses into each field, with the path extended by the field's name (`$p + $sep + $k`, or `$k` at the top where `$p` is null). Anything else, a scalar, an array or an empty object, is a leaf and is emitted as `{key: $p, value: .}`.
 - `flatten_fields`: `if length == 0 then {}` passes an empty row through.
@@ -343,7 +343,7 @@ Four rows, one per node, in depth-first order: a node, then everything under it,
 
 ### _nodes and the others: the definition
 
-`_nodes/3`, lines 770 to 772:
+`_nodes/3`, lines 796 to 798:
 
 ```jq
 # one nested node and its descendants as rows, depth first, each with its parent's id
@@ -353,7 +353,7 @@ def _nodes(id; children; $p): . as $n
 
 Built into jq: `del`.
 
-`nodes_from_nested/2`, lines 774 to 777:
+`nodes_from_nested/2`, lines 800 to 803:
 
 ```jq
 # nodes_from_nested: a nested tree (each node holding its children in an array at `children`)
@@ -424,7 +424,7 @@ Step 2: each pair becomes a row. For `db01`, `{host: "db01"} + {ram: 64}`. That 
 
 ### rows_from_map: the definition
 
-`rows_from_map/1`, lines 779 to 788:
+`rows_from_map/1`, lines 805 to 814:
 
 ```jq
 # rows_from_map: an object keyed by id becomes rows, the key in field $as, sorted by key. A value
@@ -548,7 +548,7 @@ For `["a"]` at time 60 there is no entry in `$ix`, so the row is `{"g":"a"} + {"
 
 ### fill_grid: the definition
 
-`fill_grid/4`, lines 790 to 807:
+`fill_grid/4`, lines 816 to 833:
 
 ```jq
 # fill_grid: every combination of the $keys fields' values (in first appearance) at every time from
@@ -557,7 +557,7 @@ For `["a"]` at time 60 there is no entry in `$ix`, so the row is `{"g":"a"} + {"
 # and must sit on the grid (an offset from the earliest that is a multiple of $step), else an
 # error. Without the filled rows a lag or a moving mean steps over an empty period as if it were
 # the next one.
-def fill_grid($keys; $time; $step; $fill):
+def fill_grid($keys; $time; $step; $fill): _table("fill_grid"; "the input") |
   if length == 0 then []
   elif any(.[]; .[$time] == null) then error("fill_grid: a row has no time") else
   (map(.[$time]) | min) as $t0 | (map(.[$time]) | max) as $t1
@@ -571,7 +571,7 @@ def fill_grid($keys; $time; $step; $fill):
   end;
 ```
 
-Built into jq: `any`, `error`, `from_entries`, `length`, `map`, `max`, `min`, `range`, `select`, `tojson`, `transpose`. From this library: `_distinct_in_order`.
+Built into jq: `any`, `error`, `from_entries`, `length`, `map`, `max`, `min`, `range`, `select`, `tojson`, `transpose`. From this library: `_distinct_in_order`, `_table`.
 
 - `if length == 0 then []`: no rows in, no rows out.
 - `(map(select(...)) | if length > 0 then error(...) else . end) as $_` runs the grid check for its error only; `$_` is not used again.
@@ -613,17 +613,17 @@ The key is turned into a string, because an object key has to be one. So a repea
 
 ### to_map: the definition
 
-`to_map/1`, lines 809 to 813:
+`to_map/1`, lines 835 to 839:
 
 ```jq
 # to_map: rows become an object keyed by `key` (as a string). A duplicate key is an error; jq's
 # own INDEX(key) keeps the last row silently.
-def to_map(key):
+def to_map(key): _table("to_map"; "the input") |
   reduce .[] as $r ({}; ($r | key | tostring) as $k
     | if has($k) then error("to_map: duplicate key \($k | tojson)") else .[$k] = $r end);
 ```
 
-Built into jq: `error`, `has`, `tojson`, `tostring`.
+Built into jq: `error`, `has`, `tojson`, `tostring`. From this library: `_table`.
 
 `reduce .[] as $r ({}; ...)` adds one row at a time to an object that starts empty. `($r | key | tostring) as $k` runs the caller's filter on the row. `if has($k)` is the duplicate check; otherwise `.[$k] = $r`.
 
@@ -692,7 +692,7 @@ Step 3: each root is expanded by `_nest`, which adds field `reports` holding the
 
 ### _nest and the others: the definition
 
-`_nest/3`, lines 815 to 816:
+`_nest/3`, lines 841 to 842:
 
 ```jq
 # one node with its children, and theirs, nested under field $as
@@ -701,19 +701,19 @@ def _nest($by; id; $as): . as $n | $n + {($as): [($by[$n | id | tojson] // [])[]
 
 Built into jq: `tojson`.
 
-`nested_from_nodes/3`, lines 818 to 824:
+`nested_from_nodes/3`, lines 844 to 850:
 
 ```jq
 # nested_from_nodes: node rows (id, parent) become a nested tree, each node's children in an array
 # in field $as, the roots in an array. Checked with tree_paths first, so a missing parent or a
 # cycle is the same error as there.
-def nested_from_nodes(id; parent; $as):
+def nested_from_nodes(id; parent; $as): _table("nested_from_nodes"; "the input") |
   (tree_paths(id; parent) | length) as $_
   | (group_by(parent) | map({key: (.[0] | parent | tojson), value: .}) | from_entries) as $by
   | [.[] | select((parent) == null or (parent) == "") | _nest($by; id; $as)];
 ```
 
-Built into jq: `from_entries`, `group_by`, `length`, `map`, `select`, `tojson`. From this library: `_nest`, `tree_paths`.
+Built into jq: `from_entries`, `group_by`, `length`, `map`, `select`, `tojson`. From this library: `_nest`, `_table`, `tree_paths`.
 
 - `(tree_paths(id; parent) | length) as $_` forces `tree_paths` to run; `$_` is not used again.
 - `group_by(parent)` keeps the children of one parent in input order.
@@ -745,17 +745,17 @@ Edge rows become the `{nodes, links}` object that graph tools such as networkx, 
 
 ### node_link: the definition
 
-`node_link/2`, lines 826 to 830:
+`node_link/2`, lines 852 to 856:
 
 ```jq
 # node_link: edge rows become the node-link form graph tools read (networkx, d3, Cytoscape):
 # {nodes: [{id}], links: [row + {source, target}]}. Nodes are in order of first appearance.
-def node_link(from; to):
+def node_link(from; to): _table("node_link"; "the input") |
   {nodes: ([.[] | (from), (to)] | _distinct_in_order | map({id: .})),
    links: map(. + {source: (from), target: (to)})};
 ```
 
-Built into jq: `map`. From this library: `_distinct_in_order`.
+Built into jq: `map`. From this library: `_distinct_in_order`, `_table`.
 
 - `[.[] | (from), (to)] | _distinct_in_order | map({id: .})`: both ends of every edge, repeats removed, each wrapped as `{id}`.
 - `map(. + {source: (from), target: (to)})`: `from` and `to` are the caller's filters, run on each edge row.
@@ -784,14 +784,16 @@ Two rows; one host name contains a comma, and one `ram` is null.
 
 ### to_csv: the definition
 
-`to_csv/1`, lines 832 to 835:
+`to_csv/1`, lines 858 to 861:
 
 ```jq
 # to_csv: a header line, then one CSV line per row, columns in the order of $cols; a stream of
 # strings, so run jq with -r. A null is an empty cell. A nested value in a cell is an error from
 # @csv itself: flatten_fields first.
-def to_csv($cols): ($cols | @csv), (.[] | [.[$cols[]]] | @csv);
+def to_csv($cols): _table("to_csv"; "the input") | ($cols | @csv), (.[] | [.[$cols[]]] | @csv);
 ```
+
+From this library: `_table`.
 
 - `$cols | @csv` is the header.
 - `.[] | [.[$cols[]]] | @csv`: for each row, its values for the columns in order, formatted by `@csv`. A column the row lacks is null, so an empty cell.

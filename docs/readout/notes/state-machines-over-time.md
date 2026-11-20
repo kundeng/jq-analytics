@@ -100,7 +100,7 @@ That is the first block of the result at the top.
 - The object: step 3. `events` for the last block is `$n - $i`, the rest of the array.
 
 ## state_blocks/3
-<!-- code: d2bc4a2b -->
+<!-- code: 47d58bd3 -->
 
 A table of events into a table of blocks: per entity, how long it spent in each state, in order. It answers "how long was each request in each status".
 
@@ -167,7 +167,7 @@ Step 3, `[.[] | del(.blocks) as $k | .blocks[] | $k + .]`: the nested blocks are
 The three lines are steps 1, 2 and 3. `sort_by` is stable, so two events of one entity with the same time keep their input order.
 
 ## transitions/3
-<!-- code: 4cb8d9cf -->
+<!-- code: f972ddf2 -->
 
 One row per change of state: from which state, to which, and when. It answers "how often does a request go from Work back to Open".
 
@@ -200,7 +200,7 @@ Steps 1 and 2 are those of `state_blocks`: the time check, then one row per enti
 - `$k + {from: ..., to: ..., at: ...}`: the entity key in front, as in `state_blocks`.
 
 ## sessions/3
-<!-- code: ef77a136 -->
+<!-- code: 0ef6729d -->
 
 Events grouped into sessions: per entity, a new session starts when the gap since the previous event is greater than a limit. It is the usual way to turn page views into visits.
 
@@ -259,7 +259,7 @@ A gap of exactly `$gap` does not start a new session, because the test is "great
 - The last line: step 5.
 
 ## runs/1
-<!-- code: 2be581b8 -->
+<!-- code: 00ff4fd0 -->
 
 Run-length encoding: consecutive items with the same value become one row with the value, where the run starts and how long it is. It works on an array as it stands, with no sorting and no entity. Streaks are the long runs.
 

@@ -119,7 +119,7 @@ After the loop, `[.seen[]] | sort_by(.[0])` puts the five records in position or
 - `.next[.n | tostring] = $e[1]` stores the new node under its position, and `sort_by(.key | tonumber)` reads them back in that order. `next` and `seen` are objects written by key because appending to an array inside a loop copies the array each time, and the cost then grows with the square of the graph.
 
 ## reachable/3, hops/3
-<!-- code: 8c7abf96 -->
+<!-- code: 1bb74ec1 -->
 
 `reachable` lists every node that can be reached from `$start` along the edges, nearest first. `hops` gives the same nodes with their distance in edges, the start included at 0. In SQL both need a recursive query.
 
@@ -150,7 +150,7 @@ Both run `_adj` and then `_search`, and differ in what they keep of the search r
 - `hops`: `map({node, hops})` keeps two of the three fields. `{node, hops}` is short for `{node: .node, hops: .hops}`.
 
 ## shortest_path/4
-<!-- code: 11629c72 -->
+<!-- code: cc0ca10b -->
 
 The route from `$start` to `$goal` with the fewest edges, as `{path, cost}`, where `cost` is the number of edges.
 
@@ -197,7 +197,7 @@ Step 3: `reverse` turns goal to start into start to goal, and the goal's `hops` 
 - Among routes with the same number of edges, the result is the one the breadth-first search finds first, following edges in input order.
 
 ## shortest_path/5
-<!-- code: 2ccb0dec -->
+<!-- code: fb07a91a -->
 
 The route with the lowest total weight, where `weight` is a filter giving each edge's weight. The output is the same `{path, cost}`, with `cost` the total weight. This is Dijkstra's algorithm.
 
@@ -274,7 +274,7 @@ Step 4: the path is read from `d` as in the four-argument form, following each n
 - The lowest open node is found by looking at every open node each round, with no priority queue. The work grows with the nodes made final times the nodes open, which suits a few thousand nodes.
 
 ## topo_order/2
-<!-- code: 1429f198 -->
+<!-- code: 39017d8f -->
 
 A dependency order: one row per node with a `level`, such that every edge goes from a lower level to a higher one. Nodes on the same level do not depend on each other, so a build could run them at the same time.
 
@@ -329,7 +329,7 @@ Step 3: all six nodes were given a level, so there is no cycle, and the rows are
 - `$pred` is the reversed graph among the left nodes. The walk starts at the first left node and steps to its smallest predecessor until it lands on a node it has visited. That node is on a cycle. Taking the smallest predecessor makes the node named the same on every run.
 
 ## components/2
-<!-- code: a437fee8 -->
+<!-- code: 30fab83b -->
 
 Connected groups, with the edges read as undirected: one row per node, `{node, component}`, where `component` is the smallest node of the node's group.
 

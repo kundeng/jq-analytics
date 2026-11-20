@@ -46,7 +46,7 @@ The first emits nothing, so the array collected around it is empty; its second e
 - `intervals_from_events` calls it as `([_iv_check(time; kind)] | length) as $_`. Collecting the empty output forces the check to run over every event, and binding the result to `$_` leaves the input as it was.
 
 ## intervals_from_events/5
-<!-- code: c2e0cd69 -->
+<!-- code: 0c14280f -->
 
 Builds validity intervals from an event log: who held a resource (a seat, an address, a session id) and from when to when. A resource has at most one holder at a time. SQL has no single equivalent; it takes a chain of window functions.
 
@@ -143,7 +143,7 @@ Each loop step, for event `$e` with time `$t`, kind `$k`, holder `$h`:
 At the end marker, an interval still open leaves with `ended_by: "open"` and the end its last hold gave it, which is null when that hold had no ttl. Intervals of one resource never overlap.
 
 ## join_within/6
-<!-- code: 592f25da -->
+<!-- code: 8ebcac7c -->
 
 A left outer join of rows that have a time to the interval of the same key that contains that time. It answers "who held this at time T". In SQL: `LEFT JOIN intervals i ON i.key = l.key AND l.t >= i.start AND (i.end IS NULL OR l.t < i.end)`.
 
@@ -232,7 +232,7 @@ Step 4: a left row that stopped on an interval containing its time is merged wit
 - `$g.m[.] <= $t` stops the walk as soon as no interval this far back can contain `$t`. Without `m`, a time that falls in a gap would walk to the front of the key's intervals. For intervals that do not overlap, which is what `intervals_from_events` produces, the walk is at most one step.
 
 ## merge_intervals/3
-<!-- code: 5b3dafeb -->
+<!-- code: 04b96ff3 -->
 
 Per key, intervals that overlap or touch become one. It turns a set of bookings into the stretches of time that are covered. In SQL this is the "gaps and islands" pattern.
 
@@ -293,7 +293,7 @@ For room B, 7 to 8 joins because the open interval has no end.
 - Otherwise the open interval goes to `.out` and `$r` starts a new one: `$k + {start: $s, end: $e, merged: 1}`.
 
 ## concurrency/2
-<!-- code: 46298a10 -->
+<!-- code: 9fcbea82 -->
 
 How many intervals are open over time: one row `{t, open}` per moment the count changes. It answers "how many sessions were running at once".
 

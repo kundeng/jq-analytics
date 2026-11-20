@@ -11,7 +11,7 @@ flowchart LR
 Two jq reminders for this page. A bare word such as `mean` is a call to the function of that name, and it runs on the current input, which here is the list. A comma between calls (`count_nonnull, mean`) runs each on the same input and emits each result as its own value, so a run with commas prints several lines.
 
 ## nonnull/0, count_nonnull/0, sum_nonnull/0, mean/0
-<!-- code: fc85b810 -->
+<!-- code: 23ab2dcc -->
 
 The list without its nulls, and the count, sum and mean of what is left. They are SQL's `COUNT(x)`, `SUM(x)` and `AVG(x)`, and a spreadsheet's `COUNT`, `SUM` and `AVERAGE`, which also skip empty cells.
 
@@ -65,7 +65,7 @@ Step 2, `add / length` on that list: 4 / 2.
 - `mean`: `add / length` after the nulls are gone (step 2), so the divisor is the number of values, not the number of rows. The `if length == 0` branch gives null for no values, where a plain division by 0 is an error.
 
 ## min_nonnull/0, max_nonnull/0, min_by_nonnull/1, max_by_nonnull/1
-<!-- code: 49ed13c0 -->
+<!-- code: f702ca43 -->
 
 The least and greatest value of a column, and the whole row that holds it. They are SQL's `MIN`, `MAX`, `ARG_MIN` and `ARG_MAX`.
 
@@ -127,7 +127,7 @@ Step 2, jq's `min_by(.x)` or `max_by(.x)` on those three rows gives the results 
 - `min_by_nonnull(f)` and `max_by_nonnull(f)` drop the rows whose `f` is null (step 1), then call `min_by(f)` or `max_by(f)` (step 2). The tie rule is the builtins' own: the first such row for `min_by`, the last for `max_by`.
 
 ## var_samp/0, var_pop/0, stddev_samp/0, stddev_pop/0
-<!-- code: 4bc47a93 -->
+<!-- code: 99f64a23 -->
 
 Variance and standard deviation: how far the values lie from their mean. The `_pop` forms divide by the number of values (SQL `VAR_POP`, `STDDEV_POP`; a spreadsheet's `VAR.P`, `STDEV.P`). The `_samp` forms divide by one less (SQL `VAR_SAMP`, `STDDEV_SAMP`; `VAR.S`, `STDEV.S`).
 
@@ -188,7 +188,7 @@ One value has a population variance (0) and no sample variance. No values give n
 - `stddev_samp` and `stddev_pop` are `sqrt` of the variance, with null passed through, because `null | sqrt` is an error in jq.
 
 ## quantile_disc/1, quantile_cont/1, median/0, quantiles_disc/1, quantiles_cont/1
-<!-- code: c3b5f2b1 -->
+<!-- code: 136f945d -->
 
 The value below which a share `$p` of the data lies, with `$p` from 0 to 1. `quantile_disc` returns a value that is in the data (SQL `PERCENTILE_DISC`). `quantile_cont` interpolates between two neighbours (SQL `PERCENTILE_CONT`, a spreadsheet's `PERCENTILE.INC`). `median` is `quantile_cont(0.5)`.
 

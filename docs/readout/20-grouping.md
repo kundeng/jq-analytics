@@ -133,7 +133,7 @@ For `_groups` the first two forms give the same result. They differ only in `gro
 
 ### _groups: the definition
 
-`_groups/1`, lines 163 to 168:
+`_groups/1`, lines 187 to 192:
 
 ```jq
 # rows grouped by f: an array of groups in order of first appearance, each group in input order.
@@ -292,18 +292,18 @@ Not much, and that is deliberate. The same count with the builtin and with the l
 
 ### group_agg: the definition
 
-`group_agg/2`, lines 170 to 175:
+`group_agg/2`, lines 194 to 199:
 
 ```jq
 # group rows by keyf and aggregate each group with aggf (applied to the group's array of rows).
 # Output: one row per group, in order of first appearance (group_by sorts by key instead).
 # A key that is an object is merged into the output row; any other key goes in field "key".
 # aggf must return an object. Null keys form one group, as in SQL GROUP BY.
-def group_agg(keyf; aggf):
+def group_agg(keyf; aggf): _table("group_agg"; "the input") |
   _groups(keyf) | map((.[0] | keyf | if type == "object" then . else {key: .} end) + aggf);
 ```
 
-Built into jq: `map`, `type`. From this library: `_groups`.
+Built into jq: `map`, `type`. From this library: `_groups`, `_table`.
 
 With the example in mind, clause by clause. `keyf` is the first argument (`{site}`), `aggf` the second.
 

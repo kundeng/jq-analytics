@@ -2160,5 +2160,62 @@
       }
     ],
     "jq": ".right as $r | .ragged | join_inner($r; .host; .host)"
+  },
+  {
+    "name": "input_check_row_to_table_function",
+    "input": "tests/fixtures/rename_rows.json",
+    "expect_error": "group_agg: the input is one object, not a table (an array of rows). Pass the whole table as one value: $rows | group_agg(...), not $rows[] | group_agg(...).",
+    "jq": ".[] | group_agg({site}; length)"
+  },
+  {
+    "name": "input_check_row_to_list_function",
+    "input": "tests/fixtures/rename_rows.json",
+    "expect_error": "count_nonnull: the input is one object, not a list of values. Make the list first, such as map(.site) | count_nonnull.",
+    "jq": ".[] | count_nonnull"
+  },
+  {
+    "name": "input_check_string_to_list_function",
+    "input": "tests/fixtures/rename_rows.json",
+    "expect_error": "mode: the input is a string, not a list of values.",
+    "jq": ".[0].site | mode"
+  },
+  {
+    "name": "input_check_row_as_right_table",
+    "input": "tests/fixtures/rename_rows.json",
+    "expect_error": "join_left: the right table is one object, not a table (an array of rows).",
+    "jq": "join_left(.[0]; .host; .host)"
+  },
+  {
+    "name": "input_check_row_as_dimension",
+    "input": "tests/fixtures/rename_rows.json",
+    "expect_error": "lookup: the dimension table is one object, not a table",
+    "jq": "lookup(.[0]; .host; .host; \"d\")"
+  },
+  {
+    "name": "input_check_array_to_shape",
+    "input": "tests/fixtures/rename_rows.json",
+    "expect_error": "shape: the input is an array, not an object of tables (split_by makes one). For one table, use profile.",
+    "jq": "shape"
+  },
+  {
+    "name": "input_check_list_of_values_is_still_a_table",
+    "input": "tests/fixtures/rename_rows.json",
+    "expect_value": [
+      {
+        "site": "N",
+        "n": 2
+      },
+      {
+        "site": null,
+        "n": 1
+      }
+    ],
+    "jq": "map(.site) | group_agg({site: .}; {n: length})"
+  },
+  {
+    "name": "input_check_list_function_on_a_column",
+    "input": "tests/fixtures/rename_rows.json",
+    "expect_value": 2,
+    "jq": "map(.site) | count_nonnull"
   }
 ]

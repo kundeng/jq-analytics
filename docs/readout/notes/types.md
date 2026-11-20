@@ -105,7 +105,7 @@ Both lines are the same number, and it is the first example's 13:05:00 plus a qu
 - `else`: the general path, steps 1 to 5. `$m.z == null or $m.z == "Z"` gives an offset of 0, so no zone means UTC.
 
 ## cast_columns/1
-<!-- code: 9b228112 -->
+<!-- code: 5bf88824 -->
 
 Gives the named columns of a table their types: text to number, timestamp or boolean, and anything to string. It is SQL's `CAST(col AS type)` for several columns at once, and Power Query's "Changed Type" step.
 

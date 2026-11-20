@@ -4,12 +4,13 @@ How each definition in `src/jq_analytics/analytics.jq` is written: the code as i
 
 | Page | Family | Definitions |
 |---|---|---|
+| [00](00-input-checks.md) | input checks | 4 |
 | [05](05-math.md) | math: arrays of numbers | 18 |
 | [10](10-types.md) | types | 3 |
 | [15](15-time-zones-and-calendar.md) | time zones and calendar | 4 |
 | [20](20-grouping.md) | grouping | 2 |
 | [25](25-several-tables-at-once.md) | several tables at once | 3 |
-| [30](30-joins.md) | joins | 17 |
+| [30](30-joins.md) | joins | 18 |
 | [35](35-windows.md) | windows | 7 |
 | [40](40-reshape.md) | reshape | 4 |
 | [45](45-state-machines-over-time.md) | state machines over time | 6 |

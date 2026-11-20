@@ -93,7 +93,7 @@ Both arguments are filters, run on the input of `similarity`. In `map(similarity
 - `else _dice($a | _bigrams; $b | _bigrams)`.
 
 ## join_fuzzy/7
-<!-- code: 749f1e9e -->
+<!-- code: 03bd6684 -->
 
 A left outer join on "most similar string": each left row gets the right row whose string is most like its own, if the similarity reaches a minimum. Rows are compared only when they share an exact key, the block, which keeps the number of comparisons down.
 
