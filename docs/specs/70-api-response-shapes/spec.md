@@ -5,7 +5,7 @@ closed_as: null
 since: 2026-11-19
 until: null
 epic: shapes
-features: [api-envelopes-and-pages, graphql-connections, side-loaded-records, aggregation-buckets, results-of-several-calls]
+features: [api-envelopes-and-pages, graphql-connections, side-loaded-records, aggregation-buckets, results-of-several-calls, type-outline, merge-documents]
 supersedes: []
 superseded_by: null
 depends_on: [65-common-question-gaps]
@@ -37,6 +37,8 @@ The commonest source of JSON for analysis is the reply to an API call, and the s
 - **R4. Side-loaded records.** `resolve_refs($included; $as)`: each relationship reference `{type, id}` in a row replaced by the included record of the same type and id, under `$as`; a reference with no included record stays as it is, reported in a field; type and id together are the key.
 - **R5. Buckets.** `rows_from_buckets($levels)`: nested aggregation buckets into one row per leaf bucket, a column per level named by `$levels`, with the leaf's counts and metrics; a missing level is an empty table, not an error.
 - **R6. Several calls.** `rows_from_calls`: an array of `{request, response}` records (the form an audit record keeps a call in) into one table, each row carrying the request fields it came from, so a list call and its detail calls can be joined on them. RPC batches are the same form and join on `id` with the existing joins.
+- **R8. Type outline.** `type_outline`: the structure of any document with types instead of values (an array's items merged into one outline, a field's types listed when they differ, how often a field is present), the first look at an unfamiliar reply before choosing its unwrap. Asked for in jq #3540 (2026); `shape` gives row counts and field names per table, which is not this.
+- **R9. Merge documents.** `merge_docs($other; $arrays)`: a deep merge of two documents where arrays are combined by `"concat"`, `"union"` (without duplicates) or `"replace"`; jq's `*` always replaces arrays. The most-viewed jq question of the last year asks for this (Unix & Linux 801994, 2,002 views).
 - **R7.** Each function: input check, read-out note, README entry, skill row, cases including the mistake its section names; DuckDB answers where DuckDB can express the same unwrap (`unnest` of JSON).
 
 ### Out of scope
@@ -50,9 +52,10 @@ Written when the sprint opens. Before any function: collect one real reply of ea
 ## Tasks
 
 - [ ] 1. Samples and the design section (R1); a decision per source: function or plain jq.
-- [ ] 2. The functions R2 to R6 that the decision keeps, with cases.
+- [ ] 2. The functions R2 to R6 that the decision keeps, and R8 and R9, with cases.
 - [ ] 3. Read-out notes, README, skill, feature matrix; version 0.16.0.
 
 ## Log
 
 - 2026-11-19. Drafted from the owner's design comment that API replies, GraphQL and several related calls are missing from the shapes.
+- 2026-11-19. R8 and R9 added from the survey of the last twelve months (owner's go-ahead).
