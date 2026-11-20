@@ -348,6 +348,52 @@
     "jq": "join_overlap($right; .host; .host; .start; .end; .ostart; .oend) | map({sid, oid})"
   },
   {
+    "name": "join_overlap_open_end",
+    "input": "tests/fixtures/open_intervals.json",
+    "expect_value": [
+      [
+        "L1",
+        "S2"
+      ],
+      [
+        "L1",
+        "S3"
+      ],
+      [
+        "L1",
+        "S4"
+      ],
+      [
+        "L2",
+        "S5"
+      ]
+    ],
+    "jq": ".sessions as $s | .leases | join_overlap($s; .mac; .mac; .start; .end; .s; .e) | map([.lease, .sess])"
+  },
+  {
+    "name": "join_overlap_open_end_both_sides",
+    "input": "tests/fixtures/open_intervals.json",
+    "expect_value": [
+      [
+        "L1",
+        "S4"
+      ]
+    ],
+    "jq": ".sessions as $s | .leases | join_overlap($s; .mac; .mac; .start; .end; .s; .e) | map(select(.end == null and .e == null) | [.lease, .sess])"
+  },
+  {
+    "name": "join_overlap_no_start_error",
+    "input": "tests/fixtures/open_intervals.json",
+    "expect_error": "join_overlap (left table): an interval has no start",
+    "jq": ".sessions as $s | [{mac: \"aa\", start: null, end: 5}] | join_overlap($s; .mac; .mac; .start; .end; .s; .e)"
+  },
+  {
+    "name": "join_overlap_backwards_error",
+    "input": "tests/fixtures/open_intervals.json",
+    "expect_error": "join_overlap (right table): an interval ends before it starts",
+    "jq": ".leases | join_overlap([{mac: \"aa\", s: 9, e: 3}]; .mac; .mac; .start; .end; .s; .e)"
+  },
+  {
     "name": "join_asof_max_age",
     "input": "tests/fixtures/trades.json",
     "vars": {

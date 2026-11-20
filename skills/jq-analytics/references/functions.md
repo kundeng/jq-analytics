@@ -235,9 +235,7 @@ A key that appears twice in the dimension is an error, so a lookup can never mul
 `join_overlap($right; lkey; rkey; lstart; lend; rstart; rend)`
 
 ```text
-interval overlap: pairs with the same key whose intervals overlap, each interval closed at its
-start and open at its end ([start, end)). Flat and inner; a start or end field named the same on
-both sides comes out twice, the right one with "_right".
+interval overlap: pairs with the same key whose intervals overlap, each closed at its start and open at its end ([start, end)); a null end means still open. Flat and inner; a start or end field named the same on both sides comes out twice, the right one with "_right". An interval with no start, or one that ends before it starts, is an error (as in merge_intervals).
 ```
 
 `join_asof($right; lkey; rkey; ltime; rtime; $max_age)`

@@ -30,7 +30,6 @@ On this page, in the order of the file:
 | `_iv_check` | Internal helper, not for callers | The input check of `intervals_from_events` |
 | `intervals_from_events` | Public function | Builds validity intervals from an event log: who held a resource (a seat, an address, a session id) and from when to when |
 | `join_within` | Public function | A left outer join of rows that have a time to the interval of the same key that contains that time |
-| `_iv_order_check` | Internal helper, not for callers | The input check shared by `merge_intervals` and `concurrency` |
 | `merge_intervals` | Public function | Per key, intervals that overlap or touch become one |
 | `concurrency` | Public function | How many intervals are open over time: one row `{t, open}` per moment the count changes |
 
@@ -62,7 +61,7 @@ The first emits nothing, so the array collected around it is empty; its second e
 
 ### _iv_check: the definition
 
-`_iv_check/2`, lines 836 to 843:
+`_iv_check/2`, lines 842 to 849:
 
 ```jq
 # an event's kind must be one of the three and, when it has a kind, it needs a time
@@ -183,7 +182,7 @@ The four intervals that close in the trace are the four rows of the result.
 
 ### intervals_from_events: the definition
 
-`intervals_from_events/5`, lines 845 to 894:
+`intervals_from_events/5`, lines 851 to 900:
 
 ```jq
 # intervals_from_events: validity intervals built from an event log. A resource (an address, a
@@ -372,7 +371,7 @@ Step 4: a left row that stopped on an interval containing its time is merged wit
 
 ### join_within: the definition
 
-`join_within/6`, lines 896 to 921:
+`join_within/6`, lines 902 to 927:
 
 ```jq
 # join_within (left outer): each left row with the interval of the same key whose [rstart, rend)
@@ -410,45 +409,6 @@ Built into jq: `bsearch`, `from_entries`, `group_by`, `length`, `map`, `select`,
 - `until(. + 1 >= ($g.s | length) or $g.s[. + 1] > $t; . + 1)` is the move forward to the last start at or before `$t`.
 - `until(. < 0 or $g.e[.] > $t or $g.m[.] <= $t; . - 1)` is the walk back. It stops at the first interval whose end is after `$t`; that interval started at or before `$t`, so it contains it. Walking back from the last start is what makes the answer "the one that started last".
 - `$g.m[.] <= $t` stops the walk as soon as no interval this far back can contain `$t`. Without `m`, a time that falls in a gap would walk to the front of the key's intervals. For intervals that do not overlap, which is what `intervals_from_events` produces, the walk is at most one step.
-
----
-
-## _iv_order_check
-
-**Internal helper, not for callers** · `_iv_order_check(start; fin; $who)`
-
-The input check shared by `merge_intervals` and `concurrency`. It passes its input through unchanged, or stops with an error when an interval has no start, or an end before its start. A null end is allowed.
-
-### _iv_order_check: the example
-
-```jq
-([{s: 1, e: null}] | _iv_order_check(.s; .e; "merge_intervals")),
-([{s: 5, e: 3}] | try _iv_order_check(.s; .e; "merge_intervals") catch .),
-([{s: null, e: 3}] | try _iv_order_check(.s; .e; "concurrency") catch .)
-```
-
-```json
-[{"s":1,"e":null}]
-"merge_intervals: an interval ends before it starts"
-"concurrency: an interval has no start"
-```
-
-The first input is fine and comes back as it was. The other two are the two errors.
-
-### _iv_order_check: the definition
-
-`_iv_order_check/3`, lines 923 to 926:
-
-```jq
-# an interval needs a start, and an end that is not before it
-def _iv_order_check(start; fin; $who):
-  if any(.[]; (start) == null) then error("\($who): an interval has no start")
-  elif any(.[]; (fin) != null and (fin) < (start)) then error("\($who): an interval ends before it starts") else . end;
-```
-
-Built into jq: `any`, `error`.
-
-`any(.[]; cond)` is true when the condition holds for at least one row. `$who` is the name of the calling function, for the message. `else .` returns the input.
 
 ---
 
@@ -498,7 +458,7 @@ The key `{room}` is short for `{room: .room}` and gives the output its `room` co
 
 ### merge_intervals: what happens inside, on the example
 
-Step 1: `_iv_order_check` (above).
+Step 1: `_iv_order_check`, on the joins page.
 
 Step 2: `_groups(key)` gives one group per key, in order of first appearance, and each group is sorted by start.
 
@@ -528,7 +488,7 @@ For room B, 7 to 8 joins because the open interval has no end.
 
 ### merge_intervals: the definition
 
-`merge_intervals/3`, lines 928 to 947:
+`merge_intervals/3`, lines 929 to 948:
 
 ```jq
 # merge_intervals: per key, intervals that overlap or touch become one row
@@ -638,7 +598,7 @@ Step 3: the `foreach` keeps a running sum of the net changes, 1, 2, 1, 2, 1, and
 
 ### concurrency: the definition
 
-`concurrency/2`, lines 949 to 958:
+`concurrency/2`, lines 950 to 959:
 
 ```jq
 # concurrency: how many intervals are open over time: one row {t, open} per moment the count

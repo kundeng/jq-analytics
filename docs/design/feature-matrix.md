@@ -1,6 +1,6 @@
 # Feature matrix
 
-What the library does, family by family, and how far each part is carried: the functions in `analytics.jq`, the test cases, the answer key, and the README. Counts are as of version 0.13.0 and come from `tests/cases.json` and the library file.
+What the library does, family by family, and how far each part is carried: the functions in `analytics.jq`, the test cases, the answer key, and the README. Counts are as of version 0.13.1 and come from `tests/cases.json` and the library file.
 
 ```mermaid
 flowchart LR
@@ -22,7 +22,7 @@ Legend: ✅ done · 🟡 partial · ⏳ planned · — not involved. A case coun
 | types-and-time | table | ✅ 6 | ✅ 11 | 9 | ✅ | five engines, 2026-11-18 | |
 | grouping-and-windows | table | ✅ 10 | ✅ 13 | 13 | ✅ | five engines, 2026-11-18 | |
 | several-tables | several tables | ✅ 3 | ✅ 3 | 1 | ✅ | five engines, 2026-11-18 | |
-| joins, shared-field-suffix | two tables; intervals for `join_overlap` | ✅ 10 | ✅ 34 | 15 | ✅ | five engines, 2026-11-19 | [59](../specs/59-shared-fields-in-joins/spec.md) |
+| joins, shared-field-suffix | two tables; intervals for `join_overlap` | ✅ 10 | ✅ 38 | 15 | ✅ | five engines, 2026-11-19 | [59](../specs/59-shared-fields-in-joins/spec.md), [62](../specs/62-open-intervals-in-join-overlap/spec.md) |
 | rename-fields, prefix-fields | table | ✅ 2 | ✅ 12 | 0 | ✅ | five engines, 2026-11-19 | [61](../specs/61-rename-fields/spec.md) |
 | state-over-time | an event table, per entity | ✅ 4 | ✅ 5 | 4 | ✅ | five engines, 2026-11-18 | |
 | trees-and-graphs | tree, graph | ✅ 4 | ✅ 5 | 2 | ✅ | five engines, 2026-11-18 | |

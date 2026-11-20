@@ -581,10 +581,31 @@ try ([{id: 1, site: "N"}] | lookup([{site: "N", name: "North"}, {site: "S", name
 - `else {key: ..., value: .[0]} end ... | from_entries`: step 2.
 - `map(. as $l | ($l | lkey) as $k | $l + {($as): ...})`: step 3. A null key gives null without a lookup, and a key that is not in `$ix` gives null because that is what a missing object key reads as.
 
-## join_overlap/7
-<!-- code: ca87eb71 -->
+## _iv_order_check/3
+<!-- code: 17bb0b45 -->
 
-Pairs with the same key whose time intervals overlap. It is SQL's `JOIN ... ON l.k = r.k AND l.start < r.end AND r.start < l.end`. Each interval is closed at its start and open at its end, written `[start, end)`.
+The input check shared by `join_overlap` below and by `merge_intervals` and `concurrency` on the intervals page. It is defined here, before `join_overlap`, because a jq function must be defined before it is used. It passes its input through unchanged, or stops with an error when an interval has no start, or an end before its start. A null end is allowed.
+
+### The example
+
+```jq run
+([{s: 1, e: null}] | _iv_order_check(.s; .e; "merge_intervals")),
+([{s: 5, e: 3}] | try _iv_order_check(.s; .e; "merge_intervals") catch .),
+([{s: null, e: 3}] | try _iv_order_check(.s; .e; "concurrency") catch .)
+```
+
+The first input is fine and comes back as it was. The other two are the two errors.
+
+### The definition
+
+<!-- definition -->
+
+`any(.[]; cond)` is true when the condition holds for at least one row. `$who` is the name of the calling function, for the message. `else .` returns the input.
+
+## join_overlap/7
+<!-- code: c0c27eba -->
+
+Pairs with the same key whose time intervals overlap. It is SQL's `JOIN ... ON l.k = r.k AND l.start < r.end AND r.start < l.end`. Each interval is closed at its start and open at its end, written `[start, end)`. An interval whose end is null is still open: it overlaps everything of its key that starts after its start.
 
 ### The example
 
@@ -625,11 +646,42 @@ It is one call of `join_on` with kind `"inner"` and the overlap test as the cond
 
 Two values, one per pair. Both halves are true for the backup job. For the report job the first half is false: it starts at 11, which is not before the window's end at 11.
 
+### An interval with no end
+
+A lease or a session that has not ended yet has no end time, and `intervals_from_events` writes its `end` as null. Such an interval is still open, so it overlaps everything of its key that starts after its start. One open lease from 100, against three sessions:
+
+```jq run
+[{mac: "aa", lease: "L1", start: 100, end: null}]
+| join_overlap([{mac: "aa", sess: "S1", s: 20, e: 100}, {mac: "aa", sess: "S2", s: 150, e: 200}, {mac: "aa", sess: "S3", s: 900, e: null}];
+               .mac; .mac; .start; .end; .s; .e)
+| map(.sess)
+```
+
+S2 and S3 overlap the lease. S1 ends at 100, the moment the lease starts, so it only touches it.
+
+Plain jq gets this wrong without a word. jq orders null below every number, so `150 < null` is false and the open lease would overlap nothing:
+
+```jq run
+150 < null, 150 < (null // 1.7976931348623157e308)
+```
+
+The library puts the largest number jq has in place of a null end before comparing. Versions before 0.13.1 compared the null as it was, and dropped every open interval from the result.
+
+### What is refused
+
+An interval with no start, or one that ends before it starts, is an error naming the table it is in. These are the checks of `_iv_order_check` above:
+
+```jq run
+try ([{mac: "aa", start: 1, end: 5}] | join_overlap([{mac: "aa", s: 9, e: 3}]; .mac; .mac; .start; .end; .s; .e)) catch .
+```
+
 ### The definition
 
 <!-- definition -->
 
-- `(.l | lstart) < (.r | rend) and (.r | rstart) < (.l | lend)`: each interval starts before the other ends. The `<` and not `<=` is what makes the end open.
+- `1.7976931348623157e308 as $inf`: the largest number jq has, standing for "no end yet".
+- The two `_iv_order_check` lines check the left table, then the right one, and bind the right one as `$r`.
+- `(.l | lstart) < ((.r | rend) // $inf) and (.r | rstart) < ((.l | lend) // $inf)`: each interval starts before the other ends. `// $inf` replaces a null end. The `<` and not `<=` is what makes the end open.
 - The condition is checked only for pairs with the same key, so the cost follows the number of same-key pairs.
 
 ## join_asof/6, join_asof/5

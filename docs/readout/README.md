@@ -9,7 +9,7 @@ How each definition in `src/jq_analytics/analytics.jq` is written: the code as i
 | [15](15-time-zones-and-calendar.md) | time zones and calendar | 4 |
 | [20](20-grouping.md) | grouping | 2 |
 | [25](25-several-tables-at-once.md) | several tables at once | 3 |
-| [30](30-joins.md) | joins | 16 |
+| [30](30-joins.md) | joins | 17 |
 | [35](35-windows.md) | windows | 7 |
 | [40](40-reshape.md) | reshape | 4 |
 | [45](45-state-machines-over-time.md) | state machines over time | 6 |
@@ -17,7 +17,7 @@ How each definition in `src/jq_analytics/analytics.jq` is written: the code as i
 | [55](55-graphs.md) | graphs | 8 |
 | [60](60-measures-in-a-context.md) | measures in a context | 13 |
 | [65](65-shapes-in-and-out.md) | shapes in and out | 15 |
-| [70](70-intervals.md) | intervals | 6 |
+| [70](70-intervals.md) | intervals | 5 |
 | [75](75-calendar.md) | calendar | 8 |
 | [80](80-event-paths.md) | event paths: funnels, cohorts, retention | 8 |
 | [85](85-distributions-profiles-diffs.md) | distributions, profiles, diffs | 8 |

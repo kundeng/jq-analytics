@@ -100,7 +100,7 @@ The outer `[...]` collects the rows of all input rows into one array.
 
 ### unpivot: the definition
 
-`unpivot/3`, lines 370 to 376:
+`unpivot/3`, lines 376 to 382:
 
 ```jq
 # unpivot: every field not in $keep becomes its own row {keep fields..., $name: field, $value: value}.
@@ -204,7 +204,7 @@ For `db01`, `$cells` has `ram` and `disk`. `$cells["cpu"]` is null, so the `cpu`
 
 ### pivot: the definition
 
-`pivot/5`, lines 378 to 383:
+`pivot/5`, lines 384 to 389:
 
 ```jq
 # pivot: one output row per rowkey (an object) and one column per name in $cols (Power Query's
@@ -342,7 +342,7 @@ try ([{host: "db01"}] | rename_fields({host: 1})) catch .
 
 ### rename_fields: the definition
 
-`rename_fields/1`, lines 385 to 396:
+`rename_fields/1`, lines 391 to 402:
 
 ```jq
 # rename_fields: $names is an object {old name: new name}. Every row's field with an old name gets
@@ -428,7 +428,7 @@ Two fields cannot end up with the same name, because two different names stay di
 
 ### prefix_fields: the definition
 
-`prefix_fields/1`, lines 398 to 403:
+`prefix_fields/1`, lines 404 to 409:
 
 ```jq
 # prefix_fields: every field name of every row with $prefix in front ("cmdb_" turns site into

@@ -59,6 +59,7 @@ On this page, in the order of the file:
 | `join_inner`, `join_left`, `join_full`, `join_semi`, `join_anti` | Public functions | The five kinds of equality join under their own names |
 | `join_nest` | Public function | Every left row exactly once, with one new field holding the array of its matching right rows |
 | `lookup` | Public function | Attaches the one matching row of a second table under a new field |
+| `_iv_order_check` | Internal helper, not for callers | The input check shared by `join_overlap` below and by `merge_intervals` and `concurrency` on the intervals page |
 | `join_overlap` | Public function | Pairs with the same key whose time intervals overlap |
 | `join_asof` | Public function | For each left row, the right row with the same key and the latest time at or before the left row's time |
 
@@ -1031,11 +1032,50 @@ Built into jq: `error`, `from_entries`, `group_by`, `length`, `map`, `select`, `
 
 ---
 
+## _iv_order_check
+
+**Internal helper, not for callers** · `_iv_order_check(start; fin; $who)`
+
+The input check shared by `join_overlap` below and by `merge_intervals` and `concurrency` on the intervals page. It is defined here, before `join_overlap`, because a jq function must be defined before it is used. It passes its input through unchanged, or stops with an error when an interval has no start, or an end before its start. A null end is allowed.
+
+### _iv_order_check: the example
+
+```jq
+([{s: 1, e: null}] | _iv_order_check(.s; .e; "merge_intervals")),
+([{s: 5, e: 3}] | try _iv_order_check(.s; .e; "merge_intervals") catch .),
+([{s: null, e: 3}] | try _iv_order_check(.s; .e; "concurrency") catch .)
+```
+
+```json
+[{"s":1,"e":null}]
+"merge_intervals: an interval ends before it starts"
+"concurrency: an interval has no start"
+```
+
+The first input is fine and comes back as it was. The other two are the two errors.
+
+### _iv_order_check: the definition
+
+`_iv_order_check/3`, lines 311 to 314:
+
+```jq
+# an interval needs a start, and an end that is not before it
+def _iv_order_check(start; fin; $who):
+  if any(.[]; (start) == null) then error("\($who): an interval has no start")
+  elif any(.[]; (fin) != null and (fin) < (start)) then error("\($who): an interval ends before it starts") else . end;
+```
+
+Built into jq: `any`, `error`.
+
+`any(.[]; cond)` is true when the condition holds for at least one row. `$who` is the name of the calling function, for the message. `else .` returns the input.
+
+---
+
 ## join_overlap
 
 **Public function** · `join_overlap($right; lkey; rkey; lstart; lend; rstart; rend)`
 
-Pairs with the same key whose time intervals overlap. It is SQL's `JOIN ... ON l.k = r.k AND l.start < r.end AND r.start < l.end`. Each interval is closed at its start and open at its end, written `[start, end)`.
+Pairs with the same key whose time intervals overlap. It is SQL's `JOIN ... ON l.k = r.k AND l.start < r.end AND r.start < l.end`. Each interval is closed at its start and open at its end, written `[start, end)`. An interval whose end is null is still open: it overlaps everything of its key that starts after its start.
 
 ### join_overlap: the example
 
@@ -1087,21 +1127,66 @@ It is one call of `join_on` with kind `"inner"` and the overlap test as the cond
 
 Two values, one per pair. Both halves are true for the backup job. For the report job the first half is false: it starts at 11, which is not before the window's end at 11.
 
-### join_overlap: the definition
+### join_overlap: an interval with no end
 
-`join_overlap/7`, lines 311 to 315:
+A lease or a session that has not ended yet has no end time, and `intervals_from_events` writes its `end` as null. Such an interval is still open, so it overlaps everything of its key that starts after its start. One open lease from 100, against three sessions:
 
 ```jq
-# interval overlap: pairs with the same key whose intervals overlap, each interval closed at its
-# start and open at its end ([start, end)). Flat and inner; a start or end field named the same on
-# both sides comes out twice, the right one with "_right".
-def join_overlap($right; lkey; rkey; lstart; lend; rstart; rend):
-  join_on($right; lkey; rkey; (.l | lstart) < (.r | rend) and (.r | rstart) < (.l | lend); "inner");
+[{mac: "aa", lease: "L1", start: 100, end: null}]
+| join_overlap([{mac: "aa", sess: "S1", s: 20, e: 100}, {mac: "aa", sess: "S2", s: 150, e: 200}, {mac: "aa", sess: "S3", s: 900, e: null}];
+               .mac; .mac; .start; .end; .s; .e)
+| map(.sess)
 ```
 
-From this library: `join_on`.
+```json
+["S2","S3"]
+```
 
-- `(.l | lstart) < (.r | rend) and (.r | rstart) < (.l | lend)`: each interval starts before the other ends. The `<` and not `<=` is what makes the end open.
+S2 and S3 overlap the lease. S1 ends at 100, the moment the lease starts, so it only touches it.
+
+Plain jq gets this wrong without a word. jq orders null below every number, so `150 < null` is false and the open lease would overlap nothing:
+
+```jq
+150 < null, 150 < (null // 1.7976931348623157e308)
+```
+
+```json
+false
+true
+```
+
+The library puts the largest number jq has in place of a null end before comparing. Versions before 0.13.1 compared the null as it was, and dropped every open interval from the result.
+
+### join_overlap: what is refused
+
+An interval with no start, or one that ends before it starts, is an error naming the table it is in. These are the checks of `_iv_order_check` above:
+
+```jq
+try ([{mac: "aa", start: 1, end: 5}] | join_overlap([{mac: "aa", s: 9, e: 3}]; .mac; .mac; .start; .end; .s; .e)) catch .
+```
+
+```json
+"join_overlap (right table): an interval ends before it starts"
+```
+
+### join_overlap: the definition
+
+`join_overlap/7`, lines 316 to 321:
+
+```jq
+# interval overlap: pairs with the same key whose intervals overlap, each closed at its start and open at its end ([start, end)); a null end means still open. Flat and inner; a start or end field named the same on both sides comes out twice, the right one with "_right". An interval with no start, or one that ends before it starts, is an error (as in merge_intervals).
+def join_overlap($right; lkey; rkey; lstart; lend; rstart; rend):
+  1.7976931348623157e308 as $inf
+  | _iv_order_check(lstart; lend; "join_overlap (left table)")
+  | ($right | _iv_order_check(rstart; rend; "join_overlap (right table)")) as $r
+  | join_on($r; lkey; rkey; (.l | lstart) < ((.r | rend) // $inf) and (.r | rstart) < ((.l | lend) // $inf); "inner");
+```
+
+From this library: `_iv_order_check`, `join_on`.
+
+- `1.7976931348623157e308 as $inf`: the largest number jq has, standing for "no end yet".
+- The two `_iv_order_check` lines check the left table, then the right one, and bind the right one as `$r`.
+- `(.l | lstart) < ((.r | rend) // $inf) and (.r | rstart) < ((.l | lend) // $inf)`: each interval starts before the other ends. `// $inf` replaces a null end. The `<` and not `<=` is what makes the end open.
 - The condition is checked only for pairs with the same key, so the cost follows the number of same-key pairs.
 
 ---
@@ -1255,7 +1340,7 @@ A left row with a null key or a null time comes back alone. Right rows with a nu
 
 ### join_asof: the definition
 
-`join_asof/6`, lines 317 to 336:
+`join_asof/6`, lines 323 to 342:
 
 ```jq
 # As-of join (left outer): for each left row, the right row with the same key whose rtime is the
@@ -1282,7 +1367,7 @@ def join_asof($right; lkey; rkey; ltime; rtime; $max_age):
 
 Built into jq: `bsearch`, `from_entries`, `group_by`, `map`, `select`, `sort_by`, `tojson`, `until`. From this library: `_merge`, `_merge_plan`.
 
-`join_asof/5`, line 337:
+`join_asof/5`, line 343:
 
 ```jq
 def join_asof($right; lkey; rkey; ltime; rtime): join_asof($right; lkey; rkey; ltime; rtime; null);

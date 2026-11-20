@@ -81,7 +81,7 @@ Step 3, `min | .[1]`: arrays compare element by element, so the smallest pair is
 
 ### mode: the definition
 
-`mode/0`, lines 1094 to 1096:
+`mode/0`, lines 1095 to 1097:
 
 ```jq
 # mode: the most frequent non-null value of a list; among equally frequent values the smallest in
@@ -119,7 +119,7 @@ Four non-null values. `a` appears twice, a share of 2 / 4 = 0.5. `b` and `c` tie
 
 ### value_counts: the definition
 
-`value_counts/0`, lines 1098 to 1101:
+`value_counts/0`, lines 1099 to 1102:
 
 ```jq
 # value_counts: one row per distinct non-null value of a list: {value, count, share (of the non-null
@@ -200,7 +200,7 @@ Step 3: the counts per bin number are 1, 1, 1 and 2, and the last line lays them
 
 ### bin_edges and the others: the definition
 
-`bin_edges/3`, lines 1103 to 1106:
+`bin_edges/3`, lines 1104 to 1107:
 
 ```jq
 # bin_edges: $n + 1 equally spaced numbers from $lo to $hi, the edges of $n bins
@@ -211,7 +211,7 @@ def bin_edges($lo; $hi; $n):
 
 Built into jq: `error`, `not`, `range`.
 
-`histogram/1`, lines 1108 to 1125:
+`histogram/1`, lines 1109 to 1126:
 
 ```jq
 # histogram: counts of a list of numbers per bin, the bins given by their edges (bin_edges, or any
@@ -318,7 +318,7 @@ Step 4: the first sum divided by the square root of the product of the other two
 
 ### corr: the definition
 
-`corr/2`, lines 1127 to 1137:
+`corr/2`, lines 1128 to 1138:
 
 ```jq
 # corr: Pearson's correlation of x and y over the rows where both are non-null; null with fewer than
@@ -405,7 +405,7 @@ Step 3: the output row is counted from those lists. For `ram`: `present` 4 (the 
 
 ### profile: the definition
 
-`profile/0`, lines 1139 to 1156:
+`profile/0`, lines 1140 to 1157:
 
 ```jq
 # profile: one row per column of a table, columns in name order:
@@ -523,7 +523,7 @@ Step 3: each key is looked up in both. A hand trace:
 
 ### _diff_index and the others: the definition
 
-`_diff_index/2`, lines 1158 to 1162:
+`_diff_index/2`, lines 1159 to 1163:
 
 ```jq
 def _diff_index(key; $who):
@@ -535,7 +535,7 @@ def _diff_index(key; $who):
 
 Built into jq: `error`, `has`, `tojson`.
 
-`diff_tables/2`, lines 1164 to 1181:
+`diff_tables/2`, lines 1165 to 1182:
 
 ```jq
 # diff_tables: what changed between two versions of a table that share a key. The input is the new

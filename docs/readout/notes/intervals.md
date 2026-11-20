@@ -231,27 +231,6 @@ Step 4: a left row that stopped on an interval containing its time is merged wit
 - `until(. < 0 or $g.e[.] > $t or $g.m[.] <= $t; . - 1)` is the walk back. It stops at the first interval whose end is after `$t`; that interval started at or before `$t`, so it contains it. Walking back from the last start is what makes the answer "the one that started last".
 - `$g.m[.] <= $t` stops the walk as soon as no interval this far back can contain `$t`. Without `m`, a time that falls in a gap would walk to the front of the key's intervals. For intervals that do not overlap, which is what `intervals_from_events` produces, the walk is at most one step.
 
-## _iv_order_check/3
-<!-- code: 17bb0b45 -->
-
-The input check shared by `merge_intervals` and `concurrency`. It passes its input through unchanged, or stops with an error when an interval has no start, or an end before its start. A null end is allowed.
-
-### The example
-
-```jq run
-([{s: 1, e: null}] | _iv_order_check(.s; .e; "merge_intervals")),
-([{s: 5, e: 3}] | try _iv_order_check(.s; .e; "merge_intervals") catch .),
-([{s: null, e: 3}] | try _iv_order_check(.s; .e; "concurrency") catch .)
-```
-
-The first input is fine and comes back as it was. The other two are the two errors.
-
-### The definition
-
-<!-- definition -->
-
-`any(.[]; cond)` is true when the condition holds for at least one row. `$who` is the name of the calling function, for the message. `else .` returns the input.
-
 ## merge_intervals/3
 <!-- code: 5b3dafeb -->
 
@@ -283,7 +262,7 @@ The key `{room}` is short for `{room: .room}` and gives the output its `room` co
 
 ### What happens inside, on the example
 
-Step 1: `_iv_order_check` (above).
+Step 1: `_iv_order_check`, on the joins page.
 
 Step 2: `_groups(key)` gives one group per key, in order of first appearance, and each group is sorted by start.
 

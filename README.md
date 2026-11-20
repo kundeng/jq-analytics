@@ -75,7 +75,7 @@ The library is one file, `analytics.jq`, in a directory `<dir>` below. Its time-
 | Python `jq` package | `jq.compile('include "analytics" {search: "<dir>"}; ' + program).input_value(rows).first()`; the package has no `-L` and an empty default search list, so the path goes in the program |
 | Python package `jq_analytics` | `jq_analytics.include()` returns the `include` line with this package's directory filled in |
 
-Tested on jq 1.7.1 (Apple's build), jq 1.8.2, gojq 0.12.20, jaq 3.1.2 and the `jq` Python package 1.13.0, which builds jq 1.8.2: all pass the same 178 test cases (`tests/run_tests.py`). The library uses no builtin that is missing from any of them, and it parenthesises `reduce … as` inside function arguments, which jq 1.7.1's grammar requires.
+Tested on jq 1.7.1 (Apple's build), jq 1.8.2, gojq 0.12.20, jaq 3.1.2 and the `jq` Python package 1.13.0, which builds jq 1.8.2: all pass the same 182 test cases (`tests/run_tests.py`). The library uses no builtin that is missing from any of them, and it parenthesises `reduce … as` inside function arguments, which jq 1.7.1's grammar requires.
 
 ## Names
 
@@ -597,7 +597,7 @@ A field name on both sides: both tables have `site`, the key `host` appears once
 ```
 <!-- /example -->
 
-**`join_overlap($right; lkey; rkey; lstart; lend; rstart; rend)`.** Pairs with the same key whose intervals overlap, each interval closed at its start and open at its end, so intervals that only touch do not overlap. Rename the right side's start and end first, since the merged row holds both.
+**`join_overlap($right; lkey; rkey; lstart; lend; rstart; rend)`.** Pairs with the same key whose intervals overlap, each interval closed at its start and open at its end, so intervals that only touch do not overlap. A null end means the interval is still open: it overlaps everything of its key that starts after its start. An interval with no start, or one that ends before it starts, is an error. A start or end field with the same name on both sides comes out twice, the right one with `_right`.
 
 <!-- example: join_overlap -->
 ```jq

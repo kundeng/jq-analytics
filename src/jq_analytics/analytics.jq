@@ -308,11 +308,17 @@ def lookup($dim; lkey; dkey; $as):
    | from_entries) as $ix
   | map(. as $l | ($l | lkey) as $k | $l + {($as): (if $k == null then null else $ix[$k | tojson] end)});
 
-# interval overlap: pairs with the same key whose intervals overlap, each interval closed at its
-# start and open at its end ([start, end)). Flat and inner; a start or end field named the same on
-# both sides comes out twice, the right one with "_right".
+# an interval needs a start, and an end that is not before it
+def _iv_order_check(start; fin; $who):
+  if any(.[]; (start) == null) then error("\($who): an interval has no start")
+  elif any(.[]; (fin) != null and (fin) < (start)) then error("\($who): an interval ends before it starts") else . end;
+
+# interval overlap: pairs with the same key whose intervals overlap, each closed at its start and open at its end ([start, end)); a null end means still open. Flat and inner; a start or end field named the same on both sides comes out twice, the right one with "_right". An interval with no start, or one that ends before it starts, is an error (as in merge_intervals).
 def join_overlap($right; lkey; rkey; lstart; lend; rstart; rend):
-  join_on($right; lkey; rkey; (.l | lstart) < (.r | rend) and (.r | rstart) < (.l | lend); "inner");
+  1.7976931348623157e308 as $inf
+  | _iv_order_check(lstart; lend; "join_overlap (left table)")
+  | ($right | _iv_order_check(rstart; rend; "join_overlap (right table)")) as $r
+  | join_on($r; lkey; rkey; (.l | lstart) < ((.r | rend) // $inf) and (.r | rstart) < ((.l | lend) // $inf); "inner");
 
 # As-of join (left outer): for each left row, the right row with the same key whose rtime is the
 # greatest rtime <= the left row's ltime (DuckDB's ASOF LEFT JOIN ... ON l.k = r.k AND l.t >= r.t).
@@ -919,11 +925,6 @@ def join_within($intervals; lkey; rkey; ltime; rstart; rend):
        | ($last | until(. < 0 or $g.e[.] > $t or $g.m[.] <= $t; . - 1)) as $c
        | if $c >= 0 and $g.e[$c] > $t then _merge($l; $g.rows[$c]; $plan) else $l end
        end];
-
-# an interval needs a start, and an end that is not before it
-def _iv_order_check(start; fin; $who):
-  if any(.[]; (start) == null) then error("\($who): an interval has no start")
-  elif any(.[]; (fin) != null and (fin) < (start)) then error("\($who): an interval ends before it starts") else . end;
 
 # merge_intervals: per key, intervals that overlap or touch become one row
 # {key..., start, end, merged (how many went in)}; keys in order of first appearance, intervals in
