@@ -1,5 +1,5 @@
 ---
-spec_id: 70-alpha-readiness
+spec_id: 85-alpha-readiness
 status: DRAFT
 closed_as: null
 since: 2026-11-19
@@ -8,7 +8,7 @@ epic: release
 features: [readme-opener, ci-engine-matrix, one-line-install, playground-demo, authorship-note, cookbook-recipe]
 supersedes: []
 superseded_by: null
-depends_on: [65-common-question-gaps]
+depends_on: [70-api-response-shapes, 75-core-jq-and-engines, 80-learning-from-the-questions]
 anchors: []
 ---
 
@@ -18,7 +18,7 @@ anchors: []
 
 ### Scope
 
-What a first-time reader needs before the library is announced (sprint 75), from the places it will be announced: Show HN asks for something people can run without signing up and excludes quickly generated one-offs; r/commandline polices AI-generated projects; the awesome-jq list and the jq wiki Modules page are where people search.
+What a first-time reader needs before the library is announced (sprint 90), from the places it will be announced: Show HN asks for something people can run without signing up and excludes quickly generated one-offs; r/commandline polices AI-generated projects; the awesome-jq list and the jq wiki Modules page are where people search.
 
 ### Requirements
 
@@ -41,3 +41,4 @@ What a first-time reader needs before the library is announced (sprint 75), from
 ## Log
 
 - 2026-11-19. Drafted from the survey of announcement places; the alpha also waits for the end of the owner's review.
+- 2026-11-19. Renumbered from 70 to 85 so that 70, 75 and 80, drafted the same day, run before it.
