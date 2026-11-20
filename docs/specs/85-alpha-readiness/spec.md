@@ -8,7 +8,7 @@ epic: release
 features: [readme-opener, ci-engine-matrix, one-line-install, playground-demo, authorship-note, cookbook-recipe]
 supersedes: []
 superseded_by: null
-depends_on: [70-api-response-shapes, 75-core-jq-and-engines, 80-learning-from-the-questions]
+depends_on: [70-api-response-shapes, 75-core-jq-and-engines, 67-learning-from-the-questions]
 anchors: []
 ---
 

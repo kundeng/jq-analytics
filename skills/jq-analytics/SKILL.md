@@ -259,6 +259,15 @@ Was this opened in office hours in Detroit? The text is UTC.
 | a message that starts with a function's name | the library refused the input and says why | read it; it names the value |
 | one group where you expected many | the key is a constant: `"site"` instead of `.site` (rule 2) | `.site` or `{site}` |
 
+## If you are an agent writing jq
+
+- Look at the input before writing the program: `profile` on a table, or the keys and types of one sample. Most wrong programs come from a wrong guess about the shape.
+- Collect JSON lines before a table function: `--slurp` or `[inputs]`.
+- Quote for the shell the program runs in: the program in single quotes, values through `--arg` and `--argjson`, never pasted into the program text.
+- Use jq when it is at hand rather than writing a script to parse JSON.
+- Write parentheses around `//` inside an assignment (`.a = (.b // "none")`): engines read `.a = .b // "none"` differently. `IN` does not exist in jaq; `join_semi` builds the index once.
+- For jq's own model and the shell, `docs/primer.md` in the repository.
+
 ## What not to do
 
 - Do not rewrite a library function inline because it is short. The library's versions carry the null, tie and order rules, and are tested against a database.
